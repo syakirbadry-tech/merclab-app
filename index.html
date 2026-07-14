@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <meta name="description" content="Merc Lab - Your professional laboratory application">
+  <meta name="theme-color" content="#5b9bf5">
+
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="manifest.json">
+
+  <!-- iOS Web App Meta Tags -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Merc Lab">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+
+  <!-- App Icons -->
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
+
+  <!-- Chrome Web Store Icon -->
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+
+  <title>Merc Lab</title>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0b0d12;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      position: fixed;
+      width: 100%;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    #app-container {
+      width: 100%;
+      height: 100%;
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    #__bundler_loading {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      font: 13px/1.4 -apple-system, BlinkMacSystemFont, sans-serif;
+      color: #666;
+      background: #fff;
+      padding: 8px 14px;
+      border-radius: 8px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+      z-index: 10000;
+    }
+
+    #__bundler_thumbnail {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #0b0d12;
+      z-index: 9999;
+    }
+
+    #__bundler_thumbnail svg {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+  </style>
+
+  <noscript>
+    <style>#__bundler_loading { display: none; }</style>
+    <div style="position:fixed;bottom:12px;left:12px;font:13px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;color:#999;background:rgba(255,255,255,0.9);padding:6px 12px;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,0.08);z-index:10000;">
+      This page requires JavaScript to display.
+    </div>
+  </noscript>
+</head>
+<body>
+  <div id="app-container">
+    <div id="__bundler_thumbnail">
+      <svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+        <polygon points="60,30 84,44 84,76 60,90 36,76 36,44" fill="#5b9bf5"></polygon>
+        <polygon points="60,30 84,44 60,58 36,44" fill="#3f77d1"></polygon>
+        <text x="60" y="72" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="20" fill="#0b0d12">ML</text>
+      </svg>
+    </div>
+    <div id="__bundler_loading">Unpacking...</div>
+  </div>
+
+  <script>
+    // Register Service Worker for offline support
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('service-worker.js').then(reg => {
+          console.log('✓ Service Worker registered:', reg.scope);
+        }).catch(err => {
+          console.log('Service Worker registration failed:', err);
+        });
+      });
+    }
+
+    // Prompt to install as PWA on Android
+    let deferredPrompt;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      // You can show an install button here if desired
+    });
+  </script>
+
+  <!-- Embedded App Bundle -->
+  <script type="__bundler/manifest">
+  {
+    "note": "Original manifest will be embedded here - this is a placeholder structure",
+    "size": "Check original HTML file"
+  }
+  </script>
+
+  <script type="__bundler/template">
+  {
+    "note": "Original template will be embedded here - this is a placeholder structure"
+  }
+  </script>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', async function() {
+      const loading = document.getElementById('__bundler_loading');
+      const container = document.getElementById('app-container');
+
+      function setStatus(msg) { if (loading) loading.textContent = msg; }
+
+      const FONT_MIME = /^(font[/]|application[/](x-)?font-|application[/]vnd\.ms-fontobject)/i;
+      const MIME_TOKEN = /^[\w.+-]+[/][\w.+-]+$/;
+
+      function toBase64(bytes) {
+        let bin = '';
+        for (let i = 0; i < bytes.length; i += 0x8000) {
+          bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+        }
+        return btoa(bin);
+      }
+
+      // Error handler
+      window.addEventListener('error', function(e) {
+        if (!e.message && !e.error && e.target && e.target !== window) {
+          console.warn('[bundle] resource failed:', e.target.tagName);
+          return;
+        }
+        console.error('[bundle] error:', e.message || e.type);
+      }, true);
+
+      try {
+        const manifestEl = document.querySelector('script[type="__bundler/manifest"]');
+        const templateEl = document.querySelector('script[type="__bundler/template"]');
+
+        if (!manifestEl || !templateEl) {
+          setStatus('Loading app...');
+          console.warn('[bundler] Using placeholder - app bundle needs to be embedded');
+          return;
+        }
+
+        const manifest = JSON.parse(manifestEl.textContent);
+        let template = JSON.parse(templateEl.textContent);
+
+        const uuids = Object.keys(manifest);
+        setStatus('Unpacking ' + uuids.length + ' assets...');
+
+        const blobUrls = {};
+        const resourceBlobs = {};
+
+        await Promise.all(uuids.map(async (uuid) => {
+          const entry = manifest[uuid];
+          try {
+            const binaryStr = atob(entry.data);
+            const bytes = new Uint8Array(binaryStr.length);
+            for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+
+            let finalBytes = bytes;
+            if (entry.compressed && typeof DecompressionStream !== 'undefined') {
+              const ds = new DecompressionStream('gzip');
+              const writer = ds.writable.getWriter();
+              const reader = ds.readable.getReader();
+              writer.write(bytes);
+              writer.close();
+              const chunks = [];
+              let totalLen = 0;
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                chunks.push(value);
+                totalLen += value.length;
+              }
+              finalBytes = new Uint8Array(totalLen);
+              let offset = 0;
+              for (const chunk of chunks) {
+                finalBytes.set(chunk, offset);
+                offset += chunk.length;
+              }
+            }
+
+            const mimeType = entry.mimeType && MIME_TOKEN.test(entry.mimeType) ? entry.mimeType : 'application/octet-stream';
+            const blob = new Blob([finalBytes], { type: mimeType });
+            resourceBlobs[uuid] = blob;
+            blobUrls[uuid] = URL.createObjectURL(blob);
+          } catch (e) {
+            console.error('[bundle] Failed to process asset:', uuid, e);
+          }
+        }));
+
+        setStatus('Rendering...');
+
+        // Replace template placeholders with blob URLs
+        if (template) {
+          let html = template;
+          for (const [uuid, url] of Object.entries(blobUrls)) {
+            html = html.replace(new RegExp(uuid, 'g'), url);
+          }
+          container.innerHTML = html;
+        }
+
+        if (loading) loading.style.display = 'none';
+      } catch (e) {
+        setStatus('Error loading app');
+        console.error('[bundle] Fatal error:', e);
+      }
+    });
+  </script>
+</body>
+</html>
