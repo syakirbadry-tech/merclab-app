@@ -13,6 +13,7 @@ const db = require("./airtable");
 const ai = require("./ai");
 const P = require("./pricing");
 const M = require("./money");
+const V = require("./vehicles");
 const company = require("../config/company.json");
 
 const router = express.Router();
@@ -275,7 +276,7 @@ router.patch("/parts/:id", wrap(async (req, res) => {
 
 // ---------- customers ----------
 
-const customerOut = (r) => ({ id: r.id, name: r.fields.Name || "", phone: r.fields.Phone || "", car: r.fields.Car || "", plate: r.fields.Plate || "", address: r.fields.Address || "" });
+const customerOut = (r) => ({ id: r.id, name: r.fields.Name || "", phone: r.fields.Phone || "", email: r.fields.Email || "", car: r.fields.Car || "", plate: r.fields.Plate || "", address: r.fields.Address || "", notes: r.fields.Notes || "", createdTime: r.createdTime || "" });
 
 router.get("/customers", wrap(async (req, res) => {
   const rows = await db.list("customers");
@@ -323,6 +324,7 @@ function jobOut(r) {
     paid: f.Paid ?? 0,
     balance: f.Balance ?? f.Total ?? 0,
     status: f.Status || "Draft",
+    stage: f.Stage || "",
     stockTaken: !!f["Stock taken"],
     token: f["Link token"] || "",
     invoiceToken: f["Invoice token"] || "",
@@ -418,6 +420,15 @@ const detailsOf = (job, prev = {}) => ({
   plannedDate: job.plannedDate || prev.plannedDate || "",
 });
 
+// The car's record follows the latest job. A failure here must not lose the job.
+async function syncVehicle(job, customerId) {
+  try {
+    await V.syncFromJob(job, customerId);
+  } catch (err) {
+    console.error("[vehicle]", err.message);
+  }
+}
+
 // Take parts used on an invoice out of stock (once per job).
 async function takeStock(groups) {
   const use = new Map();
@@ -458,7 +469,7 @@ router.post("/jobs", wrap(async (req, res) => {
   const existing = await db.list("quotes", { fields: ["Quote no", "Invoice no"] });
   const details = detailsOf(job);
   const { t, fields } = jobFields(job, details);
-  Object.assign(fields, { "Customer record": customerId, Paid: 0, Balance: t.grand / 100, Status: "Draft" });
+  Object.assign(fields, { "Customer record": customerId, Paid: 0, Balance: t.grand / 100, Status: "Draft", Stage: asInvoice ? "Ready" : "Booked" });
 
   if (asInvoice) {
     details.invoiceTime = nowTimeKL();
@@ -483,6 +494,7 @@ router.post("/jobs", wrap(async (req, res) => {
     });
   }
   const [row] = await db.create("quotes", [fields]);
+  await syncVehicle(job, customerId);
   let lowStock = [];
   if (asInvoice) {
     lowStock = await takeStock(job.groups);
@@ -520,7 +532,9 @@ router.post("/jobs/:id/invoice", wrap(async (req, res) => {
     Status: state.status || "Draft",
     "Stock taken": true,
   });
-  await saveCustomer(cur.customerId, job);
+  if (cur.stage !== "Collected") fields.Stage = "Ready";
+  const custId = await saveCustomer(cur.customerId, job);
+  await syncVehicle(job, custId);
   const [row] = await db.update("quotes", [{ id: cur.id, fields }]);
   const lowStock = cur.stockTaken ? [] : await takeStock(job.groups);
   res.json({ job: jobOut(row), lowStock });
@@ -535,6 +549,18 @@ router.post("/jobs/:id/status", wrap(async (req, res) => {
   if (status === "Cancelled" && j.invoiceNo) throw bad("An invoice cannot be cancelled here. Its number stays in the records.");
   if (j.paid > 0 || j.status === "Cancelled") return res.json(j);
   const [row] = await db.update("quotes", [{ id: j.id, fields: { Status: status } }]);
+  res.json(jobOut(row));
+}));
+
+const STAGES = ["Booked", "In workshop", "Waiting parts", "Ready", "Collected"];
+
+router.post("/jobs/:id/stage", wrap(async (req, res) => {
+  if (!isRec(req.params.id)) throw bad("Unknown job.");
+  const stage = req.body?.stage;
+  if (!STAGES.includes(stage)) throw bad("Unknown stage.");
+  const j = jobOut(await db.get("quotes", req.params.id));
+  if (j.status === "Cancelled") throw bad("This job is cancelled.");
+  const [row] = await db.update("quotes", [{ id: j.id, fields: { Stage: stage } }]);
   res.json(jobOut(row));
 }));
 
@@ -653,5 +679,7 @@ router.post("/payments", oneFile, wrap(async (req, res) => {
   }
   res.status(201).json({ payment: paymentOut(row), job: { ...j, paid: state.paid, balance: state.balance, status: state.status }, fileSaved });
 }));
+
+V.register(router, { wrap, oneFile, fileOf, bodyData, jobOut, customerOut });
 
 module.exports = { router, rankMatches, jobOut, paymentOut, partOut, loadSettings, companyFor, parseJob, docNoOf };

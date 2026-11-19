@@ -2,6 +2,20 @@
 
 The first working part of the Merc Lab DMS. The old screen design in the repository root stays on GitHub Pages; this app is separate.
 
+## Screens
+
+A dark menu on the left (on a phone: the Menu button and the bar at the bottom), and these pages:
+
+- **Dashboard:** money in today and this month, invoiced this month, what customers owe, cars in the workshop, a workshop board (Booked → In workshop → Waiting parts → Ready), service due, low stock, latest payments.
+- **Jobs:** all estimates and invoices with filters. Each job has a stage bar (Booked, In workshop, Waiting parts, Ready, Collected).
+- **Vehicles:** every car by plate, with photo, mileage, fuel, gearbox, owner and last visit. A car page has three tabs:
+  - *Details:* technical data, next service date / km, owner, notes.
+  - *Service history:* every job for that car, money spent and owing.
+  - *Body condition:* tap the car drawing (left, right, top, front, rear) to mark a scratch, dent, stone chip, repaint, crack or rust, with a note and a photo. Mark it fixed later. Use it at check-in with the customer.
+- **Customers:** a table with phone, cars, last visit, spent and owes, and a page per customer.
+- **Parts & stock**, **Money** (receipts and who owes you, with a WhatsApp reminder button) and **Settings**.
+- A search box at the top finds a plate, a customer or an EST / INV number.
+
 ## The flow
 
 1. **Parts tab:** upload a supplier receipt (photo or PDF). AI reads the supplier, date and each part. Selling price = cost + your markup %, rounded up. Check the blue boxes, then Save.
@@ -39,7 +53,7 @@ Personal details are not stored in this public repository; they are entered in S
 
 ## Data
 
-Airtable base **Merc Lab DMS** (`appfipyDV5e2cZtyB`): Settings, Purchases, Parts, Customers, Quotations (one record per job: estimate and invoice), Payments. It holds customer data, so keep it private. It is separate from the Command Center and from all Asbenz data.
+Airtable base **Merc Lab DMS** (`appfipyDV5e2cZtyB`): Settings, Purchases, Parts, Customers, Vehicles (one record per car, with condition marks and photos), Quotations (one record per job: estimate and invoice, plus its Stage), Payments. It holds customer data, so keep it private. It is separate from the Command Center and from all Asbenz data.
 
 ## Run
 

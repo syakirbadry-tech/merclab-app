@@ -43,7 +43,16 @@ db.update = async (t, ups) => ups.map((u) => {
   Object.assign(r.fields, u.fields);
   return { id: r.id, fields: { ...r.fields } };
 });
-db.upload = async (key, id, file) => { uploads.push({ key, id, file }); return true; };
+db.upload = async (key, id, file) => {
+  uploads.push({ key, id, file });
+  const att = { id: "att" + String(++seq).padStart(14, "0"), url: `https://files.test/${key}/${seq}.jpg`, thumbnails: { small: { url: "https://files.test/s.jpg" }, large: { url: "https://files.test/l.jpg" } } };
+  const field = { vehiclePhoto: "Photo", conditionPhotos: "Condition photos" }[key];
+  if (field) {
+    const r = store.vehicles.find((x) => x.id === id);
+    r.fields[field] = [...(r.fields[field] || []), att];
+  }
+  return { attachment: att };
+};
 
 // ---------- fake AI ----------
 let aiReply = null;
@@ -468,4 +477,92 @@ test("matching ranks by document no, amount and payer name", () => {
   assert.equal(m[0].id, "b");
   assert.equal(m.length, 2, "paid jobs are not offered");
   assert.equal(rankMatches(jobs, { amount: 1, recipientNote: "inv 2026 00001" })[0].id, "b");
+});
+
+// ================= vehicles, condition marks, stages, customers =================
+test("car from a job → vehicle page data → edit, photo, body marks; stages; customers", async () => {
+  reset();
+  await login();
+
+  // A job makes (or updates) the car's record.
+  const est = await call("POST", "/api/jobs", { body: jobBody(["", ""]) });
+  assert.equal(est.status, 201);
+  assert.equal(est.body.job.stage, "Booked");
+  assert.equal(store.vehicles.length, 1);
+  assert.equal(store.vehicles[0].fields["Plate key"], "WXY1234");
+  assert.equal(store.vehicles[0].fields["Mileage km"], 85210);
+
+  let list = await call("GET", "/api/vehicles");
+  assert.equal(list.status, 200);
+  assert.equal(list.body.vehicles.length, 1);
+  const v = list.body.vehicles[0];
+  assert.equal(v.key, "WXY1234");
+  assert.equal(v.ownerName, "Ali Ahmad");
+  assert.equal(v.visits, 1);
+  assert.equal(v.chassisNo, "WDD2050421F123456");
+
+  // A car known only from an old job (no record) is still listed.
+  store.quotes.push({ id: newId(), fields: { "Quote no": "EST-2025-00009", Date: "2025-03-01", "Customer name": "Siti", Plate: "BKL 77", Car: "E250", "Mileage km": 120000, Status: "Paid", Total: 100, Balance: 0 } });
+  list = await call("GET", "/api/vehicles");
+  const old = list.body.vehicles.find((x) => x.key === "BKL77");
+  assert.ok(old && old.id === null && old.ownerName === "Siti" && old.mileageKm === 120000);
+
+  // Edit makes the record; bad year is refused.
+  const badYear = await call("PATCH", "/api/vehicles/BKL77", { body: { year: "19" } });
+  assert.equal(badYear.status, 400);
+  const ed = await call("PATCH", "/api/vehicles/bkl-77", { body: { year: "2016", fuel: "Diesel", nextServiceDate: "2026-12-01", chassisNo: "wdd123" } });
+  assert.equal(ed.status, 200);
+  assert.equal(ed.body.year, 2016);
+  assert.equal(ed.body.chassisNo, "WDD123");
+  assert.equal(store.vehicles.length, 2);
+
+  // New car by hand; same plate twice is refused.
+  const nv = await call("POST", "/api/vehicles", { body: { plate: "vbe 5", makeModel: "GLC 300" } });
+  assert.equal(nv.status, 201);
+  assert.equal(nv.body.plate, "VBE 5");
+  assert.equal((await call("POST", "/api/vehicles", { body: { plate: "VBE5" } })).status, 409);
+
+  // Photo.
+  const ph = await call("POST", "/api/vehicles/WXY1234/photo", { file: { type: "image/jpeg" } });
+  assert.equal(ph.status, 200);
+  assert.equal(ph.body.photo, "https://files.test/l.jpg");
+  assert.equal((await call("POST", "/api/vehicles/WXY1234/photo", { file: { type: "application/pdf", name: "x.pdf" } })).status, 400);
+
+  // Body marks: spot must be on the picture.
+  assert.equal((await call("POST", "/api/vehicles/WXY1234/marks", { data: { view: "front", x: 500, y: 10, kind: "dent" } })).status, 400);
+  const mk = await call("POST", "/api/vehicles/WXY1234/marks", { file: { type: "image/jpeg" }, data: { view: "left", x: 100, y: 60, kind: "scratch", area: "Left front door", note: "10 cm", jobNo: est.body.job.estimateNo } });
+  assert.equal(mk.status, 201);
+  assert.equal(mk.body.photoSaved, true);
+  const mark = mk.body.vehicle.marks[0];
+  assert.equal(mark.kind, "scratch");
+  assert.equal(mark.area, "Left front door");
+  assert.match(mark.photo, /conditionPhotos/);
+  assert.equal(mk.body.vehicle.openMarks, 1);
+  const fx = await call("PATCH", `/api/vehicles/WXY1234/marks/${mark.id}`, { body: { fixed: true } });
+  assert.equal(fx.body.marks[0].fixed, true);
+  assert.equal(fx.body.openMarks, 0);
+  const del = await call("DELETE", `/api/vehicles/WXY1234/marks/${mark.id}`);
+  assert.equal(del.body.marks.length, 0);
+  assert.equal((await call("DELETE", `/api/vehicles/WXY1234/marks/${mark.id}`)).status, 404);
+
+  // Stages.
+  assert.equal((await call("POST", `/api/jobs/${est.body.job.id}/stage`, { body: { stage: "Flying" } })).status, 400);
+  const sg = await call("POST", `/api/jobs/${est.body.job.id}/stage`, { body: { stage: "In workshop" } });
+  assert.equal(sg.body.stage, "In workshop");
+  list = await call("GET", "/api/vehicles");
+  assert.equal(list.body.vehicles.find((x) => x.key === "WXY1234").stage, "In workshop");
+  const inv = await call("POST", `/api/jobs/${est.body.job.id}/invoice`, { body: jobBody(["", ""], { vehicle: { makeModel: "C200", regNo: "WXY 1234", mileageKm: "85300" } }) });
+  assert.equal(inv.status, 200);
+  assert.equal(inv.body.job.stage, "Ready");
+  assert.equal(store.vehicles.find((r) => r.fields["Plate key"] === "WXY1234").fields["Mileage km"], 85300);
+
+  // Customers: add, edit, bad email refused.
+  assert.equal((await call("POST", "/api/customers", { body: { name: " " } })).status, 400);
+  const c = await call("POST", "/api/customers", { body: { name: "Mei Ling", phone: "016-1112222", email: "mei@example.com" } });
+  assert.equal(c.status, 201);
+  assert.equal(c.body.email, "mei@example.com");
+  assert.equal((await call("PATCH", `/api/customers/${c.body.id}`, { body: { email: "nope" } })).status, 400);
+  const ce = await call("PATCH", `/api/customers/${c.body.id}`, { body: { notes: "Prefers WhatsApp" } });
+  assert.equal(ce.body.notes, "Prefers WhatsApp");
+  assert.equal(ce.body.name, "Mei Ling");
 });
