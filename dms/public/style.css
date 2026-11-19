@@ -155,7 +155,7 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 .tbl .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tbl .nowrap { white-space: nowrap; }
 .tbl .strong { font-weight: 600; }
-.tbl .sm { font-size: 12.5px; color: var(--muted); }
+.tbl .sm:not(.btn) { font-size: 12.5px; color: var(--muted); }
 .who { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .avatar { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-size: 12.5px; font-weight: 700; flex: none; }
 .empty { text-align: center; padding: 34px 16px; color: var(--muted); }
