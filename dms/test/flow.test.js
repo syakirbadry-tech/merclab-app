@@ -46,9 +46,9 @@ db.update = async (t, ups) => ups.map((u) => {
 db.upload = async (key, id, file) => {
   uploads.push({ key, id, file });
   const att = { id: "att" + String(++seq).padStart(14, "0"), url: `https://files.test/${key}/${seq}.jpg`, thumbnails: { small: { url: "https://files.test/s.jpg" }, large: { url: "https://files.test/l.jpg" } } };
-  const field = { vehiclePhoto: "Photo", conditionPhotos: "Condition photos" }[key];
+  const field = { vehiclePhoto: "Photo", conditionPhotos: "Condition photos", jobPhotos: "Job photos" }[key];
   if (field) {
-    const r = store.vehicles.find((x) => x.id === id);
+    const r = store[key === "jobPhotos" ? "quotes" : "vehicles"].find((x) => x.id === id);
     r.fields[field] = [...(r.fields[field] || []), att];
   }
   return { attachment: att };
@@ -565,4 +565,85 @@ test("car from a job → vehicle page data → edit, photo, body marks; stages; 
   const ce = await call("PATCH", `/api/customers/${c.body.id}`, { body: { notes: "Prefers WhatsApp" } });
   assert.equal(ce.body.notes, "Prefers WhatsApp");
   assert.equal(ce.body.name, "Mei Ling");
+});
+
+// ================= workshop pack =================
+test("discount comes off before tax and prints on the document", () => {
+  const groups = M.cleanGroups(clone(reference.groups));
+  const t = M.computeTotals(groups, { discount: "83.45" });
+  assert.equal(t.gross, 238345);
+  assert.equal(t.discount, 8345);
+  assert.equal(t.grand, 230000);
+  const html = T.render({ ...clone(reference), type: "estimate", groups, discount: 83.45 }, company, { screen: false });
+  assert.match(html, /Less Discount/);
+  assert.match(html, /2,300\.00/);
+});
+
+test("packages, fault cases, check-in, inspection report, online approval", async () => {
+  reset();
+  await login();
+  // Packages
+  assert.equal((await call("POST", "/api/packages", { body: { name: "Service B", request: "x", lines: [] } })).status, 400);
+  const pk = await call("POST", "/api/packages", { body: { name: "Service B", request: "to perform service b", setsService: true, lines: [{ type: "labour", description: "Perform Service B", amount: "200" }, { type: "part", description: "Oil filter", qty: 1, unitPrice: "26" }] } });
+  assert.equal(pk.status, 201);
+  assert.equal(pk.body.request, "TO PERFORM SERVICE B");
+  assert.equal(pk.body.lines.length, 2);
+  assert.equal(pk.body.active, true);
+  const pk2 = await call("PATCH", `/api/packages/${pk.body.id}`, { body: { active: false } });
+  assert.equal(pk2.body.active, false);
+  assert.equal((await call("GET", "/api/packages")).body.packages.length, 1);
+
+  // Job with a discount; too big a discount is refused.
+  assert.equal((await call("POST", "/api/jobs", { body: jobBody(["", ""], { discount: "9999" }) })).status, 400);
+  const est = await call("POST", "/api/jobs", { body: jobBody(["", ""], { discount: "26" }) });
+  assert.equal(est.status, 201);
+  assert.equal(est.body.job.total, 350);
+  const id = est.body.job.id;
+
+  // Fault case
+  assert.equal((await call("POST", "/api/faults", { body: { makeModel: "C200" } })).status, 400);
+  const fc = await call("POST", "/api/faults", { body: { jobId: id, plate: "WXY 1234", makeModel: "C200 W205", symptom: "Coolant level drops\nno visible leak", codes: "P0128", cause: "Water pump weep", fix: "Replaced water pump", mileageKm: "85210", hours: "2.5", verified: true } });
+  assert.equal(fc.status, 201);
+  assert.equal(fc.body.title, "C200 W205: Coolant level drops");
+  assert.equal(fc.body.plateKey, "WXY1234");
+  assert.equal(fc.body.hours, 2.5);
+  assert.equal((await call("GET", "/api/faults")).body.faults.length, 1);
+
+  // Check-in with an odometer photo
+  const ci = await call("POST", `/api/jobs/${id}/checkin`, { file: { type: "image/jpeg" }, data: { fuel: "1/2", items: "Child seat", keys: "2 keys" } });
+  assert.equal(ci.status, 200);
+  assert.equal(ci.body.checkin.fuel, "1/2");
+  assert.ok(ci.body.photos[ci.body.checkin.odoPhotoId]);
+
+  // Inspection: photo, then the checklist; a client page with no prices.
+  const ph = await call("POST", `/api/jobs/${id}/photo`, { file: { type: "image/jpeg" } });
+  assert.equal(ph.status, 201);
+  const ins = await call("PUT", `/api/jobs/${id}/inspection`, { body: { summary: "Front pads low.", items: [
+    { key: "pads_f", group: "Brakes", label: "Front brake pads", status: "now", value: "2 mm", note: "Replace now", photoIds: [ph.body.id, "bogus"] },
+    { key: "tyre_fl", group: "Tyres", label: "Tyre front left", status: "ok", value: "6 mm" },
+    { key: "wipers", group: "Other", label: "Wipers", status: "na" },
+    { key: "<bad>", label: "" },
+  ] } });
+  assert.equal(ins.status, 200);
+  assert.equal(ins.body.inspection.items.length, 3);
+  assert.deepEqual(ins.body.inspection.items[0].photoIds, [ph.body.id]);
+  assert.match(ins.body.inspectionToken, /^h[a-f0-9]{32}$/);
+  const page = await call("GET", `/d/${ins.body.inspectionToken}`, { noAuth: true });
+  assert.equal(page.status, 200);
+  assert.match(page.text, /Needs attention now \(1\)/);
+  assert.match(page.text, /2 mm/);
+  assert.doesNotMatch(page.text, /RM ?\d/);
+
+  // Online approval from the estimate page.
+  const estPage = await call("GET", `/d/${est.body.job.token}`, { noAuth: true });
+  assert.match(estPage.text, /Approve estimate/);
+  assert.match(estPage.text, /See the inspection report/);
+  assert.equal((await call("POST", `/d/${est.body.job.token}/approve`, { noAuth: true, body: { name: "A" } })).status, 400);
+  const ap = await call("POST", `/d/${est.body.job.token}/approve`, { noAuth: true, body: { name: "Ali Ahmad" } });
+  assert.equal(ap.status, 200);
+  const j = (await call("GET", `/api/jobs/${id}`)).body;
+  assert.equal(j.approvedName, "Ali Ahmad");
+  assert.equal(j.stage, "In workshop");
+  assert.match((await call("GET", `/d/${est.body.job.token}`, { noAuth: true })).text, /Approved by Ali Ahmad/);
+  assert.equal((await call("POST", `/d/q${"0".repeat(32)}/approve`, { noAuth: true, body: { name: "X Y" } })).status, 404);
 });

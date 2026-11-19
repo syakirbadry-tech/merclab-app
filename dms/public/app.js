@@ -27,7 +27,7 @@
     return `${Math.round(d / 365)} years ago`;
   }
 
-  const state = { settings: null, parts: [], jobs: [], payments: [], customers: [], vehicles: [], route: "" };
+  const state = { settings: null, parts: [], jobs: [], payments: [], customers: [], vehicles: [], packages: [], faults: [], route: "" };
 
   // ---------- icons (simple line icons, 24px grid) ----------
   const ICONS = {
@@ -57,6 +57,10 @@
     receipt: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6M9 16h3"/>',
     gauge: '<path d="M12 14l4-4M3.5 17a9 9 0 1 1 17 0"/>',
     shield: '<path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/>',
+    book: '<path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5zM5 19.5A1.5 1.5 0 0 0 6.5 21H19M9 7h6"/>',
+    box: '<path d="M4 7l8-4 8 4-8 4zM4 7v10l8 4 8-4V7M12 11v10"/>',
+    print: '<path d="M7 8V3h10v5M7 17H5a1 1 0 0 1-1-1v-6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v6a1 1 0 0 1-1 1h-2M7 14h10v7H7z"/>',
+    clipboard: '<path d="M9 4h6v3H9zM9 5H6a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-3M9 12l2 2 4-4"/>',
     more: '<circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/>',
   };
   const icon = (n, cls = "") => `<svg class="ic ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n] || ""}</svg>`;
@@ -189,7 +193,9 @@
   // ---------- data ----------
 
   async function loadAll() {
-    const [s, p, q, pay, c, v] = await Promise.all([api("/settings"), api("/parts"), api("/jobs"), api("/payments"), api("/customers"), api("/vehicles")]);
+    const [s, p, q, pay, c, v, pk, fc] = await Promise.all([api("/settings"), api("/parts"), api("/jobs"), api("/payments"), api("/customers"), api("/vehicles"), api("/packages"), api("/faults")]);
+    state.packages = pk.packages;
+    state.faults = fc.faults;
     state.settings = s;
     state.parts = p.parts;
     state.jobs = q.jobs;
@@ -198,7 +204,7 @@
     state.vehicles = v.vehicles;
   }
   async function refresh(...what) {
-    const map = { jobs: "/jobs", payments: "/payments", customers: "/customers", parts: "/parts", vehicles: "/vehicles" };
+    const map = { jobs: "/jobs", payments: "/payments", customers: "/customers", parts: "/parts", vehicles: "/vehicles", packages: "/packages", faults: "/faults" };
     const out = await Promise.all(what.map((w) => api(map[w])));
     what.forEach((w, i) => (state[w] = out[i][w]));
   }
@@ -225,7 +231,7 @@
 
   const NAV = [
     ["Overview", [["dashboard", "Dashboard", "dashboard"]]],
-    ["Workshop", [["jobs", "Jobs", "jobs"], ["vehicles", "Vehicles", "car"], ["customers", "Customers", "users"]]],
+    ["Workshop", [["jobs", "Jobs", "jobs"], ["vehicles", "Vehicles", "car"], ["packages", "Packages", "box"], ["faults", "Fault cases", "book"], ["customers", "Customers", "users"]]],
     ["Business", [["parts", "Parts & stock", "parts"], ["money", "Money", "money"]]],
   ];
 
@@ -319,6 +325,7 @@
   function route() {
     if ($("#shell").hidden) return;
     document.body.classList.remove("nav-open");
+    $$(".modal").forEach((m) => m.remove());
     const { parts, q } = parseHash();
     const [sec = "dashboard", a, b] = parts;
     setActive(sec);
@@ -328,12 +335,15 @@
       if (sec === "jobs") {
         if (a === "new") return jobForm("new", null, q);
         if (a && b === "invoice") return jobForm("invoice", state.jobs.find((j) => j.id === a));
+        if (a && b === "inspection") return pageInspection(a);
         if (a) return pageJob(a);
         return pageJobs(q);
       }
       if (sec === "vehicles") return a ? pageVehicle(a, b || "details") : pageVehicles(q);
       if (sec === "customers") return a ? pageCustomer(a) : pageCustomers();
       if (sec === "parts") return pageParts();
+      if (sec === "packages") return a ? packageForm(a) : pagePackages();
+      if (sec === "faults") return pageFaults();
       if (sec === "money") return a === "receipt" ? pageReceipt(b) : pageMoney(q);
       if (sec === "settings") return pageSettings();
       location.hash = "#/dashboard";
@@ -491,7 +501,7 @@
     const si = STAGES.indexOf(j.stage);
     const primary = cancelled ? "" : !j.invoiceNo ? `<a class="btn" href="#/jobs/${j.id}/invoice">${icon("check")}Work done → invoice</a>` : j.balance > 0.009 ? `<a class="btn" href="#/money?pay=${j.id}">${icon("money")}Record payment</a>` : "";
     view.innerHTML = `
-      ${pageHead(`${esc(docNo(j))}`, { back: "#/jobs", sub: `${esc(j.customerName)}${j.car ? " · " + esc(j.car) : ""}`, extra: `<div class="chips">${pill(kindOf(j), "info")}${statusPill(j.status)}</div>`, acts: `${docs[0] ? `<a class="btn wa" data-sent href="${esc(docs[0].wa)}" target="_blank" rel="noopener">${icon("chat")}Send ${docs[0].kind.toLowerCase()}</a>` : ""}${primary}` })}
+      ${pageHead(`${esc(docNo(j))}`, { back: "#/jobs", sub: `${esc(j.customerName)}${j.car ? " · " + esc(j.car) : ""}`, extra: `<div class="chips">${pill(kindOf(j), "info")}${statusPill(j.status)}${j.approvedAt ? pill(`Approved online by ${j.approvedName}`, "ok") : ""}</div>`, acts: `<button type="button" class="btn alt" id="jPrint">${icon("print")}Job card</button>${docs[0] ? `<a class="btn wa" data-sent href="${esc(docs[0].wa)}" target="_blank" rel="noopener">${icon("chat")}Send ${docs[0].kind.toLowerCase()}</a>` : ""}${primary}` })}
       ${cancelled ? "" : `<div class="card"><div class="stepper" id="stepper" role="group" aria-label="Job stage">${STAGES.map((s, i) => `<button type="button" data-stage="${s}" class="${i < si ? "done" : i === si ? "cur" : ""}" aria-pressed="${i === si}"><span class="b">${i <= si ? icon("check") : ""}</span>${s}</button>`).join("")}</div></div>`}
       <div class="split">
         <div>
@@ -514,6 +524,7 @@
           </div>
           ${docs.length ? `<div class="card"><h2>Documents</h2><div class="rows">${docs.map((d) => `<div class="docrow"><div class="grow"><b>${d.kind}</b><span class="muted">${esc(d.no)}</span></div>
             <div class="da"><a class="btn alt sm" href="${esc(d.link)}" target="_blank" rel="noopener">${icon("open")}PDF</a><a class="btn wa sm" data-sent href="${esc(d.wa)}" target="_blank" rel="noopener">${icon("chat")}Send</a></div></div>`).join("")}</div></div>` : ""}
+          ${cancelled ? "" : jobExtrasHtml(j)}
           <div class="card"><h2>Customer &amp; car</h2><dl class="kv">
             <dt>Customer</dt><dd>${cust ? `<a href="#/customers/${cust.id}">${esc(j.customerName)}</a>` : esc(j.customerName)}</dd>
             <dt>Phone</dt><dd>${j.phone ? `<a href="tel:${esc(j.phone)}">${esc(j.phone)}</a>` : "—"}</dd>
@@ -527,6 +538,8 @@
       if (j.status !== "Draft") return;
       try { Object.assign(j, await api(`/jobs/${j.id}/status`, { method: "POST", body: { status: "Sent" } })); } catch { /* ignore */ }
     }));
+    if (!cancelled) bindJobExtras(j);
+    else $("#jPrint").onclick = () => printJobCard(j);
     const st = $("#stepper");
     if (st) st.onclick = async (e) => {
       const b = e.target.closest("[data-stage]");
@@ -583,6 +596,48 @@
     </div>`;
   }
 
+  // Lines editor events, shared by the job form and the package editor.
+  function bindGroups(box, onChange) {
+    const renumber = () => $$(".group", box).forEach((g, i) => ($("b", g).textContent = `C${i + 1}`));
+    box.addEventListener("click", (e) => {
+      const add = e.target.closest("[data-add]");
+      if (add) {
+        const lines = $(".lines", add.closest(".group"));
+        lines.insertAdjacentHTML("beforeend", lineHtml({ type: add.dataset.add, qty: 1 }));
+        $(".item:last-child [name=description]", lines).focus();
+      } else if (e.target.closest(".gx")) {
+        if ($$(".group", box).length > 1) e.target.closest(".group").remove();
+        renumber();
+      } else if (e.target.closest(".x")) {
+        e.target.closest(".item").remove();
+      }
+      onChange();
+    });
+    box.addEventListener("change", (e) => {
+      if (!e.target.classList.contains("pick")) return;
+      const val = e.target.value;
+      const p = state.parts.find((x) => `${x.name}${x.partNo ? " · " + x.partNo : ""}` === val) || state.parts.find((x) => x.name === val);
+      if (!p) return;
+      $(".lines", e.target.closest(".group")).insertAdjacentHTML("beforeend", lineHtml({ type: "part", partId: p.id, partNo: p.partNo, description: [p.brand, p.name].filter(Boolean).join(" ").toUpperCase(), qty: 1, unitPrice: p.sellingPrice }));
+      if (p.qtyLeft <= 0) toast(`${p.name}: none left in stock`);
+      e.target.value = "";
+      onChange();
+    });
+    box.addEventListener("input", onChange);
+    return renumber;
+  }
+  const readLines = (g) => $$(".item", g).map((el) => ({
+    type: el.dataset.type, partId: el.dataset.part, category: el.dataset.cat, taxable: el.dataset.tax === "1",
+    partNo: $("[name=partNo]", el)?.value, opCode: $("[name=opCode]", el)?.value, description: $("[name=description]", el).value,
+    qty: $("[name=qty]", el)?.value, unitPrice: $("[name=unitPrice]", el)?.value, amount: $("[name=amount]", el)?.value,
+  }));
+  // Package lines with today's stock prices for linked parts.
+  const packageLines = (pkg) => pkg.lines.map((l) => {
+    const p = l.type === "part" && l.partId && state.parts.find((x) => x.id === l.partId);
+    return p ? { ...l, unitPrice: p.sellingPrice } : { ...l };
+  });
+  const lineTotal = (lines) => lines.reduce((t, l) => t + (l.type === "part" ? (Number(l.qty) || 0) * (Number(l.unitPrice) || 0) : Number(l.amount) || 0), 0);
+
   function jobForm(mode, job, q) {
     if (mode === "invoice" && !job) return (location.hash = "#/jobs");
     // Prefill from a car or a customer (links on their pages).
@@ -628,8 +683,11 @@
           </div>
         </div>
         <datalist id="partOptions">${parts.map((p) => `<option value="${esc(p.name)}${p.partNo ? " · " + esc(p.partNo) : ""}">${rm(p.sellingPrice)} · ${p.qtyLeft} left</option>`).join("")}</datalist>
-        <div class="card" style="margin-top:16px"><div class="card-h"><h2>Work</h2><div class="r"><button type="button" class="btn alt sm" id="addGroup">${icon("plus")}Customer request</button></div></div>
+        <div class="card" style="margin-top:16px"><div class="card-h"><h2>Work</h2><div class="r">
+            ${state.packages.some((x) => x.active) ? `<select id="pkgPick" aria-label="Add a package" style="min-height:34px;padding:5px 10px;font-size:14px;width:auto"><option value="">+ Add package…</option>${state.packages.filter((x) => x.active).map((x) => `<option value="${x.id}">${esc(x.name)} · ${rm(lineTotal(packageLines(x)))}</option>`).join("")}</select>` : ""}
+            <button type="button" class="btn alt sm" id="addGroup">${icon("plus")}Customer request</button></div></div>
           <div id="groups">${groups.map(groupHtml).join("")}</div>
+          <div class="fgrid" style="margin-top:4px"><div><label for="discount">Discount (RM)</label><input id="discount" name="discount" type="number" step="0.01" min="0" inputmode="decimal" value="${v(d.discount || "")}"></div></div>
           <details style="margin-top:6px"><summary class="muted">More details (invoice to, served by, reference numbers, dates)</summary>
             <div class="fgrid" style="margin-top:8px">
               ${mode === "invoice"
@@ -645,7 +703,7 @@
             </div>
           </details>
           <div class="totbar">
-            <div class="t">Parts<b id="tParts">RM 0.00</b></div><div class="t">Labour &amp; sundries<b id="tLabour">RM 0.00</b></div><div class="t grand">Grand total<b id="tGrand">RM 0.00</b></div>
+            <div class="t">Parts<b id="tParts">RM 0.00</b></div><div class="t">Labour &amp; sundries<b id="tLabour">RM 0.00</b></div><div class="t" id="tDiscW" hidden>Discount<b id="tDisc">RM 0.00</b></div><div class="t grand">Grand total<b id="tGrand">RM 0.00</b></div>
             <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
             ${mode === "invoice"
               ? `<button class="btn" type="submit" data-as="invoice">${icon("check")}Make invoice</button>`
@@ -664,11 +722,13 @@
         else l += Number($("[name=amount]", el).value) || 0;
       });
       const extra = (Number(form.surcharge.value) || 0) + (Number(form.menus.value) || 0);
+      const disc = Math.min(Number(form.discount.value) || 0, p + l + extra);
       $("#tParts").textContent = rm(p);
       $("#tLabour").textContent = rm(l);
-      $("#tGrand").textContent = rm(r2(p + l + extra));
+      $("#tDiscW").hidden = !disc;
+      $("#tDisc").textContent = "-" + rm(disc);
+      $("#tGrand").textContent = rm(r2(p + l + extra - disc));
     };
-    const renumber = () => $$(".group", box).forEach((g, i) => ($("b", g).textContent = `C${i + 1}`));
 
     form.cName.addEventListener("change", () => {
       const c = state.customers.find((x) => x.name.toLowerCase() === form.cName.value.trim().toLowerCase());
@@ -700,33 +760,22 @@
         if (c) form.cAddress.value = c.address;
       }
     });
-    box.addEventListener("click", (e) => {
-      const add = e.target.closest("[data-add]");
-      if (add) {
-        const lines = $(".lines", add.closest(".group"));
-        lines.insertAdjacentHTML("beforeend", lineHtml({ type: add.dataset.add, qty: 1 }));
-        $(".item:last-child [name=description]", lines).focus();
-      } else if (e.target.closest(".gx")) {
-        if ($$(".group", box).length > 1) e.target.closest(".group").remove();
-        renumber();
-      } else if (e.target.closest(".x")) {
-        e.target.closest(".item").remove();
-      }
+    const renumber = bindGroups(box, totals);
+    const pick = $("#pkgPick");
+    if (pick) pick.onchange = () => {
+      const pkg = state.packages.find((x) => x.id === pick.value);
+      pick.value = "";
+      if (!pkg) return;
+      const gs = $$(".group", box);
+      if (gs.length === 1 && !$("[name=request]", gs[0]).value.trim() && !$$(".item", gs[0]).length) gs[0].outerHTML = "";
+      box.insertAdjacentHTML("beforeend", groupHtml({ request: pkg.request, lines: packageLines(pkg) }, 0));
+      renumber();
       totals();
-    });
-    box.addEventListener("change", (e) => {
-      if (!e.target.classList.contains("pick")) return;
-      const val = e.target.value;
-      const p = parts.find((x) => `${x.name}${x.partNo ? " · " + x.partNo : ""}` === val) || parts.find((x) => x.name === val);
-      if (!p) return;
-      $(".lines", e.target.closest(".group")).insertAdjacentHTML("beforeend", lineHtml({ type: "part", partId: p.id, partNo: p.partNo, description: [p.brand, p.name].filter(Boolean).join(" ").toUpperCase(), qty: 1, unitPrice: p.sellingPrice }));
-      if (p.qtyLeft <= 0) toast(`${p.name}: none left in stock`);
-      e.target.value = "";
-      totals();
-    });
-    box.addEventListener("input", totals);
+      toast(`${pkg.name} added`);
+    };
     form.surcharge.oninput = totals;
     form.menus.oninput = totals;
+    form.discount.oninput = totals;
     $("#addGroup").onclick = () => { box.insertAdjacentHTML("beforeend", groupHtml({ request: "", lines: [] }, $$(".group", box).length)); renumber(); };
     totals();
 
@@ -747,24 +796,13 @@
         invoiceTo: { name: form.itName.value, address: form.itAddress.value },
         advisor,
         accountNo: form.accountNo.value, orderNo: form.orderNo.value, referenceNo: form.referenceNo.value, wipNo: form.wipNo.value, jobNo: form.jobNo.value,
-        surcharge: form.surcharge.value, menus: form.menus.value,
+        surcharge: form.surcharge.value, menus: form.menus.value, discount: form.discount.value,
         plannedDate: form.plannedDate?.value || "",
         repairDate: form.repairDate?.value || "",
         dueDate: form.dueDate?.value || "",
         groups: $$(".group", box).map((g) => ({
           request: $("[name=request]", g).value,
-          lines: $$(".item", g).map((el) => ({
-            type: el.dataset.type,
-            partId: el.dataset.part,
-            category: el.dataset.cat,
-            taxable: el.dataset.tax === "1",
-            partNo: $("[name=partNo]", el)?.value,
-            opCode: $("[name=opCode]", el)?.value,
-            description: $("[name=description]", el).value,
-            qty: $("[name=qty]", el)?.value,
-            unitPrice: $("[name=unitPrice]", el)?.value,
-            amount: $("[name=amount]", el)?.value,
-          })),
+          lines: readLines(g),
         })),
       };
       const btn = e.submitter;
@@ -782,6 +820,312 @@
         busy(btn, false);
       }
     };
+  }
+
+  // ================= WORKSHOP EXTRAS =================
+
+  const FUEL = ["E", "1/4", "1/2", "3/4", "F"];
+  const INS_ST = { ok: ["OK", "ok"], soon: ["Soon", "warn"], now: ["Now", "bad"], na: ["N/A", ""] };
+  const CHECKLIST = [
+    ["Tyres", [["tyre_fl", "Tyre front left", "mm"], ["tyre_fr", "Tyre front right", "mm"], ["tyre_rl", "Tyre rear left", "mm"], ["tyre_rr", "Tyre rear right", "mm"], ["tyre_press", "Tyre pressures", "bar"]]],
+    ["Brakes", [["pads_f", "Front brake pads", "mm"], ["pads_r", "Rear brake pads", "mm"], ["discs", "Brake discs", ""], ["brake_fluid", "Brake fluid (water %)", "%"]]],
+    ["Fluids & leaks", [["oil", "Engine oil level & condition", ""], ["coolant", "Coolant level", ""], ["leak_engine", "Engine oil leaks", ""], ["leak_trans", "Gearbox / axle leaks", ""]]],
+    ["Electrics", [["battery", "Battery test", "V / %"], ["lights", "Exterior lights", ""], ["dash", "Warning lights on dash", ""], ["wipers", "Wipers & washer", ""]]],
+    ["Under the car", [["susp_f", "Front suspension & steering", ""], ["susp_r", "Rear suspension", ""], ["exhaust", "Exhaust", ""], ["mounts", "Engine & gearbox mounts", ""]]],
+    ["Engine bay & cabin", [["belt", "Drive belt & hoses", ""], ["air_filter", "Air filter", ""], ["cabin_filter", "Cabin (AC) filter", ""], ["ac", "Air-con (vent temp)", "°C"]]],
+  ];
+  const partOptions = () => `<datalist id="partOptions">${state.parts.map((p) => `<option value="${esc(p.name)}${p.partNo ? " · " + esc(p.partNo) : ""}">${rm(p.sellingPrice)} · ${p.qtyLeft} left</option>`).join("")}</datalist>`;
+  function replaceJob(nj) {
+    const i = state.jobs.findIndex((x) => x.id === nj.id);
+    if (i >= 0) state.jobs[i] = nj;
+  }
+
+  function jobExtrasHtml(j) {
+    const ci = j.checkin;
+    const ins = j.inspection;
+    const n = (s) => (ins ? ins.items.filter((i) => i.status === s).length : 0);
+    const faults = state.faults.filter((f) => f.jobId === j.id);
+    const odo = ci?.odoPhotoId && j.photos[ci.odoPhotoId];
+    const plate = j.plate ? ` (${j.plate})` : "";
+    return `
+      <div class="card"><div class="card-h"><h2>Check-in</h2><div class="r"><button type="button" class="btn ghost sm" id="ciEdit">${icon("edit")}${ci ? "Edit" : "Start"}</button></div></div>
+        ${ci ? `<dl class="kv"><dt>Fuel</dt><dd>${esc(ci.fuel || "—")}</dd><dt>Keys</dt><dd>${esc(ci.keys || "—")}</dd><dt>Left in car</dt><dd>${esc(ci.items || "—")}</dd>${ci.notes ? `<dt>Notes</dt><dd>${esc(ci.notes)}</dd>` : ""}
+          <dt>Odometer</dt><dd>${odo ? `<a href="${esc(odo.url)}" target="_blank" rel="noopener"><img class="thumb" src="${esc(odo.thumb)}" alt="Odometer photo"></a>` : "No photo"}</dd></dl>`
+          : `<p class="muted">When the car arrives: fuel, keys, items left in the car and an odometer photo.</p>`}
+      </div>
+      <div class="card"><div class="card-h"><h2>Inspection</h2></div>
+        ${ins ? `<div class="chips" style="margin-bottom:12px">${pill(`${n("now")} now`, "bad")}${pill(`${n("soon")} soon`, "warn")}${pill(`${n("ok")} OK`, "ok")}</div>` : `<p class="muted">Tyres, brakes, fluids, battery and more, with photos. The customer gets a report without prices.</p>`}
+        <div class="stack"><a class="btn alt block" href="#/jobs/${j.id}/inspection">${icon("clipboard")}${ins ? "Open checklist" : "Start inspection"}</a>
+        ${ins && j.inspectionToken ? `<a class="btn wa block" href="${esc(waLink(j.phone, `Hi ${j.customerName}, here is the inspection report for your car${plate} from ${brandName()}:\n${docLink(j.inspectionToken)}`))}" target="_blank" rel="noopener">${icon("chat")}Send report</a>
+          <a class="btn ghost block" href="${esc(docLink(j.inspectionToken))}" target="_blank" rel="noopener">${icon("open")}Open report</a>` : ""}</div>
+      </div>
+      <div class="card"><div class="card-h"><h2>Fault case</h2><div class="r"><button type="button" class="btn ghost sm" id="fcAdd">${icon("plus")}Record</button></div></div>
+        ${faults.length ? `<div class="rows">${faults.map((f) => `<a href="#/faults" data-fc="${f.id}"><div class="grow"><b>${esc(f.title)}</b><span class="muted">${esc(f.cause || "Cause not written yet")}</span></div>${f.verified ? pill("Verified", "ok") : ""}</a>`).join("")}</div>`
+          : `<p class="muted">What was wrong and how you fixed it. It builds your Mercedes knowledge base.</p>`}
+      </div>`;
+  }
+
+  function bindJobExtras(j) {
+    $("#ciEdit").onclick = () => checkinDialog(j);
+    $("#fcAdd").onclick = () => faultDialog(null, j);
+    $$("[data-fc]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); faultDialog(state.faults.find((f) => f.id === a.dataset.fc)); }));
+    const pc = $("#jPrint");
+    if (pc) pc.onclick = () => printJobCard(j);
+  }
+
+  function checkinDialog(j) {
+    const ci = j.checkin || {};
+    let fuel = ci.fuel || "";
+    const m = modal("Check-in", `
+      <label>Fuel level</label><div class="seg" id="ciFuel" role="group" aria-label="Fuel level">${FUEL.map((f) => `<button type="button" class="${f === fuel ? "on" : ""}" data-f="${f}">${f}</button>`).join("")}</div>
+      <div class="fgrid"><div><label for="ciKeys">Keys received</label><input id="ciKeys" value="${esc(ci.keys || "")}" placeholder="e.g. 1 key + spare"></div>
+        <div><label for="ciItems">Items left in the car</label><input id="ciItems" value="${esc(ci.items || "")}" placeholder="e.g. child seat, umbrella"></div></div>
+      <label for="ciNotes">Notes</label><textarea id="ciNotes" rows="2" placeholder="What the customer said, anything unusual">${esc(ci.notes || "")}</textarea>
+      <div class="btns"><label class="btn alt upload">${icon("camera")}<span id="ciOdoL">${ci.odoPhotoId ? "Replace odometer photo" : "Odometer photo"}</span><input type="file" id="ciOdo" accept="image/*" capture="environment"></label></div>
+      <p class="hint">Scratches and dents go on the car's <a href="#/vehicles/${plateKey(j.plate)}/condition?job=${encodeURIComponent(docNo(j))}">Body condition</a> page.</p>
+      <div class="btns"><button type="button" class="btn" id="ciSave">${icon("check")}Save check-in</button></div>`);
+    let file = null;
+    m.$("#ciFuel").onclick = (e) => {
+      const b = e.target.closest("[data-f]");
+      if (!b) return;
+      fuel = b.dataset.f;
+      $$("#ciFuel button", m.el).forEach((x) => x.classList.toggle("on", x === b));
+    };
+    m.$("#ciOdo").onchange = async (e) => { file = await shrink(e.target.files[0]); m.$("#ciOdoL").textContent = file ? "Photo added ✓" : "Odometer photo"; };
+    m.$("#ciSave").onclick = async (e) => {
+      const fd = new FormData();
+      if (file) fd.append("file", file);
+      fd.append("data", JSON.stringify({ fuel, keys: m.$("#ciKeys").value, items: m.$("#ciItems").value, notes: m.$("#ciNotes").value }));
+      busy(e.currentTarget, true, "Saving…");
+      try {
+        replaceJob(await api(`/jobs/${j.id}/checkin`, { method: "POST", form: fd }));
+        m.close();
+        toast("Check-in saved");
+        pageJob(j.id);
+      } catch (err) {
+        toast(err.message);
+        busy(e.currentTarget, false);
+      }
+    };
+  }
+
+  function faultDialog(f, j) {
+    const car = j ? vehicleByKey(plateKey(j.plate)) : null;
+    const d = f || { makeModel: j?.car || "", engine: car?.engine || "", mileageKm: j?.mileageKm || "", docNo: j ? docNo(j) : "", plate: j?.plate || "", jobId: j?.id || "", date: todayKL() };
+    const ta = (k, label, ph, rows = 2) => `<label for="f_${k}">${label}</label><textarea id="f_${k}" name="${k}" rows="${rows}" placeholder="${ph}">${esc(d[k] || "")}</textarea>`;
+    const m = modal(f ? "Fault case" : "Record fault case", `<form id="ff" novalidate>
+      <div class="fgrid"><div class="full"><label for="f_title">Title</label><input id="f_title" name="title" value="${esc(d.title || "")}" placeholder="Leave empty: made from the car and the symptom"></div>
+        <div><label for="f_makeModel">Make &amp; model</label><input id="f_makeModel" name="makeModel" value="${esc(d.makeModel)}"></div>
+        <div><label for="f_engine">Engine</label><input id="f_engine" name="engine" value="${esc(d.engine || "")}" placeholder="e.g. M274, OM651"></div>
+        <div><label for="f_mileageKm">Mileage (km)</label><input id="f_mileageKm" name="mileageKm" type="number" inputmode="numeric" value="${esc(d.mileageKm ?? "")}"></div>
+        <div><label for="f_hours">Hours spent</label><input id="f_hours" name="hours" type="number" step="0.1" inputmode="decimal" value="${esc(d.hours ?? "")}"></div></div>
+      ${ta("symptom", "Symptom (what the customer noticed)", "e.g. Coolant level drops, no visible leak")}
+      ${ta("codes", "Fault codes", "e.g. P0128, 2B9A00", 1)}
+      ${ta("tests", "Tests done", "e.g. Pressure test 1.4 bar for 15 min, UV dye")}
+      ${ta("cause", "Root cause", "e.g. Water pump seal weeping when hot")}
+      ${ta("fix", "Fix", "e.g. Replaced water pump and thermostat, bled the system")}
+      ${ta("parts", "Parts used", "e.g. water pump, thermostat, coolant", 1)}
+      <div class="fgrid"><div><label for="f_tags">Tags</label><input id="f_tags" name="tags" value="${esc(d.tags || "")}" placeholder="cooling, W205"></div>
+        <div><label style="display:flex;gap:8px;align-items:center;margin-top:36px"><input type="checkbox" name="verified" ${d.verified ? "checked" : ""} style="width:20px;min-height:20px">Fix verified (car checked after)</label></div></div>
+      ${d.docNo ? `<p class="hint">Job ${esc(d.docNo)}. No customer names are kept here, so this can feed the Workshop Datahub.</p>` : ""}
+      <div class="btns"><button class="btn" type="submit">${icon("check")}Save</button></div></form>`, { wide: true });
+    m.$("#ff").onsubmit = async (e) => {
+      e.preventDefault();
+      const b = formObj(e.target);
+      b.verified = e.target.elements.verified.checked;
+      if (!f) Object.assign(b, { jobId: d.jobId, plate: d.plate, docNo: d.docNo, date: d.date });
+      busy(e.submitter, true, "Saving…");
+      try {
+        if (f) await api(`/faults/${f.id}`, { method: "PATCH", body: b });
+        else await api("/faults", { method: "POST", body: b });
+        await refresh("faults");
+        m.close();
+        toast("Fault case saved");
+        route();
+      } catch (err) {
+        toast(err.message);
+        busy(e.submitter, false);
+      }
+    };
+  }
+
+  function pageFaults() {
+    crumbs([["Fault cases"]]);
+    view.innerHTML = `${pageHead("Fault cases", { sub: "Your Mercedes knowledge base: symptom → cause → fix", acts: `<button class="btn" id="fcNew">${icon("plus")}New fault case</button>` })}
+      <div class="toolbar"><div class="search">${icon("search")}<input id="fq" type="search" placeholder="Search symptom, code, model, engine, cause" aria-label="Search fault cases"></div></div>
+      <div id="fl"></div>`;
+    const draw = () => {
+      const words = $("#fq").value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      const list = state.faults.filter((f) => {
+        const hay = `${f.title} ${f.makeModel} ${f.engine} ${f.symptom} ${f.codes} ${f.tests} ${f.cause} ${f.fix} ${f.parts} ${f.tags}`.toLowerCase();
+        return words.every((w) => hay.includes(w));
+      });
+      $("#fl").innerHTML = list.length
+        ? `<div class="grid g2">${list.map((f) => `<a class="card" style="display:block;text-decoration:none;color:inherit;margin:0" data-fc="${f.id}" href="#/faults">
+            <div class="card-h" style="margin-bottom:4px"><h2>${esc(f.title)}</h2><div class="r">${f.verified ? pill("Verified", "ok") : pill("Not verified")}</div></div>
+            <div class="muted">${esc([f.makeModel, f.engine, f.mileageKm ? km(f.mileageKm) : "", dmy(f.date)].filter(Boolean).join(" · "))}</div>
+            ${f.codes ? `<div class="chips" style="margin:8px 0 0">${f.codes.split(/[\s,;]+/).filter(Boolean).slice(0, 6).map((c) => `<span class="pill info">${esc(c)}</span>`).join("")}</div>` : ""}
+            <dl class="kv" style="margin-top:10px"><dt>Symptom</dt><dd>${esc(f.symptom) || "—"}</dd><dt>Cause</dt><dd>${esc(f.cause) || "—"}</dd><dt>Fix</dt><dd>${esc(f.fix) || "—"}</dd></dl></a>`).join("")}</div>`
+        : `<div class="card">${emptyBox("book", state.faults.length ? "No fault case matches." : "No fault cases yet. Record one from a job page, or press New fault case.")}</div>`;
+      $$("#fl [data-fc]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); faultDialog(state.faults.find((x) => x.id === a.dataset.fc)); }));
+    };
+    $("#fq").oninput = draw;
+    $("#fcNew").onclick = () => faultDialog(null, null);
+    draw();
+  }
+
+  function pagePackages() {
+    crumbs([["Packages"]]);
+    view.innerHTML = `${pageHead("Packages", { sub: "Ready-made jobs. One tap adds them to an estimate.", acts: `<a class="btn" href="#/packages/new">${icon("plus")}New package</a>` })}
+      <div class="card flush">${state.packages.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Package</th><th class="d">Customer request</th><th class="num d">Lines</th><th class="num">Price now</th><th>Status</th></tr></thead><tbody>
+        ${state.packages.map((p) => `<tr class="tap" data-href="#/packages/${p.id}"><td><a class="strong" style="color:inherit;text-decoration:none" href="#/packages/${p.id}">${esc(p.name)}</a>${p.setsService ? `<div class="sm">Sets next service</div>` : ""}</td>
+          <td class="d">${esc(p.request)}</td><td class="num d">${p.lines.length}</td><td class="num strong">${rm(lineTotal(packageLines(p)))}</td><td>${p.active ? pill("Active", "ok") : pill("Hidden")}</td></tr>`).join("")}</tbody></table></div>`
+        : emptyBox("box", "No packages yet. Make one for each job you do often: Service A, Service B, front brake pads, gearbox oil change…")}</div>`;
+  }
+
+  function packageForm(id) {
+    const p = id === "new" ? { name: "", request: "", lines: [], active: true, setsService: false, notes: "" } : state.packages.find((x) => x.id === id);
+    if (!p) return (location.hash = "#/packages");
+    crumbs([["Packages", "#/packages"], [p.name || "New package"]]);
+    const chk = (name, on, label) => `<label style="display:flex;gap:8px;align-items:center;font-weight:500"><input type="checkbox" name="${name}" ${on ? "checked" : ""} style="width:20px;min-height:20px">${label}</label>`;
+    view.innerHTML = `${pageHead(id === "new" ? "New package" : esc(p.name), { back: "#/packages" })}${partOptions()}
+      <form id="pkf" novalidate><div class="card"><div class="fgrid">
+        <div><label for="pk_name" class="req">Package name</label><input id="pk_name" name="pname" value="${esc(p.name)}" placeholder="e.g. Service B (petrol)"></div>
+        <div><label for="pk_notes">Notes (only you see this)</label><input id="pk_notes" name="notes" value="${esc(p.notes)}"></div>
+        <div class="full">${chk("setsService", p.setsService, "This is a service: set the car's next service reminder when invoiced")}</div>
+        <div class="full">${chk("active", p.active, "Show in the estimate's package list")}</div>
+      </div></div>
+      <div class="card"><h2>Request and lines</h2><p class="muted" style="margin:-6px 0 6px">Parts picked from stock always use today's selling price.</p>
+        <div id="groups">${groupHtml({ request: p.request, lines: packageLines(p) }, 0)}</div>
+        <div class="totbar"><div class="t grand">Package price now<b id="pkT">RM 0.00</b></div><div style="margin-left:auto"><button class="btn" type="submit">${icon("check")}Save package</button></div></div></div></form>`;
+    const box = $("#groups");
+    const tot = () => ($("#pkT").textContent = rm(lineTotal(readLines(box))));
+    bindGroups(box, tot);
+    $(".gx", box).hidden = true;
+    tot();
+    $("#pkf").onsubmit = async (e) => {
+      e.preventDefault();
+      const el = e.target.elements;
+      const body = { name: el.pname.value, notes: el.notes.value, setsService: el.setsService.checked, active: el.active.checked, request: $("[name=request]", box).value, lines: readLines(box) };
+      busy(e.submitter, true, "Saving…");
+      try {
+        if (id === "new") await api("/packages", { method: "POST", body });
+        else await api(`/packages/${id}`, { method: "PATCH", body });
+        await refresh("packages");
+        toast("Package saved");
+        location.hash = "#/packages";
+      } catch (err) {
+        toast(err.message);
+        busy(e.submitter, false);
+      }
+    };
+  }
+
+  function pageInspection(id) {
+    const j = state.jobs.find((x) => x.id === id);
+    if (!j) return (location.hash = "#/jobs");
+    crumbs([["Jobs", "#/jobs"], [docNo(j), `#/jobs/${j.id}`], ["Inspection"]]);
+    const saved = new Map((j.inspection?.items || []).map((i) => [i.key, i]));
+    const items = CHECKLIST.flatMap(([g, list]) => list.map(([key, label, unit]) => ({ key, group: g, label, unit, status: "", value: "", note: "", photoIds: [], ...(saved.get(key) || {}) })));
+    const segBtns = (it) => ["ok", "soon", "now", "na"].map((st) => `<button type="button" data-s="${st}" class="${it.status === st ? "on s-" + st : ""}" aria-pressed="${it.status === st}">${INS_ST[st][0]}</button>`).join("");
+    const row = (it) => `<div class="insrow" data-key="${it.key}">
+        <div class="ih"><b>${esc(it.label)}</b><div class="seg st" role="group" aria-label="${esc(it.label)}">${segBtns(it)}</div></div>
+        <div class="ib"><input name="value" placeholder="${it.unit ? `Reading (${esc(it.unit)})` : "Reading"}" value="${esc(it.value)}" aria-label="${esc(it.label)} reading">
+          <input name="note" placeholder="Note" value="${esc(it.note)}" aria-label="${esc(it.label)} note">
+          <label class="btn alt sm upload" aria-label="Add photo for ${esc(it.label)}">${icon("camera")}<span class="pc">${it.photoIds.length || ""}</span><input type="file" accept="image/*" capture="environment"></label></div>
+        <div class="phs">${it.photoIds.map((pid) => (j.photos[pid] ? `<img class="thumb" src="${esc(j.photos[pid].thumb)}" alt="">` : "")).join("")}</div>
+      </div>`;
+    view.innerHTML = `${pageHead("Inspection", { back: `#/jobs/${j.id}`, sub: `${esc(j.car)} ${plateTag(j.plate)}`, acts: `<button type="button" class="btn alt" id="allOk">${icon("check")}Mark the rest OK</button>` })}
+      <p class="muted" style="margin-top:-8px">Tap OK, Soon or Now for each item. Add a reading, a note and photos where useful. The customer sees this report without prices.</p>
+      <form id="insf">${CHECKLIST.map(([g, list]) => `<div class="card"><h2>${esc(g)}</h2>${list.map(([key]) => row(items.find((i) => i.key === key))).join("")}</div>`).join("")}
+        <div class="card"><label for="insSum">Summary for the customer</label><textarea id="insSum" rows="2" placeholder="e.g. Front brake pads are at 2 mm and should be replaced now. Everything else is fine.">${esc(j.inspection?.summary || "")}</textarea>
+        <div class="btns"><button class="btn" type="submit">${icon("check")}Save inspection</button></div></div></form>`;
+    const form = $("#insf");
+    const paint = (el) => {
+      const it = items.find((i) => i.key === el.dataset.key);
+      $$(".st button", el).forEach((x) => { const on = x.dataset.s === it.status; x.className = on ? "on s-" + x.dataset.s : ""; x.setAttribute("aria-pressed", on); });
+    };
+    form.addEventListener("click", (e) => {
+      const b = e.target.closest(".st [data-s]");
+      if (!b) return;
+      const el = b.closest(".insrow");
+      const it = items.find((i) => i.key === el.dataset.key);
+      it.status = it.status === b.dataset.s ? "" : b.dataset.s;
+      paint(el);
+    });
+    form.addEventListener("change", async (e) => {
+      if (e.target.type !== "file") return;
+      const el = e.target.closest(".insrow");
+      const it = items.find((i) => i.key === el.dataset.key);
+      const file = await shrink(e.target.files[0]);
+      e.target.value = "";
+      if (!file) return;
+      const fd = new FormData();
+      fd.append("file", file);
+      toast("Uploading photo…");
+      try {
+        const ph = await api(`/jobs/${j.id}/photo`, { method: "POST", form: fd });
+        j.photos[ph.id] = { url: ph.url, thumb: ph.thumb };
+        it.photoIds.push(ph.id);
+        $(".phs", el).insertAdjacentHTML("beforeend", `<img class="thumb" src="${esc(ph.thumb)}" alt="">`);
+        $(".pc", el).textContent = it.photoIds.length;
+        toast("Photo added. Remember to save.");
+      } catch (err) {
+        toast(err.message);
+      }
+    });
+    $("#allOk").onclick = () => {
+      items.forEach((it) => { if (!it.status) it.status = "ok"; });
+      $$(".insrow").forEach(paint);
+    };
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      $$(".insrow").forEach((el) => {
+        const it = items.find((i) => i.key === el.dataset.key);
+        it.value = $("[name=value]", el).value;
+        it.note = $("[name=note]", el).value;
+      });
+      busy(e.submitter, true, "Saving…");
+      try {
+        replaceJob(await api(`/jobs/${j.id}/inspection`, { method: "PUT", body: { summary: $("#insSum").value, items: items.map(({ unit, ...x }) => x) } }));
+        toast("Inspection saved");
+        location.hash = `#/jobs/${j.id}`;
+      } catch (err) {
+        toast(err.message);
+        busy(e.submitter, false);
+      }
+    };
+  }
+
+  // Printable job card for the mechanic: no prices.
+  function printJobCard(j) {
+    const w = window.open("", "_blank");
+    if (!w) return toast("Allow pop-ups to print the job card.");
+    const v = vehicleByKey(plateKey(j.plate));
+    const ci = j.checkin || {};
+    const K = CarDiagram.KINDS;
+    const marks = (v?.marks || []).filter((m) => !m.fixed);
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Job card ${esc(docNo(j))}</title><style>
+      body{font:13px/1.45 Arial,sans-serif;color:#111;margin:0}.p{max-width:190mm;margin:0 auto;padding:10mm 6mm}
+      h1{font-size:22px;margin:0}.top{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #111;padding-bottom:6px}
+      table{width:100%;border-collapse:collapse;margin-top:10px}td,th{border:1px solid #888;padding:5px 7px;text-align:left;vertical-align:top}th{background:#e8e8e8;font-size:12px}
+      .g{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.b{border:1px solid #888;padding:6px 8px}.b b{display:block;font-size:11px;text-transform:uppercase;color:#444}
+      .chk{width:15px;height:15px;border:1.5px solid #111;display:inline-block;vertical-align:-3px}.ln{height:24px;border-bottom:1px solid #aaa}
+      @page{size:A4;margin:10mm}@media print{.p{padding:0}}
+    </style></head><body><div class="p">
+      <div class="top"><div><h1>JOB CARD</h1><div>${esc(brandName())}</div></div><div style="text-align:right"><b style="font-size:16px">${esc(docNo(j))}</b><br>${dmy(jobDate(j))}</div></div>
+      <div class="g"><div class="b"><b>Car</b>${esc(j.car)} · ${esc(j.plate)}<br>${km(j.mileageKm)}${v?.chassisNo ? " · VIN " + esc(v.chassisNo) : ""}</div>
+        <div class="b"><b>Customer</b>${esc(j.customerName)} · ${esc(j.phone)}</div>
+        <div class="b"><b>Check-in</b>Fuel ${esc(ci.fuel || "—")} · Keys ${esc(ci.keys || "—")}<br>Left in car: ${esc(ci.items || "—")}</div>
+        <div class="b"><b>Body marks</b>${marks.length ? marks.map((m) => `${esc(m.area)} (${esc((K[m.kind] || K.other).label)})`).join(", ") : "None recorded"}</div></div>
+      ${ci.notes ? `<div class="b" style="margin-top:8px"><b>Customer said</b>${esc(ci.notes)}</div>` : ""}
+      <table><thead><tr><th style="width:38px">Done</th><th>Work</th><th style="width:44px">Qty</th><th style="width:170px">Mechanic notes</th></tr></thead><tbody>
+      ${j.groups.map((g) => `<tr><td></td><td colspan="3"><b>${esc(g.code)} ${esc(g.request)}</b></td></tr>${g.lines.map((l) => `<tr><td><span class="chk"></span></td><td>${esc(l.description)}${l.partNo ? ` <small>(${esc(l.partNo)})</small>` : ""}</td><td>${l.type === "part" ? esc(l.qty) : ""}</td><td></td></tr>`).join("")}`).join("")}
+      </tbody></table>
+      <div class="b" style="margin-top:10px"><b>Extra findings / parts needed</b><div class="ln"></div><div class="ln"></div><div class="ln"></div></div>
+      <div class="g" style="margin-top:14px"><div class="b"><b>Mechanic</b><br>Name / sign: ______________________</div><div class="b"><b>Final check</b><br><span class="chk"></span> Road test &nbsp; <span class="chk"></span> Fluids &nbsp; <span class="chk"></span> Clean</div></div>
+    </div><script>window.onload=function(){setTimeout(function(){window.print()},250)}<\/script></body></html>`);
+    w.document.close();
   }
 
   // ================= VEHICLES =================

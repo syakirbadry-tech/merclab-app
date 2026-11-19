@@ -5,6 +5,7 @@ const db = require("./airtable");
 const M = require("./money");
 const { render, DocumentError } = require("./template");
 const { jobOut, paymentOut, loadSettings, companyFor } = require("./routes");
+const W = require("./workshop");
 
 const klTime = (iso) => (iso ? new Date(new Date(iso).getTime() + 8 * 3600e3).toISOString().slice(11, 16) : "");
 
@@ -29,6 +30,7 @@ function jobDoc(job, type) {
     groups: isEstimate && job.estimateGroups ? job.estimateGroups : job.groups,
     surcharge: d.surcharge || 0,
     menus: d.menus || 0,
+    discount: d.discount || 0,
     repairDate: isEstimate ? d.plannedDate : job.repairDate,
     dueDate: job.dueDate,
     invoiceNo: job.invoiceNo || null,
@@ -44,7 +46,7 @@ function jobDoc(job, type) {
 function receiptDoc(payment, job, jobPayments, company) {
   const paidInvoice = !!job.invoiceNo && payment.docNo === job.invoiceNo;
   const doc = jobDoc(job, paidInvoice ? "invoice" : "estimate");
-  const totals = M.computeTotals(doc.groups, { surcharge: doc.surcharge, menus: doc.menus, sst: { on: !!company.sstRegistrationNo, rate: company.serviceTaxRate }, round5: !!company.roundTo5Sen });
+  const totals = M.computeTotals(doc.groups, { surcharge: doc.surcharge, menus: doc.menus, discount: doc.discount, sst: { on: !!company.sstRegistrationNo, rate: company.serviceTaxRate }, round5: !!company.roundTo5Sen });
   const ordered = jobPayments.slice().sort((a, b) => a.receiptNo.localeCompare(b.receiptNo));
   let paidSen = 0;
   for (const p of ordered) {
@@ -75,14 +77,22 @@ async function docRoute(req, res) {
   const token = req.params.token;
   res.setHeader("X-Robots-Tag", "noindex, nofollow");
   res.setHeader("Cache-Control", "no-store");
-  if (!/^[qir][a-f0-9]{32}$/.test(token)) return res.status(404).send("Not found");
+  if (!/^[qirh][a-f0-9]{32}$/.test(token)) return res.status(404).send("Not found");
   try {
     const company = companyFor(await loadSettings());
     let doc;
+    if (token[0] === "h") {
+      const row = await findByToken("quotes", "Inspection token", token);
+      if (!row) return res.status(404).send("Not found");
+      return res.send(W.inspectionPage(jobOut(row), company));
+    }
     if (token[0] === "q" || token[0] === "i") {
       const row = await findByToken("quotes", token[0] === "q" ? "Link token" : "Invoice token", token);
       if (!row) return res.status(404).send("Not found");
-      doc = jobDoc(jobOut(row), token[0] === "q" ? "estimate" : "invoice");
+      const job = jobOut(row);
+      doc = jobDoc(job, token[0] === "q" ? "estimate" : "invoice");
+      const html = render(doc, company);
+      return res.send(token[0] === "q" ? W.addApproval(html, job, token) : html);
     } else {
       const row = await findByToken("payments", "Link token", token);
       if (!row) return res.status(404).send("Not found");
@@ -99,4 +109,6 @@ async function docRoute(req, res) {
   }
 }
 
-module.exports = { docRoute, jobDoc, receiptDoc };
+const approveRoute = (req, res) => W.approveRoute(req, res, { jobOut });
+
+module.exports = { docRoute, approveRoute, jobDoc, receiptDoc };

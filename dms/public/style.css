@@ -340,3 +340,22 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 @media (max-width: 860px) {
   .stepper button { min-width: 0; font-size: 11.5px; padding: 8px 2px 4px; }
 }
+
+/* inspection checklist */
+.insrow { border-top: 1px solid var(--line); padding: 12px 0; }
+.insrow:first-of-type { border-top: 0; padding-top: 4px; }
+.insrow .ih { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between; }
+.insrow .ib { display: grid; grid-template-columns: 150px minmax(0, 1fr) auto; gap: 8px; margin-top: 8px; }
+.insrow .phs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.insrow .phs:empty { display: none; }
+.seg.st button { min-width: 52px; }
+.seg button.s-ok { background: var(--ok); color: #fff; }
+.seg button.s-soon { background: #d97706; color: #fff; }
+.seg button.s-now { background: var(--bad); color: #fff; }
+.seg button.s-na { background: #64748b; color: #fff; }
+@media (max-width: 860px) {
+  .insrow .ib { grid-template-columns: minmax(0, 1fr) auto; }
+  .insrow .ib input[name=note] { grid-column: 1 / -1; grid-row: 2; }
+  .seg.st { width: 100%; }
+  .seg.st button { flex: 1; }
+}

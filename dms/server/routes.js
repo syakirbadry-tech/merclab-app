@@ -329,6 +329,12 @@ function jobOut(r) {
     token: f["Link token"] || "",
     invoiceToken: f["Invoice token"] || "",
     notes: f.Notes || "",
+    checkin: parseJson(f["Check-in JSON"], null),
+    inspection: parseJson(f["Inspection JSON"], null),
+    inspectionToken: f["Inspection token"] || "",
+    approvedAt: f["Approved at"] || "",
+    approvedName: f["Approved name"] || "",
+    photos: Object.fromEntries((Array.isArray(f["Job photos"]) ? f["Job photos"] : []).map((a) => [a.id, { url: a.url, thumb: a.thumbnails?.large?.url || a.url }])),
   };
 }
 
@@ -366,6 +372,7 @@ function parseJob(d) {
     refs: { accountNo: text(d.accountNo, 30), orderNo: text(d.orderNo, 30), referenceNo: text(d.referenceNo, 30), wipNo: text(d.wipNo, 30), jobNo: text(d.jobNo, 30) },
     surcharge: money(d.surcharge, "Surcharge"),
     menus: money(d.menus, "Menus"),
+    discount: money(d.discount, "Discount"),
     plannedDate: isoOrEmpty(d.plannedDate),
     repairDate: isoOrEmpty(d.repairDate),
     dueDate: isoOrEmpty(d.dueDate),
@@ -374,7 +381,7 @@ function parseJob(d) {
   };
 }
 
-const totalsFor = (job) => M.computeTotals(job.groups, { surcharge: job.surcharge, menus: job.menus, sst: { on: !!company.sstRegistrationNo, rate: company.serviceTaxRate }, round5: !!company.roundTo5Sen });
+const totalsFor = (job) => M.computeTotals(job.groups, { surcharge: job.surcharge, menus: job.menus, discount: job.discount, sst: { on: !!company.sstRegistrationNo, rate: company.serviceTaxRate }, round5: !!company.roundTo5Sen });
 
 const readable = (groups) => groups.map((g) => [`${g.code} ${g.request}`.trim(), ...g.lines.map((l) => `  ${l.type === "part" ? `${l.qty} x ` : ""}${l.description} = RM${M.fmt(M.lineSen(l))}`)].join("\n")).join("\n");
 
@@ -389,6 +396,7 @@ async function saveCustomer(customerId, job) {
 
 function jobFields(job, details) {
   const t = totalsFor(job);
+  if (job.discount && Math.round(job.discount * 100) > t.gross) throw bad("The discount cannot be more than the total.");
   return {
     t,
     fields: {
@@ -417,6 +425,7 @@ const detailsOf = (job, prev = {}) => ({
   ...job.refs,
   surcharge: job.surcharge,
   menus: job.menus,
+  discount: job.discount,
   plannedDate: job.plannedDate || prev.plannedDate || "",
 });
 
@@ -681,5 +690,6 @@ router.post("/payments", oneFile, wrap(async (req, res) => {
 }));
 
 V.register(router, { wrap, oneFile, fileOf, bodyData, jobOut, customerOut });
+require("./workshop").register(router, { wrap, oneFile, fileOf, bodyData, jobOut, newToken });
 
 module.exports = { router, rankMatches, jobOut, paymentOut, partOut, loadSettings, companyFor, parseJob, docNoOf };

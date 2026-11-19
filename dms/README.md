@@ -12,6 +12,11 @@ A dark menu on the left (on a phone: the Menu button and the bar at the bottom),
   - *Details:* technical data, next service date / km, owner, notes.
   - *Service history:* every job for that car, money spent and owing.
   - *Body condition:* tap the car drawing (left, right, top, front, rear) to mark a scratch, dent, stone chip, repaint, crack or rust, with a note and a photo. Mark it fixed later. Use it at check-in with the customer.
+- **Packages:** ready-made jobs (Service A/B, brake pads…). Pick one in the estimate and its request and lines are added, with today's stock prices.
+- **Fault cases:** symptom, fault codes, tests, root cause and fix for each job, searchable. No customer names, so it can feed the Workshop Datahub.
+- **On each job:** check-in (fuel, keys, items left, odometer photo), an inspection checklist (OK / Soon / Now with readings and photos) with a report link for the customer (no prices), a fault case, and a printable job card for the mechanic (no prices).
+- **Online approval:** the estimate link has an "Approve estimate" box. The customer types their name; the job shows "Approved online" and moves to In workshop.
+- **Discount** on estimates and invoices (comes off before tax; printed as "Less Discount").
 - **Customers:** a table with phone, cars, last visit, spent and owes, and a page per customer.
 - **Parts & stock**, **Money** (receipts and who owes you, with a WhatsApp reminder button) and **Settings**.
 - A search box at the top finds a plate, a customer or an EST / INV number.

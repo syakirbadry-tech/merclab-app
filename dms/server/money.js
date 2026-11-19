@@ -71,7 +71,7 @@ function cleanGroups(groups) {
 const lineSen = (l) => (l.type === "part" ? Math.round(l.qty * toSen(l.unitPrice)) : toSen(l.amount));
 
 // sst: { on: boolean, rate: 0.08 }, round5: boolean
-function computeTotals(groups, { surcharge = 0, menus = 0, sst = { on: false, rate: 0.08 }, round5 = false } = {}) {
+function computeTotals(groups, { surcharge = 0, menus = 0, discount = 0, sst = { on: false, rate: 0.08 }, round5 = false } = {}) {
   let parts = 0, labour = 0, sublet = 0, taxable = 0;
   for (const g of groups) {
     for (const l of g.lines) {
@@ -84,11 +84,15 @@ function computeTotals(groups, { surcharge = 0, menus = 0, sst = { on: false, ra
   }
   const surchargeSen = toSen(surcharge) || 0;
   const menusSen = toSen(menus) || 0;
-  const subtotal = parts + labour + sublet + surchargeSen + menusSen;
+  const gross = parts + labour + sublet + surchargeSen + menusSen;
+  // A discount comes off before tax; the taxable part shrinks in proportion.
+  const discountSen = Math.max(0, Math.min(toSen(discount) || 0, gross));
+  const subtotal = gross - discountSen;
+  if (discountSen && gross) taxable = Math.round((taxable * subtotal) / gross);
   const tax = sst.on ? Math.round(taxable * sst.rate) : 0;
   const inclTax = subtotal + tax;
   const grand = round5 ? roundTo5Sen(inclTax) : inclTax;
-  return { parts, labour, sublet, surcharge: surchargeSen, menus: menusSen, subtotal, taxable, tax, inclTax, rounding: grand - inclTax, grand };
+  return { parts, labour, sublet, surcharge: surchargeSen, menus: menusSen, discount: discountSen, gross, subtotal, taxable, tax, inclTax, rounding: grand - inclTax, grand };
 }
 
 module.exports = { LINE_TYPES, toSen, fmt, roundTo5Sen, cleanGroups, computeTotals, lineSen };
