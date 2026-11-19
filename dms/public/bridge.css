@@ -87,3 +87,15 @@ label.btn.sm { font-size: 13.5px; }
   .card, .tile { box-shadow: none !important; backdrop-filter: none !important; background: #fff !important; border-color: #ccc !important; break-inside: avoid; }
   .fs-st { break-before: page; }
 }
+
+label.chip { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; }
+
+/* phone dashboard: swipe tiles, "Needs action" first */
+.dash-todo { display: none; }
+@media (max-width: 860px) {
+  .dash-tiles { grid-auto-flow: column; grid-template-columns: none; grid-auto-columns: minmax(172px, 46%); overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; margin: 0 -16px 16px !important; padding: 2px 16px; }
+  .dash-tiles .tile { scroll-snap-align: start; }
+  .dash-tiles .tile .val { font-size: 22px; }
+  .dash-todo { display: block; margin-bottom: 16px; padding: 12px; }
+  .dash-todo .todo { padding: 10px 4px; }
+}

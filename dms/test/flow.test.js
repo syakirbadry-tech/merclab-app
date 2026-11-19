@@ -875,3 +875,34 @@ test("import sets opening balances once, and the new 'Parts for jobs' cost type 
   await call("POST", "/api/import", { file: { type: "application/json", content: JSON.stringify(data) } });
   assert.equal(store.settings[0].fields["Opening cash"], 2453.17, "not overwritten");
 });
+
+test("Assistant: off without a key, kill switch, answers read-only from the context", async () => {
+  reset();
+  await login();
+  const saved = { key: process.env.GEMINI_API_KEY, off: process.env.ASSISTANT_OFF };
+  delete process.env.GEMINI_API_KEY;
+  let r = await call("POST", "/api/assistant/ask", { body: { question: "Who owes us?" } });
+  assert.equal(r.status, 503);
+  process.env.GEMINI_API_KEY = "test-key";
+  process.env.ASSISTANT_OFF = "1";
+  r = await call("POST", "/api/assistant/ask", { body: { question: "Who owes us?" } });
+  assert.equal(r.status, 503);
+  delete process.env.ASSISTANT_OFF;
+  const realFetch = global.fetch;
+  let sent = "";
+  global.fetch = async (url, opts) => {
+    if (!String(url).includes("generativelanguage")) return realFetch(url, opts);
+    sent = JSON.parse(opts.body).contents[0].parts[0].text;
+    return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: JSON.stringify({ answer: "Tuan Haji Rosli owes RM 1,563.60.", sources: ["INV-2026-00036"] }) }] } }] }) };
+  };
+  try {
+    r = await call("POST", "/api/assistant/ask", { body: { question: "Who owes us?", role: "ML-CFO", context: { owed: [{ no: "INV-2026-00036", balance: 1563.6 }] } } });
+  } finally {
+    global.fetch = realFetch;
+    if (saved.key === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = saved.key;
+  }
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.sources, ["INV-2026-00036"]);
+  assert.ok(sent.includes("INV-2026-00036") && sent.includes("the CFO") && sent.includes("cannot save, change, send, pay or delete"));
+  for (const t of Object.keys(store)) if (t !== "settings") assert.equal(store[t].length, 0, `${t} unchanged`);
+});

@@ -164,4 +164,4 @@ async function readPayment(file) {
   return cleanPayment(await module.exports.callGemini({ prompt: PAYMENT_PROMPT, schema: PAYMENT_SCHEMA, ...file }));
 }
 
-module.exports = { callGemini, readPurchase, readPayment, cleanPurchase, cleanPayment, cleanDate, METHODS, PURCHASE_SCHEMA, PAYMENT_SCHEMA };
+module.exports = { MODEL, callGemini, readPurchase, readPayment, cleanPurchase, cleanPayment, cleanDate, METHODS, PURCHASE_SCHEMA, PAYMENT_SCHEMA };

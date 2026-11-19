@@ -414,6 +414,7 @@
       if (sec === "customers") return a ? pageCustomer(a) : pageCustomers();
       if (sec === "parts") return a === "count" ? pageStockCount() : pageParts(q);
       if (sec === "inbox") return pageInbox();
+      if (sec === "assistant") return pageAssistant();
       if (sec === "expenses") return pageExpenses(q);
       if (sec === "creditnotes") return pageCredits();
       if (sec === "pnl") return pagePnl(q);
@@ -423,6 +424,7 @@
       if (sec === "orders") return pageOrders(q);
       if (sec === "packages") return a ? packageForm(a) : pagePackages();
       if (sec === "faults") return pageFaults();
+      if (sec === "hub") return pageHub(q);
       if (sec === "bookings") return pageBookings(q);
       if (sec === "followups") return pageFollowups(q);
       if (sec === "reminders") return pageReminders();
@@ -463,12 +465,13 @@
 
     view.innerHTML = `
       ${pageHead("Dashboard", { sub: new Date(today + "T00:00:00Z").toLocaleDateString("en-MY", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }), acts: `<a class="btn alt" href="#/money?upload=1">${icon("upload")}Payment slip</a><a class="btn" href="#/jobs/new">${icon("plus")}New estimate</a>` })}
-      <div class="grid g4" style="margin-bottom:16px">
+      <div class="grid g4 dash-tiles" style="margin-bottom:16px">
         ${tile("#/money", "money", "Money in today", rm(inToday), `${monthName}: ${rm(inMonth)}`)}
         ${tile("#/jobs?f=invoices", "receipt", `Invoiced in ${monthName}`, rm(invMonth.reduce((t, j) => t + j.total, 0)), `${invMonth.length} invoice${invMonth.length === 1 ? "" : "s"}`)}
         ${tile("#/money?tab=owed", "alert", "Owed to you", rm(owed.reduce((t, j) => t + j.balance, 0)), `${owed.length} unpaid invoice${owed.length === 1 ? "" : "s"}`)}
         ${tile("#/jobs?f=workshop", "car", "Cars in workshop", ws.length, `${ready} ready for pickup`)}
       </div>
+      <div class="card dash-todo"><div class="card-h"><h2>Needs action</h2><div class="r"><a class="btn ghost sm" href="#/assistant">Assistant</a></div></div>${morningBrief()}</div>
       <div class="split">
         <div>
           <div class="card">
@@ -1079,6 +1082,206 @@
     $("#fq").oninput = draw;
     $("#fcNew").onclick = () => faultDialog(null, null);
     draw();
+  }
+
+  // ---------- Merc HUB: diagnosis database ----------
+  // Every fault the workshop has solved, searchable by model (chassis code),
+  // fault code and symptom. Built from the fault cases, with no customer names
+  // or plates, so it can later be shared as the Merc HUB across workshops.
+
+  const chassisOf = (s) => (String(s || "").toUpperCase().match(/\b[WXCRSAVH]\d{3}\b/g) || [""]).pop(); // last match: "C200 W205" → W205
+  const codesOf = (s) => [...new Set(String(s || "").toUpperCase().split(/[\s,;/|]+/).filter((c) => /^[PBCU][0-9A-F]{4}(-[0-9A-F]{2,3})?$/.test(c) || /^[0-9A-F]{4,6}-[0-9A-F]{2,3}$/.test(c)))];
+
+  function hubCase(f) {
+    // The shareable form: no plate, job or customer, mileage rounded to 5,000 km.
+    return { model: f.makeModel, chassis: chassisOf(`${f.makeModel} ${f.title}`), engine: f.engine, mileageBand: f.mileageKm ? `${Math.floor(f.mileageKm / 5000) * 5}k km` : "",
+      symptom: f.symptom, codes: codesOf(f.codes), tests: f.tests, cause: f.cause, fix: f.fix, parts: f.parts, hours: f.hours, tags: f.tags, verified: f.verified, year: (f.date || "").slice(0, 4) };
+  }
+
+  function pageHub(q) {
+    crumbs([["Merc HUB"]]);
+    let model = q.get("m") || "";
+    let verifiedOnly = q.get("v") === "1";
+    const all = state.faults.map((f) => ({ f, h: hubCase(f) }));
+    const models = {};
+    const codes = {};
+    for (const { h } of all) {
+      if (h.chassis) models[h.chassis] = (models[h.chassis] || 0) + 1;
+      for (const c of h.codes) codes[c] = (codes[c] || 0) + 1;
+    }
+    view.innerHTML = `${pageHead("Merc HUB", { sub: "Diagnosis database: symptom → codes → tests → cause → fix, by Mercedes model", acts: `<button type="button" class="btn alt" id="hubExport">${icon("download")}Export for HUB</button><button class="btn" id="hubNew">${icon("plus")}New fault case</button>` })}
+      <div class="grid g4" style="margin-bottom:16px">
+        <div class="tile"><div class="lbl">${icon("layers")}Cases</div><div class="val">${all.length}</div><div class="foot">fault cases recorded</div></div>
+        <div class="tile"><div class="lbl">${icon("check")}Verified</div><div class="val">${all.filter((x) => x.h.verified).length}</div><div class="foot">fix confirmed on the car</div></div>
+        <div class="tile"><div class="lbl">${icon("car")}Models</div><div class="val">${Object.keys(models).length}</div><div class="foot">chassis codes covered</div></div>
+        <div class="tile"><div class="lbl">${icon("fault")}Fault codes</div><div class="val">${Object.keys(codes).length}</div><div class="foot">different codes logged</div></div></div>
+      <div class="split"><div>
+        <div class="toolbar"><div class="search">${icon("search")}<input id="hq" type="search" placeholder="Symptom, fault code, model, part" aria-label="Search the diagnosis database" value="${esc(q.get("q") || "")}"></div>
+          <label class="chip" style="margin:0"><input type="checkbox" id="hv" ${verifiedOnly ? "checked" : ""} style="width:auto;min-height:0;margin:0"> Verified only</label></div>
+        <div class="chips scroll" id="hm" style="margin-bottom:14px"><button type="button" class="chip" data-m="">All models</button>${Object.entries(models).sort((a, b) => b[1] - a[1]).map(([m, n]) => `<button type="button" class="chip" data-m="${esc(m)}">${esc(m)} <span class="n">${n}</span></button>`).join("")}</div>
+        <div id="hl"></div></div>
+        <div class="stack">
+          <div class="card"><div class="card-h"><h2>Most seen fault codes</h2></div>${Object.keys(codes).length ? `<div class="rows">${Object.entries(codes).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([c, n]) => `<a href="#/hub?q=${encodeURIComponent(c)}"><div class="grow"><b>${esc(c)}</b><span>${n} case${n === 1 ? "" : "s"}</span></div>${icon("cr", "s")}</a>`).join("")}</div>` : `<p class="muted">Codes appear here as you record fault cases with their codes.</p>`}</div>
+          <div class="card"><div class="card-h"><h2>About Merc HUB</h2></div>
+            <p class="muted" style="margin-top:0">The Merc HUB (Workshop Diagnostic Network) is the diagnosis database we are building for independent Mercedes-Benz workshops. Each solved job becomes a case: what the customer noticed, the codes, the tests, the root cause and the fix.</p>
+            <div class="rows">
+              <div><span class="mini">${icon("check")}</span><div class="grow"><b>Stage 1 · now</b><span>Our own cases, searchable here</span></div>${pill("Live", "ok")}</div>
+              <div><span class="mini">${icon("layers")}</span><div class="grow"><b>Stage 2 · shared HUB</b><span>Anonymised cases from partner workshops</span></div>${pill("Planned")}</div>
+              <div><span class="mini">${icon("sparkle")}</span><div class="grow"><b>Stage 3 · AI diagnosis</b><span>Likely causes suggested from symptoms and codes</span></div>${pill("Planned")}</div></div>
+            <p class="hint">No customer names, plates or prices ever leave the DMS. "Export for HUB" downloads the anonymised cases.</p></div></div></div>`;
+    const draw = () => {
+      $$("#hm [data-m]").forEach((b) => b.classList.toggle("on", b.dataset.m === model));
+      const words = $("#hq").value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      const list = all.filter(({ f, h }) => (!model || h.chassis === model) && (!verifiedOnly || h.verified) && words.every((w) => `${f.title} ${f.makeModel} ${f.engine} ${f.symptom} ${f.codes} ${f.tests} ${f.cause} ${f.fix} ${f.parts} ${f.tags}`.toLowerCase().includes(w)));
+      $("#hl").innerHTML = list.length
+        ? `<div class="stack">${list.map(({ f, h }) => `<a class="card" style="display:block;text-decoration:none;color:inherit" data-fc="${f.id}" href="#/hub">
+            <div class="card-h" style="margin-bottom:6px"><h2>${esc(f.title)}</h2><div class="r">${h.verified ? pill("Verified", "ok") : pill("Not verified")}</div></div>
+            <div class="row wrap" style="margin-bottom:8px">${h.chassis ? `<span class="pill ink plain">${esc(h.chassis)}</span>` : ""}<span class="muted">${esc([f.makeModel, f.engine, h.mileageBand, h.year].filter(Boolean).join(" · "))}</span>${h.codes.map((c) => `<span class="pill info plain">${esc(c)}</span>`).join("")}</div>
+            <dl class="kv"><dt>Symptom</dt><dd>${esc(f.symptom) || "—"}</dd>${f.tests ? `<dt>Tests</dt><dd>${esc(f.tests)}</dd>` : ""}<dt>Cause</dt><dd>${esc(f.cause) || "—"}</dd><dt>Fix</dt><dd>${esc(f.fix) || "—"}</dd>${f.parts ? `<dt>Parts</dt><dd>${esc(f.parts)}</dd>` : ""}</dl></a>`).join("")}</div>`
+        : `<div class="card">${emptyBox("layers", all.length ? "No case matches. Try fewer words or another model." : "No cases yet. Record a fault case on a job (what was wrong and how you fixed it) and it appears here.")}</div>`;
+      $$("#hl [data-fc]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); faultDialog(state.faults.find((x) => x.id === a.dataset.fc)); }));
+    };
+    $("#hq").oninput = draw;
+    $("#hv").onchange = () => { verifiedOnly = $("#hv").checked; draw(); };
+    $("#hm").onclick = (e) => {
+      const b = e.target.closest("[data-m]");
+      if (!b) return;
+      model = b.dataset.m;
+      draw();
+    };
+    $("#hubNew").onclick = () => faultDialog(null, null);
+    $("#hubExport").onclick = () => {
+      const blob = new Blob([JSON.stringify({ hub: "Merc HUB", version: 1, format: "Workshop Diagnostic Network cases", source: "The Merc Lab", exported: todayKL(), cases: all.map(({ h }, i) => ({ case_number: `ML-${todayKL().slice(0, 4)}-${String(i + 1).padStart(4, "0")}`, case_date: h.year, vehicle_model: h.model, model_series: h.chassis, engine: h.engine, mileage: h.mileageBand, fault_codes: h.codes.join(", "), symptom: h.symptom, diagnosis_steps: h.tests, root_cause: h.cause, fix_applied: h.fix, parts_used: h.parts, time_spent_hours: h.hours, status: h.verified ? "Resolved" : "Open", notes: h.tags })) }, null, 2)], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `merc-hub-cases-${todayKL()}.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    };
+    draw();
+  }
+
+  // ---------- Merc Lab Assistant + the AI team ----------
+  // Read-only: the Assistant answers from the records and drafts; the owner acts.
+
+  const AI_TEAM = [
+    ["ML-CEO", "Kazumi", "CEO", "The overall picture and what to focus on today", "dashboard", ["How is the workshop doing this month?", "What should I focus on today?"]],
+    ["ML-COO", "COO", "Operations", "Cars in the workshop, parts waiting, bookings", "jobs", ["Which cars are waiting for parts?", "What is booked this week?"]],
+    ["ML-CFO", "CFO", "Finance", "Money in, who owes, expenses, profit", "money", ["Who owes us money and for how long?", "What did we spend most on this month?"]],
+    ["ML-CRM", "Customer CRM", "Customers", "Follow-ups, service reminders, win-backs", "users", ["Who should I follow up today?", "Which cars are due for service soon?"]],
+    ["ML-TEC", "Technical", "Merc HUB", "Fault cases and the diagnosis database", "layers", ["What faults have we fixed on W205 cars?", "Which fault codes come up most?"]],
+  ];
+  const assistantLog = [];
+
+  function assistantContext() {
+    const today = todayKL();
+    const month = periodRange("m:" + today.slice(0, 7));
+    const x = pnlFor(month);
+    const in7 = new Date(Date.parse(today) + 7 * 864e5).toISOString().slice(0, 10);
+    return {
+      today,
+      workshop: state.jobs.filter(isWorkshop).map((j) => ({ no: docNo(j), stage: j.stage, status: j.status, car: j.car, plate: j.plate, customer: j.customerName, total: j.total })),
+      openEstimates: state.jobs.filter((j) => j.estimateNo && !j.invoiceNo && j.status !== "Cancelled").slice(0, 40).map((j) => ({ no: j.estimateNo, date: j.date, customer: j.customerName, car: j.car, total: j.total, status: j.status, approvedOnline: !!j.approvedAt })),
+      owed: owedInvoices().map((j) => ({ no: j.invoiceNo, date: j.invoiceDate, customer: j.customerName, balance: j.balance, total: j.total })),
+      thisMonth: { netSales: x.net, grossProfit: x.gross, runningCosts: x.expenses, netProfit: x.profit, invoices: x.invs.length, cashIn: x.cashIn, costsByCategory: x.cats },
+      recentInvoices: state.jobs.filter((j) => j.invoiceNo).sort((a, b) => (b.invoiceDate || "").localeCompare(a.invoiceDate || "")).slice(0, 40).map((j) => ({ no: j.invoiceNo, date: j.invoiceDate, customer: j.customerName, car: j.car, total: j.total, balance: j.balance, status: j.status })),
+      recentPayments: state.payments.slice(0, 30).map((p) => ({ no: p.receiptNo, date: p.paidOn, customer: p.customerName, amount: p.amount, method: p.method, for: p.docNo })),
+      bookingsNext7Days: state.bookings.filter((b) => b.date >= today && b.date <= in7).map((b) => ({ date: b.date, time: b.time, customer: b.customerName, plate: b.plate, work: b.work, status: b.status })),
+      followUpsDue: state.customers.filter((c) => c.nextFollowUp && c.nextFollowUp <= in7).map((c) => ({ customer: c.name, due: c.nextFollowUp, note: c.followUpNote })),
+      serviceDue: state.vehicles.filter((v) => v.nextServiceDate && v.nextServiceDate <= new Date(Date.parse(today) + 30 * 864e5).toISOString().slice(0, 10)).map((v) => ({ plate: v.plate, car: v.makeModel, owner: v.ownerName, due: v.nextServiceDate })),
+      lowStock: state.parts.filter((p) => Number(p.qtyLeft) <= 1).map((p) => ({ part: p.name, partNo: p.partNo, left: p.qtyLeft })),
+      expensesThisMonth: state.expenses.filter((e) => inRange(e.date, month)).map((e) => ({ date: e.date, description: e.description, category: e.category, amount: e.amount })),
+      faultCases: state.faults.slice(0, 80).map((f) => ({ title: f.title, model: f.makeModel, engine: f.engine, codes: f.codes, symptom: f.symptom, cause: f.cause, fix: f.fix, verified: f.verified })),
+      supplierBillsUnpaid: state.purchases.filter((p) => p.status === "Unpaid").map((p) => ({ ref: p.ref, supplier: p.supplier, date: p.date, total: p.total })),
+    };
+  }
+
+  function morningBrief() {
+    const today = todayKL();
+    const owed = owedInvoices();
+    const late = owed.filter((j) => (Date.parse(today) - Date.parse(j.invoiceDate)) / 864e5 > 30);
+    const ready = state.jobs.filter((j) => isWorkshop(j) && j.stage === "Ready");
+    const waiting = state.jobs.filter((j) => isWorkshop(j) && j.stage === "Waiting parts");
+    const bks = state.bookings.filter((b) => b.date === today && b.status !== "Cancelled");
+    const fus = state.customers.filter((c) => c.nextFollowUp && c.nextFollowUp <= today);
+    const low = state.parts.filter((p) => Number(p.qtyLeft) <= 0);
+    const ib = inboxNew();
+    const items = [
+      late.length && ["now", "alert", `${rm(sum(late, (j) => j.balance))} overdue over 30 days`, `${late.length} invoice(s): ${late.slice(0, 2).map((j) => j.customerName).join(", ")}`, "#/money?tab=owed"],
+      ready.length && ["ok", "check", `${ready.length} car(s) ready for pickup`, ready.map((j) => j.plate || j.customerName).join(", "), "#/jobs?f=workshop"],
+      waiting.length && ["soon", "clock", `${waiting.length} car(s) waiting for parts`, waiting.map((j) => j.plate || j.customerName).join(", "), "#/orders"],
+      bks.length && ["info", "calendar", `${bks.length} booking(s) today`, bks.map((b) => `${b.time || ""} ${b.customerName}`.trim()).join(", "), "#/bookings"],
+      fus.length && ["info", "phone", `${fus.length} follow-up(s) due`, fus.slice(0, 3).map((c) => c.name).join(", "), "#/followups"],
+      low.length && ["soon", "parts", `${low.length} part(s) out of stock`, low.slice(0, 3).map((p) => p.name).join(", "), "#/parts"],
+      ib && ["info", "inbox", `${ib} new item(s) in the WhatsApp inbox`, "Bills and slips to check and save", "#/inbox"],
+    ].filter(Boolean);
+    return items.length
+      ? `<div class="list" style="border:0;background:none;box-shadow:none">${items.map(([c, ic, t, s, h]) => `<a class="todo" href="${h}"><span class="ai ${c}">${icon(ic)}</span><div style="min-width:0"><b>${esc(t)}</b><span>${esc(s)}</span></div>${icon("cr", "s")}</a>`).join("")}</div>`
+      : `<p class="muted">${icon("check")} Nothing needs you right now.</p>`;
+  }
+
+  function pageAssistant() {
+    crumbs([["Assistant"]]);
+    let role = "ML-CEO";
+    view.innerHTML = `${pageHead("Assistant", { sub: "Ask about your workshop. It reads your DMS records and never changes them." })}
+      <div class="split"><div class="stack">
+        <div class="card"><div class="card-h"><h2>${icon("sun")} Morning brief</h2><div class="r"><span class="muted">${dmy(todayKL())}</span></div></div>${morningBrief()}</div>
+        <div class="card"><div class="card-h"><h2>${icon("sparkle")} Ask</h2></div>
+          <div class="seg" id="asRole" style="flex-wrap:wrap;margin-bottom:12px">${AI_TEAM.map(([id, n]) => `<button type="button" data-r="${id}">${esc(n)}</button>`).join("")}</div>
+          <form id="asF"><label for="asQ" class="sr">Your question</label><textarea id="asQ" rows="3" maxlength="500" placeholder="e.g. Who owes us money and for how long?"></textarea>
+            <div class="chips" id="asSug" style="margin-top:10px"></div>
+            <div class="btns"><button class="btn" type="submit" id="asGo">${icon("send")}Ask</button></div></form>
+          <p class="hint" id="asStat"></p></div>
+        <div id="asLog" class="stack"></div></div>
+        <div class="stack">
+          <div class="card"><div class="card-h"><h2>Your AI team</h2></div>
+            <p class="muted" style="margin-top:0">The Merc Lab team from your Command Center. Each one knows this DMS and answers here from its own angle.</p>
+            <div class="rows">${AI_TEAM.map(([id, n, r, what, ic]) => `<div><span class="mini">${icon(ic)}</span><div class="grow"><b>${esc(n)} <span class="pill plain">${esc(id)}</span></b><span>${esc(r)} · ${esc(what)}</span></div></div>`).join("")}</div></div>
+          <div class="card"><div class="card-h"><h2>${icon("shield")} Safe by design</h2></div>
+            <div class="rows">
+              <div><div class="grow"><b>Reads only</b><span>It cannot save, send, pay or delete anything</span></div></div>
+              <div><div class="grow"><b>You decide</b><span>It tells you what to press; you do it</span></div></div>
+              <div><div class="grow"><b>Shows its sources</b><span>Every answer lists the records it used</span></div></div>
+              <div><div class="grow"><b>Daily limit</b><span>A cap on questions per day keeps AI costs small</span></div></div></div></div></div></div>`;
+    const drawRole = () => {
+      $$("#asRole button").forEach((b) => b.classList.toggle("on", b.dataset.r === role));
+      const t = AI_TEAM.find((a) => a[0] === role);
+      $("#asSug").innerHTML = t[5].map((s) => `<button type="button" class="chip" data-s="${esc(s)}">${esc(s)}</button>`).join("");
+    };
+    const drawLog = () => {
+      $("#asLog").innerHTML = assistantLog.map((e) => `<div class="card"><div class="muted" style="margin-bottom:6px">${esc(AI_TEAM.find((a) => a[0] === e.role)?.[1] || "Assistant")} · ${esc(e.q)}</div>
+        ${e.err ? `<div class="notice bad">${icon("alert")}<div>${esc(e.err)}</div></div>` : e.a === null ? `<p class="muted">Thinking…</p>` : `<div style="white-space:pre-wrap">${esc(e.a)}</div>${e.src && e.src.length ? `<div class="chips" style="margin-top:10px">${e.src.map((s) => `<span class="pill line plain">${esc(s)}</span>`).join("")}</div>` : ""}`}</div>`).join("");
+    };
+    $("#asRole").onclick = (e) => {
+      const b = e.target.closest("[data-r]");
+      if (b) { role = b.dataset.r; drawRole(); }
+    };
+    $("#asSug").onclick = (e) => {
+      const b = e.target.closest("[data-s]");
+      if (b) { $("#asQ").value = b.dataset.s; $("#asF").requestSubmit(); }
+    };
+    $("#asF").onsubmit = async (e) => {
+      e.preventDefault();
+      const q = $("#asQ").value.trim();
+      if (!q) return $("#asQ").focus();
+      const entry = { q, role, a: null };
+      assistantLog.unshift(entry);
+      drawLog();
+      busy($("#asGo"), true, "Asking…");
+      try {
+        const out = await api("/assistant/ask", { method: "POST", body: { question: q, role, context: assistantContext() } });
+        entry.a = out.answer;
+        entry.src = out.sources;
+        $("#asQ").value = "";
+      } catch (err) {
+        entry.err = err.message;
+      }
+      busy($("#asGo"), false);
+      drawLog();
+    };
+    api("/assistant/status").then((s) => { $("#asStat").textContent = s.on ? `${s.usedToday} of ${s.cap} questions used today.` : "The Assistant is switched off or not set up (needs the Gemini key)."; }).catch(() => {});
+    drawRole();
+    drawLog();
   }
 
   function pagePackages() {
