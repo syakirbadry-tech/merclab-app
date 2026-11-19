@@ -14,6 +14,7 @@ const ai = require("./ai");
 const P = require("./pricing");
 const M = require("./money");
 const V = require("./vehicles");
+const WA = require("./whatsapp");
 const company = require("../config/company.json");
 
 const router = express.Router();
@@ -214,6 +215,7 @@ router.post("/purchases", oneFile, wrap(async (req, res) => {
   }).filter(Boolean);
   if (!items.length) throw bad("Add at least one part.");
 
+  const inbox = await WA.takeFromInbox(d.inboxId);
   const existing = await db.list("purchases", { fields: ["Ref"] });
   const ref = P.nextNumber("PUR", existing.map((r) => r.fields.Ref), date);
   const total = Number(d.total) >= 0 && d.total !== "" && d.total !== null ? P.round2(d.total) : P.round2(items.reduce((t, i) => t + i.qty * i.unitCost, 0));
@@ -247,7 +249,10 @@ router.post("/purchases", oneFile, wrap(async (req, res) => {
 
   let fileSaved = true;
   const file = fileOf(req);
-  if (file) {
+  if (inbox) {
+    if (inbox.file) await db.update("purchases", [{ id: purchase.id, fields: { Receipt: [{ url: inbox.file.url, filename: inbox.file.filename }] } }]).catch(() => (fileSaved = false));
+    await WA.markSaved(d.inboxId, ref);
+  } else if (file) {
     try {
       await db.upload("purchaseReceipt", purchase.id, { filename: file.filename, contentType: file.mimeType, base64: file.base64 });
     } catch (err) {
@@ -674,6 +679,7 @@ router.post("/payments", oneFile, wrap(async (req, res) => {
   if (j.status === "Cancelled") throw bad(`${docNoOf(j)} is cancelled.`);
   if (amount - j.balance > 0.009) throw bad(`RM${M.fmt(amountSen)} is more than the balance of RM${M.fmt(Math.round(j.balance * 100))} on ${docNoOf(j)}. Check the amount.`);
 
+  const inbox = await WA.takeFromInbox(d.inboxId);
   // Same slip saved twice? Stop it.
   const reference = text(d.reference, 80);
   const payments = await db.list("payments", { fields: ["Receipt no", "Reference", "Amount"] });
@@ -701,7 +707,10 @@ router.post("/payments", oneFile, wrap(async (req, res) => {
 
   let fileSaved = true;
   const file = fileOf(req);
-  if (file) {
+  if (inbox) {
+    if (inbox.file) await db.update("payments", [{ id: row.id, fields: { Proof: [{ url: inbox.file.url, filename: inbox.file.filename }] } }]).catch(() => (fileSaved = false));
+    await WA.markSaved(d.inboxId, receiptNo);
+  } else if (file) {
     try {
       await db.upload("paymentProof", row.id, { filename: file.filename, contentType: file.mimeType, base64: file.base64 });
     } catch {
@@ -714,6 +723,7 @@ router.post("/payments", oneFile, wrap(async (req, res) => {
 V.register(router, { wrap, oneFile, fileOf, bodyData, jobOut, customerOut });
 require("./workshop").register(router, { wrap, oneFile, fileOf, bodyData, jobOut, newToken });
 require("./crm").register(router, { wrap, customerOut });
+WA.register(router, { wrap });
 require("./finance").register(router, { wrap, oneFile, fileOf, bodyData, jobOut, newToken });
 
 module.exports = { router, rankMatches, jobOut, paymentOut, partOut, loadSettings, companyFor, parseJob, docNoOf };

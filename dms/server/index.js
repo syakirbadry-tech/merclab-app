@@ -7,6 +7,7 @@ const express = require("express");
 const auth = require("./auth");
 const { router } = require("./routes");
 const { docRoute, approveRoute } = require("./docs");
+const wa = require("./whatsapp");
 
 function createApp() {
   const app = express();
@@ -17,6 +18,9 @@ function createApp() {
     res.setHeader("Referrer-Policy", "no-referrer");
     next();
   });
+  // WhatsApp webhook needs the raw body to check Meta's signature.
+  app.get("/wa/webhook", wa.verifyRoute);
+  app.post("/wa/webhook", express.raw({ type: "*/*", limit: "1mb" }), wa.receiveRoute);
   app.use(express.json({ limit: "200kb" }));
 
   app.get("/health", (req, res) => res.json({ ok: true }));

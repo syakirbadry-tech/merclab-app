@@ -389,3 +389,12 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 /* longer menu: tighter rows */
 .nav a { min-height: 38px; padding: 8px 10px; }
 .nav-h { padding: 10px 10px 4px; }
+
+/* inbox */
+.ibx { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 14px; align-items: center; }
+.ibf img, .ibf .pdf { width: 96px; height: 96px; border-radius: 9px; object-fit: cover; border: 1px solid var(--line); display: grid; place-items: center; background: var(--surface2); color: var(--muted); font-weight: 600; text-decoration: none; gap: 2px; }
+.iba { display: grid; gap: 6px; justify-items: end; }
+.steps { padding-left: 20px; margin: 0; display: grid; gap: 8px; }
+.steps code, .hint code { background: var(--surface2); border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; font-size: 13px; word-break: break-all; }
+a.notice { color: inherit; }
+@media (max-width: 860px) { .ibx { grid-template-columns: 72px minmax(0, 1fr); } .ibf img, .ibf .pdf { width: 72px; height: 72px; } .iba { grid-column: 1 / -1; justify-items: stretch; grid-template-columns: 1fr auto; } }

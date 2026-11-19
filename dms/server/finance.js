@@ -7,6 +7,7 @@ const P = require("./pricing");
 const M = require("./money");
 const ai = require("./ai");
 const { esc } = require("./template");
+const WA = require("./whatsapp");
 
 const text = (v, max = 200) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 const bad = (msg, status = 400) => Object.assign(new Error(msg), { status });
@@ -137,10 +138,15 @@ function register(router, { wrap, oneFile, fileOf, bodyData, jobOut, newToken })
     res.json({ suggestion: { paidTo: s.supplier || "", date: s.date || "", amount: s.total ?? null, description: s.items?.[0]?.name ? (s.items.length > 1 ? `${s.items[0].name} and ${s.items.length - 1} more` : s.items[0].name) : s.supplier || "" } });
   }));
   router.post("/expenses", oneFile, wrap(async (req, res) => {
-    const [row] = await db.create("expenses", [expenseFields(bodyData(req), false)]);
+    const d = bodyData(req);
+    const inbox = await WA.takeFromInbox(d.inboxId);
+    const [row] = await db.create("expenses", [expenseFields(d, false)]);
     const file = fileOf(req);
     let fileSaved = true;
-    if (file) {
+    if (inbox) {
+      if (inbox.file) await db.update("expenses", [{ id: row.id, fields: { Receipt: [{ url: inbox.file.url, filename: inbox.file.filename }] } }]).catch(() => (fileSaved = false));
+      await WA.markSaved(d.inboxId, `Expense: ${row.fields.Description}`);
+    } else if (file) {
       try {
         await db.upload("expenseReceipt", row.id, { filename: file.filename, contentType: file.mimeType, base64: file.base64 });
       } catch {

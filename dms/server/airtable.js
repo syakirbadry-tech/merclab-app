@@ -24,6 +24,7 @@ const TABLES = {
   suppliers: "tblrnFyKjOQ1Sv3bK",
   orders: "tbl6dl2HnRPyBzz8e",
   adjustments: "tblci2Kre4dEASIRv",
+  inbox: "tblZV4AgXksnF46PR",
 };
 
 // Attachment fields need their field ID for the upload endpoint.
@@ -35,6 +36,7 @@ const ATTACHMENT_FIELDS = {
   conditionPhotos: "fldqm0WfL8ftbOvzD",
   jobPhotos: "flduOq0QvNrKmv0JP",
   expenseReceipt: "fldDuByhnms2FXyyv",
+  inboxFile: "fldwgQ5eaSIcfhHk0",
 };
 
 async function request(path, options = {}) {
