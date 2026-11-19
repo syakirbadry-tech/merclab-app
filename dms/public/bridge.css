@@ -99,3 +99,69 @@ label.chip { display: inline-flex; align-items: center; gap: 8px; font-size: 13.
   .dash-todo { display: block; margin-bottom: 16px; padding: 12px; }
   .dash-todo .todo { padding: 10px 4px; }
 }
+
+/* ---------- UX polish (ui-ux-pro-max audit) ----------
+   Text never below 12px; phone tap targets at least 44px with 8px gaps;
+   checkboxes big enough to hit; inputs 16px so iPhone does not zoom. */
+.nav-g > summary, .nav-g > summary .dot-n, .tbl th, .kbd, .stepper button, figcaption, .tbl.fin tr.sec td, .eyebrow { font-size: 12px; }
+input[type=checkbox], input[type=radio] { width: 20px !important; height: 20px; min-height: 0 !important; accent-color: var(--accent); flex: none; }
+@media (max-width: 860px) {
+  .nav a, .side-foot a, .side-foot button, .nav-g > summary { min-height: 48px; }
+  .topbar .menu-btn { width: 44px; min-height: 44px; }
+  .back { width: 44px; height: 44px; }
+  .chip, .seg button, .seg a { min-height: 44px; }
+  .btn.sm, .btn.ghost, label.btn.sm, .btn.icon { min-height: 44px; }
+  .btn.icon { width: 44px; }
+  input:not([type=checkbox]):not([type=radio]):not([type=file]), select, textarea { font-size: 16px; }
+  input:not([type=checkbox]):not([type=radio]):not([type=file]), select { min-height: 44px; }
+  input[type=checkbox], input[type=radio] { width: 24px !important; height: 24px; }
+  label:has(> input[type=checkbox]), label:has(> input[type=radio]) { min-height: 44px; display: inline-flex; align-items: center; gap: 10px; }
+  #bottom.bar a, #bottom.bar button:not(.fab) { font-size: 12px; min-height: 56px; }
+  .btns, .ph .acts, .chips, .row { gap: 8px; }
+  .tbl:not(.keep) td .btn + .btn { margin-left: 8px; }
+}
+.ml figcaption, .ml .cv figcaption { font-size: 12px; }
+@media (max-width: 860px) {
+  .topbar .menu-btn { flex: none; }
+  .crumbs a { display: inline-flex; align-items: center; min-height: 44px; }
+  .btn.ghost { min-width: 44px; }
+  select { min-height: 44px !important; font-size: 16px !important; }
+  #view summary { min-height: 44px; display: flex; align-items: center; }
+}
+
+/* ---------- Apple HIG fine-tuning (via ui-ux-pro-max app rules) ---------- */
+:root { --ease-ios: cubic-bezier(.32, .72, 0, 1); --sheet: #f9fafb; }
+[data-theme="dark"] { --sheet: #1b1f24; }
+html { -webkit-tap-highlight-color: transparent; scroll-padding-top: calc(var(--top-h) + 12px); }
+/* Pressed feedback that never moves the layout: a slight scale and dim. */
+.btn, .chip, .seg button, .mini, .tile, .jc, .todo, .sect, .rows > a, .li, .bar a, .bar button, .nav a, .side-foot a, .side-foot button {
+  transition: transform .12s var(--ease-ios), opacity .12s, background-color .15s, border-color .15s, box-shadow .15s;
+}
+.btn:active, .chip:active, .seg button:active, .mini:active, .bar a:active, .bar button:active { transform: scale(.96); }
+.tile:active, .jc:active, .todo:active, .sect:active, .rows > a:active, .li:active, .tbl tbody tr.tap:active td { opacity: .72; }
+.nav a:active, .side-foot a:active, .side-foot button:active { background: var(--select); }
+.btn:disabled, .btn[aria-disabled="true"] { opacity: .5; cursor: not-allowed; transform: none; }
+/* Drawer and sheets move with the iOS curve. */
+.side { transition: transform .32s var(--ease-ios); overscroll-behavior: contain; }
+.modal .box { background: var(--sheet); }
+@media (max-width: 860px) {
+  html { scroll-padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+  .modal { animation: fade .2s ease-out; }
+  .modal .box { position: relative; padding-top: 14px; animation: sheet-up .36s var(--ease-ios); overscroll-behavior: contain; }
+  .modal .box::before { content: ""; position: absolute; top: 6px; left: 50%; width: 40px; height: 5px; margin-left: -20px; border-radius: 3px; background: var(--line2); }
+  .ph h1 { font-size: 30px; line-height: 1.15; }              /* large title */
+  .card { border-radius: 14px; }
+}
+@media (max-width: 400px) {
+  main#view { padding-left: 12px; padding-right: 12px; }
+  .ph h1 { font-size: 28px; }
+}
+@media (max-width: 860px) and (orientation: landscape) {
+  main#view { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+  #bottom.bar { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+}
+@keyframes sheet-up { from { transform: translateY(100%); } }
+@media (prefers-reduced-motion: reduce) {
+  .modal .box, .modal, .side { animation: none !important; transition: none !important; }
+  .btn:active, .chip:active, .seg button:active, .mini:active, .bar a:active, .bar button:active { transform: none; }
+}
