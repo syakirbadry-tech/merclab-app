@@ -6,6 +6,7 @@ const M = require("./money");
 const { render, DocumentError } = require("./template");
 const { jobOut, paymentOut, loadSettings, companyFor } = require("./routes");
 const W = require("./workshop");
+const F = require("./finance");
 
 const klTime = (iso) => (iso ? new Date(new Date(iso).getTime() + 8 * 3600e3).toISOString().slice(11, 16) : "");
 
@@ -77,10 +78,17 @@ async function docRoute(req, res) {
   const token = req.params.token;
   res.setHeader("X-Robots-Tag", "noindex, nofollow");
   res.setHeader("Cache-Control", "no-store");
-  if (!/^[qirh][a-f0-9]{32}$/.test(token)) return res.status(404).send("Not found");
+  if (!/^[qirhc][a-f0-9]{32}$/.test(token)) return res.status(404).send("Not found");
   try {
     const company = companyFor(await loadSettings());
     let doc;
+    if (token[0] === "c") {
+      const row = await findByToken("credits", "Link token", token);
+      if (!row) return res.status(404).send("Not found");
+      const cn = F.creditOut(row);
+      const job = cn.jobId ? jobOut(await db.get("quotes", cn.jobId)) : null;
+      return res.send(F.creditNotePage(cn, job, company));
+    }
     if (token[0] === "h") {
       const row = await findByToken("quotes", "Inspection token", token);
       if (!row) return res.status(404).send("Not found");

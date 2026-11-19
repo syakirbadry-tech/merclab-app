@@ -694,3 +694,73 @@ test("CRM: customer details, contact log with follow-up, bookings, next service 
   assert.equal(rem.body.lastReminded, "2026-11-19");
   assert.equal(P.addMonths("2026-01-31", 1), "2026-02-28");
 });
+
+// ================= finance & stock =================
+test("finance: expenses, credit notes with refund, suppliers owed, part orders, stock count, opening balances", async () => {
+  reset();
+  await login();
+  // Expenses
+  assert.equal((await call("POST", "/api/expenses", { data: { description: "Rent", amount: "1500", category: "Nope" } })).status, 400);
+  const ex = await call("POST", "/api/expenses", { file: { type: "image/jpeg" }, data: { description: "Rent November", amount: "1,500", category: "Rent", date: "2026-11-01", paidTo: "Landlord" } });
+  assert.equal(ex.status, 201);
+  assert.equal(ex.body.expense.amount, 1500);
+  assert.equal(uploads.at(-1).key, "expenseReceipt");
+  assert.equal((await call("GET", "/api/expenses")).body.expenses.length, 1);
+
+  // Credit notes: only on invoices; partial credit lowers the balance; credit after payment = refund.
+  const est = await call("POST", "/api/jobs", { body: jobBody(["", ""]) });
+  assert.equal((await call("POST", "/api/creditnotes", { body: { jobId: est.body.job.id, amount: "10", reason: "x" } })).status, 400);
+  const inv = await call("POST", "/api/jobs", { body: { ...jobBody(["", ""]), asInvoice: true } });
+  const id = inv.body.job.id; // total 376
+  assert.equal((await call("POST", "/api/creditnotes", { body: { jobId: id, amount: "500", reason: "too much" } })).status, 400);
+  assert.equal((await call("POST", "/api/creditnotes", { body: { jobId: id, amount: "26" } })).status, 400);
+  const cn1 = await call("POST", "/api/creditnotes", { body: { jobId: id, amount: "26", reason: "Oil filter returned" } });
+  assert.equal(cn1.status, 201);
+  assert.match(cn1.body.creditnote.no, /^CN-\d{4}-00001$/);
+  assert.equal(cn1.body.creditnote.refund, 0);
+  assert.equal(cn1.body.job.balance, 350);
+  // Pay the rest, then a goodwill credit of 50 → refund 50.
+  const pay = await call("POST", "/api/payments", { data: { jobId: id, amount: "350", method: "Cash" } });
+  assert.equal(pay.status, 201);
+  assert.equal(pay.body.job.status, "Paid");
+  const cn2 = await call("POST", "/api/creditnotes", { body: { jobId: id, amount: "50", reason: "Goodwill", refundMethod: "Cash" } });
+  assert.equal(cn2.body.creditnote.refund, 50);
+  assert.equal(cn2.body.job.credited, 76);
+  assert.equal(cn2.body.job.balance, 0);
+  const page = await call("GET", `/d/${cn2.body.creditnote.token}`, { noAuth: true });
+  assert.match(page.text, /CREDIT NOTE/);
+  assert.match(page.text, /Refunded to Customer/);
+
+  // Suppliers and what you owe them.
+  const sp = await call("POST", "/api/suppliers", { body: { name: "Auto Parts KL", termsDays: "30" } });
+  assert.equal(sp.body.termsDays, 30);
+  const pu = await call("POST", "/api/purchases", { data: { supplier: "Auto Parts KL", date: "2026-11-18", paid: false, dueDate: "2026-12-18", items: [{ name: "Pad set", qty: 1, unitCost: 210 }] } });
+  assert.equal(pu.status, 201);
+  let list = (await call("GET", "/api/purchases")).body.purchases;
+  assert.equal(list[0].status, "Unpaid");
+  assert.equal(list[0].dueDate, "2026-12-18");
+  const paid = await call("PATCH", `/api/purchases/${list[0].id}`, { body: { status: "Paid", paidOn: "2026-11-25" } });
+  assert.equal(paid.body.status, "Paid");
+  assert.equal(paid.body.paidOn, "2026-11-25");
+
+  // Part ordered for a job
+  const po = await call("POST", "/api/partorders", { body: { part: "Water pump", supplier: "Auto Parts KL", jobId: id, docNo: inv.body.job.invoiceNo, plate: "wxy 1234", cost: "480", eta: "2026-11-22" } });
+  assert.equal(po.status, 201);
+  assert.equal(po.body.status, "Ordered");
+  assert.equal(po.body.plate, "WXY 1234");
+  assert.equal((await call("PATCH", `/api/partorders/${po.body.id}`, { body: { status: "Arrived" } })).body.status, "Arrived");
+
+  // Stock count keeps a record of changes only.
+  const partId = store.parts[0].id;
+  const sc = await call("POST", "/api/stockcount", { body: { reason: "Monthly count", counts: [{ id: partId, qty: "0" }, { id: "recXXXXXXXXXXXXXX", qty: 3 }] } });
+  assert.equal(sc.body.changed, 1);
+  assert.equal(store.parts[0].fields["Qty left"], 0);
+  const adj = (await call("GET", "/api/stockadjustments")).body.stockadjustments;
+  assert.equal(adj.length, 1);
+  assert.equal(adj[0].before, 1);
+
+  // Opening balances for the balance sheet.
+  const st = await call("PUT", "/api/settings", { body: { openingCash: "5000", openingDate: "2026-11-01", ownerCapital: "20000" } });
+  assert.equal(st.body.openingCash, 5000);
+  assert.equal(st.body.openingDate, "2026-11-01");
+});

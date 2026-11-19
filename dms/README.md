@@ -22,6 +22,13 @@ A dark menu on the left (on a phone: the Menu button and the bar at the bottom),
   - *Follow-ups:* due in the next 7 days, a win-back list (no visit for 6+ months) and leads, with WhatsApp / Call / Log buttons.
   - *Service reminders:* cars due within 30 days or near their service km (km estimated from visit history), with a WhatsApp reminder that records the date. Tick "Set next service reminder" on an invoice (Settings has the km / month interval).
   - *Bookings:* a week calendar. "Car arrived: start estimate" opens a new estimate linked to the booking.
+- **Finance:**
+  - *Money in:* receipts and who owes you.
+  - *Expenses:* upload a bill and AI fills it in; choose a category. "Tools & equipment" counts as an asset and "Owner drawings" as money taken out, so neither lowers profit.
+  - *Credit notes:* made from an invoice's job page (CN-YYYY-#####). They lower what the customer owes, or record a refund. The customer gets a link to a printable credit note.
+  - *Profit & Loss:* sales (parts, labour, sublet, less discounts and credit notes), parts cost (exact for parts picked from stock, estimated from the markup otherwise), gross profit, running costs and net profit for a month or year, plus a cash in/out view and Excel (CSV) exports for the accountant.
+  - *Balance sheet:* cash and bank (opening balance plus money in minus money out), what customers owe, stock at cost, tools; supplier bills not paid and customer deposits; owner capital, drawings and profit kept. Set the opening cash, date and capital in Settings. It is built from the DMS records and is not audited.
+- **Stock:** *Parts & stock* (with price history and a stock count that logs every change), *Suppliers* (bills to pay, marked paid when settled; a receipt can be saved as "Pay later"), and *Part orders* (parts ordered for a car: Ordered → Arrived → Fitted).
 - **Customers:** a table with phone, cars, last visit, spent and owes, and a page per customer.
 - **Parts & stock**, **Money** (receipts and who owes you, with a WhatsApp reminder button) and **Settings**.
 - A search box at the top finds a plate, a customer or an EST / INV number.

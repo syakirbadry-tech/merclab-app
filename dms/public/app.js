@@ -27,7 +27,7 @@
     return `${Math.round(d / 365)} years ago`;
   }
 
-  const state = { settings: null, parts: [], jobs: [], payments: [], customers: [], vehicles: [], packages: [], faults: [], interactions: [], bookings: [], route: "" };
+  const state = { settings: null, parts: [], jobs: [], payments: [], customers: [], vehicles: [], packages: [], faults: [], interactions: [], bookings: [], expenses: [], creditnotes: [], suppliers: [], purchases: [], partorders: [], route: "" };
 
   // ---------- icons (simple line icons, 24px grid) ----------
   const ICONS = {
@@ -195,7 +195,8 @@
   // ---------- data ----------
 
   async function loadAll() {
-    const [s, p, q, pay, c, v, pk, fc, ia, bk] = await Promise.all([api("/settings"), api("/parts"), api("/jobs"), api("/payments"), api("/customers"), api("/vehicles"), api("/packages"), api("/faults"), api("/interactions"), api("/bookings")]);
+    const [s, p, q, pay, c, v, pk, fc, ia, bk, ex, cn, sp, pu, po] = await Promise.all([api("/settings"), api("/parts"), api("/jobs"), api("/payments"), api("/customers"), api("/vehicles"), api("/packages"), api("/faults"), api("/interactions"), api("/bookings"), api("/expenses"), api("/creditnotes"), api("/suppliers"), api("/purchases"), api("/partorders")]);
+    Object.assign(state, { expenses: ex.expenses, creditnotes: cn.creditnotes, suppliers: sp.suppliers, purchases: pu.purchases, partorders: po.partorders });
     state.interactions = ia.interactions;
     state.bookings = bk.bookings;
     state.packages = pk.packages;
@@ -208,7 +209,7 @@
     state.vehicles = v.vehicles;
   }
   async function refresh(...what) {
-    const map = { jobs: "/jobs", payments: "/payments", customers: "/customers", parts: "/parts", vehicles: "/vehicles", packages: "/packages", faults: "/faults", interactions: "/interactions", bookings: "/bookings" };
+    const map = { jobs: "/jobs", payments: "/payments", customers: "/customers", parts: "/parts", vehicles: "/vehicles", packages: "/packages", faults: "/faults", interactions: "/interactions", bookings: "/bookings", expenses: "/expenses", creditnotes: "/creditnotes", suppliers: "/suppliers", purchases: "/purchases", partorders: "/partorders" };
     const out = await Promise.all(what.map((w) => api(map[w])));
     what.forEach((w, i) => (state[w] = out[i][w]));
   }
@@ -237,7 +238,8 @@
     ["Overview", [["dashboard", "Dashboard", "dashboard"]]],
     ["Workshop", [["jobs", "Jobs", "jobs"], ["bookings", "Bookings", "calendar"], ["vehicles", "Vehicles", "car"], ["packages", "Packages", "box"], ["faults", "Fault cases", "book"]]],
     ["CRM", [["customers", "Customers", "users"], ["followups", "Follow-ups", "phone"], ["reminders", "Service reminders", "bell"]]],
-    ["Business", [["parts", "Parts & stock", "parts"], ["money", "Money", "money"]]],
+    ["Finance", [["money", "Money in", "money"], ["expenses", "Expenses", "receipt"], ["creditnotes", "Credit notes", "file"], ["pnl", "Profit & Loss", "dashboard"], ["balance", "Balance sheet", "book"]]],
+    ["Stock", [["parts", "Parts & stock", "parts"], ["suppliers", "Suppliers", "users"], ["orders", "Part orders", "box"]]],
   ];
 
   function buildShell() {
@@ -346,7 +348,13 @@
       }
       if (sec === "vehicles") return a ? pageVehicle(a, b || "details") : pageVehicles(q);
       if (sec === "customers") return a ? pageCustomer(a) : pageCustomers();
-      if (sec === "parts") return pageParts();
+      if (sec === "parts") return a === "count" ? pageStockCount() : pageParts();
+      if (sec === "expenses") return pageExpenses(q);
+      if (sec === "creditnotes") return pageCredits();
+      if (sec === "pnl") return pagePnl(q);
+      if (sec === "balance") return pageBalance();
+      if (sec === "suppliers") return pageSuppliers();
+      if (sec === "orders") return pageOrders(q);
       if (sec === "packages") return a ? packageForm(a) : pagePackages();
       if (sec === "faults") return pageFaults();
       if (sec === "bookings") return pageBookings(q);
@@ -533,6 +541,7 @@
             ${j.invoiceNo && j.estimateNo ? `<div><span class="muted">From estimate</span><span>${esc(j.estimateNo)}</span></div>` : ""}
             ${!j.invoiceNo && j.validUntil ? `<div><span class="muted">Valid until</span><span>${dmy(j.validUntil)}</span></div>` : ""}
             <div class="big"><span>Total</span><span>${rm(j.total)}</span></div>
+            ${j.credited ? `<div><span class="muted">Credit notes</span><span>-${rm(j.credited)}</span></div>` : ""}
             <div><span class="muted">Paid</span><span>${rm(j.paid)}</span></div>
             <div><span class="strong">Balance</span><span class="strong">${rm(j.balance)}</span></div></div>
             ${!cancelled && !j.invoiceNo && j.balance > 0.009 ? `<div class="btns"><a class="btn alt block" href="#/money?pay=${j.id}">${icon("money")}Record deposit</a></div>` : ""}
@@ -547,6 +556,7 @@
             ${vk ? `<dt>Body condition</dt><dd><a href="#/vehicles/${vk}/condition?job=${encodeURIComponent(docNo(j))}">${v && v.openMarks ? `${v.openMarks} mark(s)` : "Check-in"} →</a></dd>` : ""}
           </dl></div>
           ${!j.paid && !j.invoiceNo && !cancelled ? `<button class="btn danger block" id="jCancel">${icon("x")}Cancel estimate</button>` : ""}
+          ${j.invoiceNo && !cancelled && j.total - j.credited > 0.009 ? `<button class="btn alt block" id="jCredit">${icon("file")}Credit note</button>` : ""}
         </div>
       </div>`;
     $$("[data-sent]").forEach((a) => a.addEventListener("click", async () => {
@@ -555,6 +565,11 @@
     }));
     if (!cancelled) bindJobExtras(j);
     else $("#jPrint").onclick = () => printJobCard(j);
+    const cr = $("#jCredit");
+    if (cr) cr.onclick = () => creditDialog(j);
+    const po = $("#poAdd");
+    if (po) po.onclick = () => orderDialog(null, j);
+    $$("[data-pord]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); orderDialog(state.partorders.find((o) => o.id === a.dataset.pord)); }));
     const st = $("#stepper");
     if (st) st.onclick = async (e) => {
       const b = e.target.closest("[data-stage]");
@@ -879,6 +894,11 @@
         ${ins && j.inspectionToken ? `<a class="btn wa block" href="${esc(waLink(j.phone, `Hi ${j.customerName}, here is the inspection report for your car${plate} from ${brandName()}:\n${docLink(j.inspectionToken)}`))}" target="_blank" rel="noopener">${icon("chat")}Send report</a>
           <a class="btn ghost block" href="${esc(docLink(j.inspectionToken))}" target="_blank" rel="noopener">${icon("open")}Open report</a>` : ""}</div>
       </div>
+      ${(() => {
+        const ords = state.partorders.filter((o) => o.jobId === j.id && o.status !== "Cancelled");
+        return `<div class="card"><div class="card-h"><h2>Parts on order</h2><div class="r"><button type="button" class="btn ghost sm" id="poAdd">${icon("plus")}Order part</button></div></div>
+          ${ords.length ? `<div class="rows">${ords.map((o) => `<a href="#/orders" data-pord="${o.id}"><div class="grow"><b>${esc(o.part)}</b><span class="muted">${esc([o.supplier, o.eta ? "expected " + dmy(o.eta) : ""].filter(Boolean).join(" · "))}</span></div>${pill(o.status, ORD_CLS[o.status])}</a>`).join("")}</div>` : `<p class="muted">Track parts you ordered for this car until they arrive.</p>`}</div>`;
+      })()}
       <div class="card"><div class="card-h"><h2>Fault case</h2><div class="r"><button type="button" class="btn ghost sm" id="fcAdd">${icon("plus")}Record</button></div></div>
         ${faults.length ? `<div class="rows">${faults.map((f) => `<a href="#/faults" data-fc="${f.id}"><div class="grow"><b>${esc(f.title)}</b><span class="muted">${esc(f.cause || "Cause not written yet")}</span></div>${f.verified ? pill("Verified", "ok") : ""}</a>`).join("")}</div>`
           : `<p class="muted">What was wrong and how you fixed it. It builds your Mercedes knowledge base.</p>`}
@@ -1400,6 +1420,477 @@
       ${items.length ? `<ol class="tl">${items.slice(0, 40).map((x) => `<li><span class="tli">${icon(x.ic)}</span><div><div class="tlh">${x.href ? `<a href="${x.href}">${esc(x.title)}</a>` : `<b>${esc(x.title)}</b>`}<span class="muted">${dmy(x.date)}</span></div>${x.text ? `<div class="muted" style="white-space:pre-line">${esc(x.text)}</div>` : ""}</div></li>`).join("")}</ol>` : `<p class="muted">Nothing yet.</p>`}</div>`;
   }
 
+  // ================= FINANCE =================
+
+  const ECATS = ["Rent", "Utilities", "Wages", "Workshop supplies", "Sublet (outside work)", "Tools & equipment (asset)", "Transport", "Marketing", "Phone & internet", "Bank fees", "Insurance & licences", "Owner drawings", "Other"];
+  const NOT_PNL = ["Tools & equipment (asset)", "Owner drawings"];
+  const METHODS = ["Bank transfer", "DuitNow", "Cash", "Card", "Cheque", "E-wallet", "Other"];
+  const inRange = (d, [a, b]) => !!d && d >= a && d <= b;
+  const sum = (list, f) => list.reduce((t, x) => t + (Number(f(x)) || 0), 0);
+  const monthRange = (ym) => {
+    const [y, m] = ym.split("-").map(Number);
+    return [`${ym}-01`, new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10)];
+  };
+  const ymLabel = (ym) => new Date(ym + "-01T00:00:00Z").toLocaleDateString("en-MY", { month: "long", year: "numeric", timeZone: "UTC" });
+
+  // Excel opens CSV directly; the BOM keeps RM and names readable.
+  function downloadCsv(name, cols, rows) {
+    const cell = (v) => {
+      const s = v === null || v === undefined ? "" : String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const csv = "﻿" + [cols.map((c) => cell(c[0])).join(","), ...rows.map((r) => cols.map((c) => cell(c[1](r))).join(","))].join("\r\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  }
+
+  // Period picker shared by P&L and expenses: this month / last month / this year / any month.
+  function periodPicker(id, cur) {
+    const t = todayKL();
+    const ym = t.slice(0, 7);
+    const last = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7) - 2, 1)).toISOString().slice(0, 7);
+    return `<div class="toolbar" id="${id}"><div class="seg">
+      <button type="button" data-p="m:${ym}" class="${cur === "m:" + ym ? "on" : ""}">This month</button><button type="button" data-p="m:${last}" class="${cur === "m:" + last ? "on" : ""}">Last month</button><button type="button" data-p="y:${t.slice(0, 4)}" class="${cur === "y:" + t.slice(0, 4) ? "on" : ""}">This year</button></div>
+      <input type="month" aria-label="Pick a month" value="${cur.startsWith("m:") ? cur.slice(2) : ""}" style="width:auto;min-height:38px"></div>`;
+  }
+  const periodRange = (p) => (p.startsWith("y:") ? [`${p.slice(2)}-01-01`, `${p.slice(2)}-12-31`] : monthRange(p.slice(2)));
+  const periodLabel = (p) => (p.startsWith("y:") ? `Year ${p.slice(2)}` : ymLabel(p.slice(2)));
+  function bindPeriod(id, onPick) {
+    const box = $("#" + id);
+    box.onclick = (e) => { const b = e.target.closest("[data-p]"); if (b) onPick(b.dataset.p); };
+    $("input[type=month]", box).onchange = (e) => e.target.value && onPick("m:" + e.target.value);
+  }
+
+  // ---------- expenses ----------
+
+  function expenseDialog(x, file, ai) {
+    const d = x || { date: todayKL(), category: "", method: "Bank transfer" };
+    const c = (v) => (ai && v != null && v !== "" ? "ai" : "");
+    const m = modal(x?.id ? "Expense" : "Add expense", `<form id="exf" novalidate>
+      ${ai ? `<div class="notice">${icon("alert")}<div>AI filled the <b>blue</b> boxes. Check them, choose a category, then save.</div></div>` : ""}
+      <div class="fgrid"><div class="full"><label for="ex_d" class="req">What for</label><input id="ex_d" class="${c(d.description)}" name="description" value="${esc(d.description || "")}" placeholder="e.g. TNB electricity November"></div>
+        <div><label for="ex_a" class="req">Amount (RM)</label><input id="ex_a" class="${c(d.amount)}" name="amount" type="number" step="0.01" min="0" inputmode="decimal" value="${esc(d.amount ?? "")}"></div>
+        <div><label for="ex_dt">Date</label><input id="ex_dt" class="${c(d.date)}" name="date" type="date" value="${esc(d.date || todayKL())}"></div>
+        <div><label for="ex_c" class="req">Category</label><select id="ex_c" name="category">${opt(ECATS, d.category, "— choose —")}</select></div>
+        <div><label for="ex_m">Paid by</label><select id="ex_m" name="method">${opt(METHODS, d.method || "Bank transfer")}</select></div>
+        <div class="full"><label for="ex_p">Paid to</label><input id="ex_p" class="${c(d.paidTo)}" name="paidTo" value="${esc(d.paidTo || "")}"></div>
+        <div class="full"><label for="ex_n">Notes</label><input id="ex_n" name="notes" value="${esc(d.notes || "")}"></div></div>
+      <p class="hint">Parts you buy for stock go in Parts &amp; stock (supplier receipt), not here. "Tools &amp; equipment" counts as an asset, and "Owner drawings" is money you take out; neither lowers profit.</p>
+      ${x?.receipt ? `<p><a href="${esc(x.receipt)}" target="_blank" rel="noopener">${icon("file")} View receipt</a></p>` : ""}
+      <div class="btns"><button class="btn" type="submit">${icon("check")}Save</button></div></form>`);
+    m.$("#exf").addEventListener("input", (e) => e.target.classList.remove("ai"));
+    m.$("#exf").onsubmit = async (e) => {
+      e.preventDefault();
+      const b = formObj(e.target);
+      busy(e.submitter, true, "Saving…");
+      try {
+        if (x?.id) await api(`/expenses/${x.id}`, { method: "PATCH", body: b });
+        else {
+          const fd = new FormData();
+          if (file) fd.append("file", file);
+          fd.append("data", JSON.stringify(b));
+          const out = await api("/expenses", { method: "POST", form: fd });
+          if (!out.fileSaved) toast("Saved, but the receipt file did not upload.");
+        }
+        await refresh("expenses");
+        m.close();
+        toast("Expense saved");
+        route();
+      } catch (err) {
+        toast(err.message);
+        busy(e.submitter, false);
+      }
+    };
+  }
+
+  function pageExpenses(q) {
+    crumbs([["Expenses"]]);
+    let per = q.get("p") || "m:" + todayKL().slice(0, 7);
+    view.innerHTML = `${pageHead("Expenses", { sub: "Rent, bills, wages, tools: money spent running the workshop", acts: `<button class="btn alt" id="exAdd">${icon("edit")}Add by hand</button><label class="btn upload">${icon("upload")}Upload receipt<input type="file" id="exFile" accept="image/*,application/pdf"></label>` })}
+      <div id="per"></div><div class="grid g3" style="margin-bottom:16px" id="exTiles"></div><div class="card flush" id="exT"></div>`;
+    const draw = () => {
+      $("#per").innerHTML = periodPicker("pp", per);
+      bindPeriod("pp", (p) => { per = p; history.replaceState(null, "", `#/expenses?p=${p}`); draw(); });
+      const r = periodRange(per);
+      const list = state.expenses.filter((x) => inRange(x.date, r));
+      const run = list.filter((x) => !NOT_PNL.includes(x.category));
+      const byCat = {};
+      run.forEach((x) => (byCat[x.category] = (byCat[x.category] || 0) + x.amount));
+      const top = Object.entries(byCat).sort((a, b) => b[1] - a[1])[0];
+      $("#exTiles").innerHTML = `<div class="tile"><div class="lbl">${icon("money")}Running costs</div><div class="val">${rm(sum(run, (x) => x.amount))}</div><div class="foot">${periodLabel(per)}</div></div>
+        <div class="tile"><div class="lbl">${icon("receipt")}Biggest cost</div><div class="val">${top ? rm(top[1]) : "—"}</div><div class="foot">${top ? esc(top[0]) : "No expenses yet"}</div></div>
+        <div class="tile"><div class="lbl">${icon("parts")}Tools &amp; drawings</div><div class="val">${rm(sum(list.filter((x) => NOT_PNL.includes(x.category)), (x) => x.amount))}</div><div class="foot">not counted in profit</div></div>`;
+      $("#exT").innerHTML = list.length
+        ? `<div class="card-h" style="padding:14px 18px 0"><h2>${periodLabel(per)}</h2><div class="r"><button type="button" class="btn ghost sm" id="exCsv">${icon("file")}Excel</button></div></div><div class="tbl-wrap" style="margin-top:12px"><table class="tbl"><thead><tr><th>Date</th><th>What for</th><th class="d">Category</th><th class="d">Paid to</th><th class="num">Amount</th></tr></thead><tbody>
+          ${list.map((x) => `<tr class="tap" data-ex="${x.id}" tabindex="0"><td class="nowrap">${dmy(x.date)}</td><td class="strong">${esc(x.description)}${x.receipt ? ` <span class="sm">${icon("file")}</span>` : ""}<div class="sm">${esc(x.category)}</div></td><td class="d">${esc(x.category)}</td><td class="d">${esc(x.paidTo)}</td><td class="num">${rm(x.amount)}</td></tr>`).join("")}</tbody></table></div>`
+        : emptyBox("receipt", "No expenses in this period. Upload a receipt and AI fills it in.");
+      $$("#exT [data-ex]").forEach((el) => (el.onclick = () => expenseDialog(state.expenses.find((x) => x.id === el.dataset.ex))));
+      const csv = $("#exCsv");
+      if (csv) csv.onclick = () => downloadCsv(`expenses-${per.slice(2)}.csv`, [["Date", (x) => x.date], ["Description", (x) => x.description], ["Category", (x) => x.category], ["Paid to", (x) => x.paidTo], ["Method", (x) => x.method], ["Amount (RM)", (x) => x.amount.toFixed(2)]], list);
+    };
+    $("#exAdd").onclick = () => expenseDialog(null);
+    $("#exFile").onchange = async (e) => {
+      const file = e.target.files[0];
+      e.target.value = "";
+      if (!file) return;
+      toast("Reading the receipt…");
+      const fd = new FormData();
+      fd.append("file", file);
+      try {
+        const { suggestion } = await api("/expenses/extract", { method: "POST", form: fd });
+        expenseDialog({ ...suggestion, method: "Bank transfer" }, file, true);
+      } catch (err) {
+        toast(err.message);
+        expenseDialog(null, file);
+      }
+    };
+    draw();
+  }
+
+  // ---------- credit notes ----------
+
+  function creditDialog(j) {
+    const left = r2(j.total - j.credited);
+    const m = modal(`Credit note for ${j.invoiceNo}`, `<form id="cnf" novalidate>
+      <p class="muted" style="margin-top:0">Invoice total ${rm(j.total)}${j.credited ? ` · already credited ${rm(j.credited)}` : ""} · paid ${rm(j.paid)}. You can credit up to <b>${rm(left)}</b>.</p>
+      <div class="fgrid"><div><label for="cn_a" class="req">Amount (RM)</label><input id="cn_a" name="amount" type="number" step="0.01" min="0" max="${left}" inputmode="decimal"></div>
+        <div id="cnRefW" hidden><label for="cn_m">Refund by</label><select id="cn_m" name="refundMethod">${opt(METHODS, "Bank transfer")}</select></div></div>
+      <label for="cn_r" class="req">Reason</label><textarea id="cn_r" name="reason" rows="2" placeholder="e.g. Part returned unused / price correction / goodwill"></textarea>
+      <p class="hint" id="cnHint"></p>
+      <div class="btns"><button class="btn" type="submit">${icon("check")}Make credit note</button></div></form>`);
+    const f = m.$("#cnf");
+    const hint = () => {
+      const a = Number(f.elements.amount.value) || 0;
+      const net = r2(left - a);
+      const refund = Math.max(0, r2(j.paid - net)) - Math.max(0, r2(j.paid - left));
+      m.$("#cnRefW").hidden = !(refund > 0);
+      m.$("#cnHint").textContent = a ? (refund > 0 ? `The customer already paid, so you refund ${rm(refund)}.` : `The customer will owe ${rm(Math.max(0, net - j.paid))}.`) : "";
+    };
+    f.addEventListener("input", hint);
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      busy(e.submitter, true, "Saving…");
+      try {
+        const out = await api("/creditnotes", { method: "POST", body: { jobId: j.id, ...formObj(f) } });
+        replaceJob(out.job);
+        await refresh("creditnotes");
+        m.close();
+        const cn = out.creditnote;
+        const link = docLink(cn.token);
+        const d2 = modal(`Credit note ${cn.no}`, `<p>${rm(cn.amount)} credited on ${esc(cn.invoiceNo)}.${cn.refund ? ` Refund ${rm(cn.refund)} to the customer by ${esc(cn.refundMethod)}.` : ""}</p>
+          <div class="stack"><a class="btn wa block" href="${esc(waLink(j.phone, `Hi ${j.customerName}, here is credit note ${cn.no} for invoice ${cn.invoiceNo} from ${brandName()}: ${rm(cn.amount)}.\n${link}`))}" target="_blank" rel="noopener">${icon("chat")}Send by WhatsApp</a>
+          <a class="btn alt block" href="${esc(link)}" target="_blank" rel="noopener">${icon("open")}Open / save as PDF</a></div>`);
+        d2.el.addEventListener("click", (ev) => ev.target === d2.el && route());
+        route();
+      } catch (err) {
+        toast(err.message);
+        busy(e.submitter, false);
+      }
+    };
+  }
+
+  function pageCredits() {
+    crumbs([["Credit notes"]]);
+    const list = state.creditnotes;
+    view.innerHTML = `${pageHead("Credit notes", { sub: "Price corrections, returned parts and goodwill against an invoice. Make one from the invoice's job page." })}
+      <div class="card flush">${list.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>No.</th><th class="d">Date</th><th>Customer</th><th class="d">Invoice</th><th class="d">Reason</th><th class="num">Amount</th><th></th></tr></thead><tbody>
+        ${list.map((c) => `<tr><td class="nowrap strong">${esc(c.no)}<div class="sm">${dmy(c.date)}</div></td><td class="d nowrap">${dmy(c.date)}</td><td>${esc(c.customerName)}${c.refund ? `<div class="sm">Refund ${rm(c.refund)}</div>` : ""}</td>
+          <td class="d">${c.jobId ? `<a href="#/jobs/${c.jobId}">${esc(c.invoiceNo)}</a>` : esc(c.invoiceNo)}</td><td class="d">${esc(c.reason)}</td><td class="num strong">${rm(c.amount)}</td>
+          <td class="num"><a class="btn ghost sm" href="${esc(docLink(c.token))}" target="_blank" rel="noopener">${icon("open")}PDF</a></td></tr>`).join("")}</tbody></table></div>`
+        : emptyBox("receipt", "No credit notes.")}</div>`;
+  }
+
+  // ---------- profit & loss ----------
+
+  function pnlFor(r) {
+    const markup = Number(state.settings.markupPercent) || 0;
+    const partCost = new Map(state.parts.map((p) => [p.id, p.unitCost]));
+    const invs = state.jobs.filter((j) => j.invoiceNo && j.status !== "Cancelled" && inRange(j.invoiceDate, r));
+    let parts = 0, labour = 0, other = 0, discount = 0, cost = 0, estLines = 0;
+    for (const j of invs) {
+      for (const g of j.groups) for (const l of g.lines) {
+        const amt = l.type === "part" ? (Number(l.qty) || 0) * (Number(l.unitPrice) || 0) : Number(l.amount) || 0;
+        if (l.type === "part") {
+          parts += amt;
+          if (l.partId && partCost.has(l.partId)) cost += (Number(l.qty) || 0) * partCost.get(l.partId);
+          else { cost += amt / (1 + markup / 100); estLines++; }
+        } else if (l.type === "sublet") other += amt;
+        else labour += amt;
+      }
+      other += (Number(j.details.surcharge) || 0) + (Number(j.details.menus) || 0);
+      discount += Number(j.details.discount) || 0;
+    }
+    const credits = sum(state.creditnotes.filter((c) => inRange(c.date, r)), (c) => c.amount);
+    const net = parts + labour + other - discount - credits;
+    const exp = state.expenses.filter((x) => inRange(x.date, r) && !NOT_PNL.includes(x.category));
+    const sublet = sum(exp.filter((x) => x.category === "Sublet (outside work)"), (x) => x.amount);
+    const gross = net - cost - sublet;
+    const cats = {};
+    exp.filter((x) => x.category !== "Sublet (outside work)").forEach((x) => (cats[x.category] = (cats[x.category] || 0) + x.amount));
+    const expenses = sum(Object.values(cats), (v) => v);
+    // Cash view
+    const cashIn = sum(state.payments.filter((p) => inRange(p.paidOn, r)), (p) => p.amount);
+    const refunds = sum(state.creditnotes.filter((c) => inRange(c.date, r)), (c) => c.refund);
+    const spent = sum(state.expenses.filter((x) => inRange(x.date, r)), (x) => x.amount);
+    const bills = sum(state.purchases.filter((p) => p.status === "Paid" && inRange(p.paidOn || p.date, r)), (p) => p.total);
+    return { invs, parts, labour, other, discount, credits, net, cost, estLines, sublet, gross, cats, expenses, profit: gross - expenses, cashIn, refunds, spent, bills };
+  }
+
+  function pagePnl(q) {
+    crumbs([["Profit & Loss"]]);
+    let per = q.get("p") || "m:" + todayKL().slice(0, 7);
+    view.innerHTML = `${pageHead("Profit &amp; Loss", { sub: "Did the workshop make money? Sales are counted on the invoice date." })}<div id="per"></div><div id="pl"></div>`;
+    const draw = () => {
+      $("#per").innerHTML = periodPicker("pp", per);
+      bindPeriod("pp", (p) => { per = p; history.replaceState(null, "", `#/pnl?p=${p}`); draw(); });
+      const r = periodRange(per);
+      const x = pnlFor(r);
+      const L = (label, v, cls = "") => `<tr class="${cls}"><td>${label}</td><td class="num">${v < 0 ? "-" + rm(-v) : rm(v)}</td></tr>`;
+      const margin = x.net > 0 ? Math.round((x.gross / x.net) * 100) : 0;
+      $("#pl").innerHTML = `<div class="grid g4" style="margin-bottom:16px">
+          <div class="tile"><div class="lbl">${icon("receipt")}Net sales</div><div class="val">${rm(x.net)}</div><div class="foot">${x.invs.length} invoice(s)</div></div>
+          <div class="tile"><div class="lbl">${icon("parts")}Gross profit</div><div class="val">${rm(x.gross)}</div><div class="foot">${margin}% of sales</div></div>
+          <div class="tile"><div class="lbl">${icon("money")}Running costs</div><div class="val">${rm(x.expenses)}</div><div class="foot">expenses</div></div>
+          <div class="tile"><div class="lbl">${icon(x.profit >= 0 ? "check" : "alert")}Net profit</div><div class="val" style="color:${x.profit >= 0 ? "var(--ok)" : "var(--bad)"}">${x.profit < 0 ? "-" : ""}${rm(Math.abs(x.profit))}</div><div class="foot">${x.profit >= 0 ? "profit" : "loss"}</div></div></div>
+        <div class="split"><div class="card flush"><div class="card-h" style="padding:16px 18px 0"><h2>Profit &amp; Loss · ${periodLabel(per)}</h2><div class="r"><button type="button" class="btn ghost sm" id="plCsv">${icon("file")}Excel</button></div></div>
+          <table class="tbl fin" style="margin-top:10px"><tbody>
+          <tr class="sec"><td colspan="2">Sales</td></tr>${L("Parts", x.parts)}${L("Labour &amp; sundries", x.labour)}${L("Sublet, surcharge &amp; menus", x.other)}${x.discount ? L("Less discounts", -x.discount) : ""}${x.credits ? L("Less credit notes", -x.credits) : ""}${L("<b>Net sales</b>", x.net, "tot")}
+          <tr class="sec"><td colspan="2">Cost of sales</td></tr>${L(`Parts used (at cost)${x.estLines ? ` <span class="sm">· ${x.estLines} line(s) estimated</span>` : ""}`, -x.cost)}${x.sublet ? L("Sublet (outside work)", -x.sublet) : ""}${L(`<b>Gross profit</b> <span class="sm">${margin}%</span>`, x.gross, "tot")}
+          <tr class="sec"><td colspan="2">Running costs</td></tr>${Object.entries(x.cats).sort((a, b) => b[1] - a[1]).map(([k, v]) => L(esc(k), -v)).join("") || `<tr><td class="sm" colspan="2">No expenses recorded</td></tr>`}${L("<b>Total running costs</b>", -x.expenses, "tot")}
+          ${L(`<b>Net ${x.profit >= 0 ? "profit" : "loss"}</b>`, x.profit, "grand")}</tbody></table></div>
+        <div><div class="card"><h2>Cash in and out</h2><div class="sum">
+          <div><span class="muted">Payments received</span><span>${rm(x.cashIn)}</span></div>
+          <div><span class="muted">Refunds paid</span><span>-${rm(x.refunds)}</span></div>
+          <div><span class="muted">Expenses paid</span><span>-${rm(x.spent)}</span></div>
+          <div><span class="muted">Supplier bills paid</span><span>-${rm(x.bills)}</span></div>
+          <div class="big"><span>Net cash</span><span style="color:${x.cashIn - x.refunds - x.spent - x.bills >= 0 ? "var(--ok)" : "var(--bad)"}">${rm(x.cashIn - x.refunds - x.spent - x.bills)}</span></div></div>
+          <p class="hint">Profit is not the same as cash: parts bought for stock are a cost only when used on a job, and customers may still owe you.</p></div>
+          ${x.estLines ? `<div class="notice warn">${icon("alert")}<div>${x.estLines} part line(s) were not picked from stock, so their cost is estimated from your ${esc(state.settings.markupPercent)}% markup. Pick parts from stock for exact profit.</div></div>` : ""}
+          <div class="card"><h2>Export to Excel</h2><p class="muted" style="margin-top:-6px">For your accountant · ${periodLabel(per)}</p><div class="stack">
+            <button type="button" class="btn alt block" data-x="inv">${icon("file")}Invoices</button><button type="button" class="btn alt block" data-x="pay">${icon("file")}Payments received</button>
+            <button type="button" class="btn alt block" data-x="exp">${icon("file")}Expenses</button><button type="button" class="btn alt block" data-x="bill">${icon("file")}Supplier bills</button><button type="button" class="btn alt block" data-x="cn">${icon("file")}Credit notes</button></div></div></div></div>`;
+      const tag = per.slice(2);
+      $("#plCsv").onclick = () => {
+        const rows = [["Net sales: parts", x.parts], ["Net sales: labour & sundries", x.labour], ["Net sales: sublet, surcharge & menus", x.other], ["Less discounts", -x.discount], ["Less credit notes", -x.credits], ["Net sales", x.net], ["Parts used at cost", -x.cost], ["Sublet (outside work)", -x.sublet], ["Gross profit", x.gross],
+          ...Object.entries(x.cats).map(([k, v]) => [k, -v]), ["Total running costs", -x.expenses], ["Net profit", x.profit]];
+        downloadCsv(`profit-and-loss-${tag}.csv`, [["Line", (r0) => r0[0]], ["RM", (r0) => r0[1].toFixed(2)]], rows);
+      };
+      const EX = {
+        inv: () => downloadCsv(`invoices-${tag}.csv`, [["Invoice no", (j) => j.invoiceNo], ["Date", (j) => j.invoiceDate], ["Customer", (j) => j.customerName], ["Plate", (j) => j.plate], ["Total (RM)", (j) => j.total.toFixed(2)], ["Credited (RM)", (j) => (j.credited || 0).toFixed(2)], ["Paid (RM)", (j) => j.paid.toFixed(2)], ["Balance (RM)", (j) => j.balance.toFixed(2)], ["Status", (j) => j.status]], x.invs),
+        pay: () => downloadCsv(`payments-${tag}.csv`, [["Receipt no", (p) => p.receiptNo], ["Date", (p) => p.paidOn], ["Customer", (p) => p.customerName], ["For", (p) => p.docNo], ["Method", (p) => p.method], ["Reference", (p) => p.reference], ["Amount (RM)", (p) => p.amount.toFixed(2)]], state.payments.filter((p) => inRange(p.paidOn, r))),
+        exp: () => downloadCsv(`expenses-${tag}.csv`, [["Date", (e) => e.date], ["Description", (e) => e.description], ["Category", (e) => e.category], ["Paid to", (e) => e.paidTo], ["Method", (e) => e.method], ["Amount (RM)", (e) => e.amount.toFixed(2)]], state.expenses.filter((e) => inRange(e.date, r))),
+        bill: () => downloadCsv(`supplier-bills-${tag}.csv`, [["Ref", (p) => p.ref], ["Date", (p) => p.date], ["Supplier", (p) => p.supplier], ["Supplier receipt no", (p) => p.receiptNo], ["Total (RM)", (p) => p.total.toFixed(2)], ["Status", (p) => p.status], ["Paid on", (p) => p.paidOn]], state.purchases.filter((p) => inRange(p.date, r))),
+        cn: () => downloadCsv(`credit-notes-${tag}.csv`, [["CN no", (c) => c.no], ["Date", (c) => c.date], ["Invoice", (c) => c.invoiceNo], ["Customer", (c) => c.customerName], ["Reason", (c) => c.reason], ["Amount (RM)", (c) => c.amount.toFixed(2)], ["Refund (RM)", (c) => c.refund.toFixed(2)]], state.creditnotes.filter((c) => inRange(c.date, r))),
+      };
+      $$("[data-x]").forEach((b) => (b.onclick = () => EX[b.dataset.x]()));
+    };
+    draw();
+  }
+
+  // ---------- balance sheet ----------
+
+  function pageBalance() {
+    crumbs([["Balance sheet"]]);
+    const s = state.settings;
+    const t = todayKL();
+    const from = s.openingDate || "0000-01-01";
+    const after = (d) => !!d && d >= from && d <= t;
+    const opening = Number(s.openingCash) || 0;
+    const cashIn = sum(state.payments.filter((p) => after(p.paidOn)), (p) => p.amount);
+    const refunds = sum(state.creditnotes.filter((c) => after(c.date)), (c) => c.refund);
+    const spent = sum(state.expenses.filter((x) => after(x.date)), (x) => x.amount);
+    const bills = sum(state.purchases.filter((p) => p.status === "Paid" && after(p.paidOn || p.date)), (p) => p.total);
+    const cash = opening + cashIn - refunds - spent - bills;
+    const owedToYou = sum(owedInvoices(), (j) => j.balance);
+    const stock = sum(state.parts.filter((p) => p.qtyLeft > 0), (p) => p.qtyLeft * p.unitCost);
+    const equipment = sum(state.expenses.filter((x) => x.category === "Tools & equipment (asset)"), (x) => x.amount);
+    const assets = cash + owedToYou + stock + equipment;
+    const owedSuppliers = sum(state.purchases.filter((p) => p.status === "Unpaid"), (p) => p.total);
+    const deposits = sum(state.jobs.filter((j) => !j.invoiceNo && j.status !== "Cancelled"), (j) => j.paid);
+    const liabilities = owedSuppliers + deposits;
+    const capital = Number(s.ownerCapital) || 0;
+    const drawings = sum(state.expenses.filter((x) => x.category === "Owner drawings"), (x) => x.amount);
+    const kept = assets - liabilities - capital + drawings;
+    const L = (label, v, cls = "", note = "") => `<tr class="${cls}"><td>${label}${note ? `<div class="sm">${note}</div>` : ""}</td><td class="num">${v < 0 ? "-" + rm(-v) : rm(v)}</td></tr>`;
+    view.innerHTML = `${pageHead("Balance sheet", { sub: `What the business owns and owes, as at ${dmy(t)}` })}
+      ${s.openingDate ? "" : `<div class="notice warn">${icon("alert")}<div>Set your <b>opening cash</b>, <b>opening date</b> and <b>owner capital</b> in <a href="#/settings">Settings</a>, so the cash figure is right.</div></div>`}
+      <div class="grid g3" style="margin-bottom:16px">
+        <div class="tile"><div class="lbl">${icon("parts")}Owns</div><div class="val">${rm(assets)}</div><div class="foot">total assets</div></div>
+        <div class="tile"><div class="lbl">${icon("alert")}Owes</div><div class="val">${rm(liabilities)}</div><div class="foot">total liabilities</div></div>
+        <div class="tile"><div class="lbl">${icon("check")}Worth</div><div class="val">${rm(assets - liabilities)}</div><div class="foot">owner's equity</div></div></div>
+      <div class="split"><div class="card flush"><div class="card-h" style="padding:16px 18px 0"><h2>Balance sheet · ${dmy(t)}</h2><div class="r"><button type="button" class="btn ghost sm" id="bsCsv">${icon("file")}Excel</button></div></div>
+        <table class="tbl fin" style="margin-top:10px"><tbody>
+        <tr class="sec"><td colspan="2">What the business owns (assets)</td></tr>
+        ${L("Cash &amp; bank", cash, "", `Opening ${rm(opening)}${s.openingDate ? " on " + dmy(s.openingDate) : ""} + money in − money out`)}${L("Customers owe you", owedToYou, "", `${owedInvoices().length} unpaid invoice(s)`)}${L("Parts in stock (at cost)", stock)}${L("Tools &amp; equipment", equipment, "", "at purchase price")}
+        ${L("<b>Total assets</b>", assets, "tot")}
+        <tr class="sec"><td colspan="2">What the business owes (liabilities)</td></tr>
+        ${L("Supplier bills not paid", owedSuppliers)}${L("Customer deposits", deposits, "", "paid on estimates not yet invoiced")}${L("<b>Total liabilities</b>", liabilities, "tot")}
+        <tr class="sec"><td colspan="2">Owner's equity</td></tr>
+        ${L("Owner capital", capital)}${L("Less owner drawings", -drawings)}${L("Profit kept in the business", kept, "", "the balancing figure")}${L("<b>Total equity</b>", assets - liabilities, "grand")}
+        </tbody></table></div>
+        <div><div class="card"><h2>About this balance sheet</h2><p class="muted" style="margin:0">It is built from the records in this DMS, so it is only as complete as they are. Record every expense and supplier bill. It is not audited: give it to your accountant to check.</p></div></div></div>`;
+    $("#bsCsv").onclick = () => downloadCsv(`balance-sheet-${t}.csv`, [["Line", (r0) => r0[0]], ["RM", (r0) => r0[1].toFixed(2)]],
+      [["Cash & bank", cash], ["Customers owe you", owedToYou], ["Parts in stock (at cost)", stock], ["Tools & equipment", equipment], ["Total assets", assets], ["Supplier bills not paid", owedSuppliers], ["Customer deposits", deposits], ["Total liabilities", liabilities], ["Owner capital", capital], ["Less owner drawings", -drawings], ["Profit kept in the business", kept], ["Total equity", assets - liabilities]]);
+  }
+
+  // ================= STOCK =================
+
+  const supplierOwed = (name) => state.purchases.filter((p) => p.status === "Unpaid" && p.supplier.toLowerCase() === String(name).toLowerCase());
+
+  function supplierDialog(sp) {
+    const m = modal(sp ? sp.name : "Add supplier", `<form id="spf" novalidate><div class="fgrid">
+      <div class="full"><label for="sp_n" class="req">Name</label><input id="sp_n" name="name" value="${esc(sp?.name)}"></div>
+      <div><label for="sp_p">Phone</label><input id="sp_p" name="phone" type="tel" value="${esc(sp?.phone)}"></div><div><label for="sp_c">Contact person</label><input id="sp_c" name="contact" value="${esc(sp?.contact)}"></div>
+      <div><label for="sp_a">Your account no</label><input id="sp_a" name="accountNo" value="${esc(sp?.accountNo)}"></div><div><label for="sp_t">Pay within (days)</label><input id="sp_t" name="termsDays" type="number" min="0" inputmode="numeric" value="${esc(sp?.termsDays ?? "")}"></div>
+      <div class="full"><label for="sp_no">Notes</label><textarea id="sp_no" name="notes" rows="2">${esc(sp?.notes)}</textarea></div></div>
+      <div class="btns"><button class="btn" type="submit">${icon("check")}Save</button></div></form>`);
+    m.$("#spf").onsubmit = async (e) => {
+      e.preventDefault();
+      busy(e.submitter, true, "Saving…");
+      try {
+        if (sp) await api(`/suppliers/${sp.id}`, { method: "PATCH", body: formObj(e.target) });
+        else await api("/suppliers", { method: "POST", body: formObj(e.target) });
+        await refresh("suppliers");
+        m.close();
+        toast("Supplier saved");
+        route();
+      } catch (err) {
+        toast(err.message);
+        busy(e.submitter, false);
+      }
+    };
+  }
+
+  function pageSuppliers() {
+    crumbs([["Suppliers"]]);
+    const t = todayKL();
+    const unpaid = state.purchases.filter((p) => p.status === "Unpaid").sort((a, b) => (a.dueDate || a.date).localeCompare(b.dueDate || b.date));
+    const names = new Set(state.suppliers.map((s) => s.name.toLowerCase()));
+    const extra = [...new Set(state.purchases.map((p) => p.supplier).filter((n) => n && !names.has(n.toLowerCase())))];
+    view.innerHTML = `${pageHead("Suppliers", { sub: "Who you buy parts from, and what you still owe them", acts: `<button class="btn" id="spAdd">${icon("plus")}Add supplier</button>` })}
+      <div class="grid g2" style="margin-bottom:16px"><div class="tile"><div class="lbl">${icon("alert")}You owe suppliers</div><div class="val">${rm(sum(unpaid, (p) => p.total))}</div><div class="foot">${unpaid.length} unpaid bill(s)</div></div>
+        <div class="tile"><div class="lbl">${icon("calendar")}Overdue</div><div class="val">${rm(sum(unpaid.filter((p) => p.dueDate && p.dueDate < t), (p) => p.total))}</div><div class="foot">past the due date</div></div></div>
+      <div class="card flush"><div class="card-h" style="padding:16px 18px 0"><h2>Bills to pay</h2></div>${unpaid.length ? `<div class="tbl-wrap" style="margin-top:10px"><table class="tbl"><thead><tr><th>Supplier</th><th class="d">Ref</th><th class="d">Bought</th><th>Due</th><th class="num">Amount</th><th></th></tr></thead><tbody>
+        ${unpaid.map((p) => `<tr><td class="strong">${esc(p.supplier)}<div class="sm">${esc(p.receiptNo || p.ref)}</div></td><td class="d">${esc(p.ref)}</td><td class="d nowrap">${dmy(p.date)}</td><td class="nowrap">${p.dueDate ? (p.dueDate < t ? pill(dmy(p.dueDate), "bad") : dmy(p.dueDate)) : "—"}</td><td class="num strong">${rm(p.total)}</td>
+          <td class="num"><button type="button" class="btn alt sm" data-pay="${p.id}">${icon("check")}Paid</button></td></tr>`).join("")}</tbody></table></div>` : `<div style="padding:4px 18px 18px" class="muted">${icon("check")} Nothing owed to suppliers.</div>`}</div>
+      <div class="card flush"><div class="card-h" style="padding:16px 18px 0"><h2>Suppliers</h2></div>${state.suppliers.length || extra.length ? `<div class="tbl-wrap" style="margin-top:10px"><table class="tbl"><thead><tr><th>Name</th><th class="d">Phone</th><th class="d">Terms</th><th class="num d">Bills</th><th class="num">Owed</th></tr></thead><tbody>
+        ${state.suppliers.map((s) => `<tr class="tap" data-sp="${s.id}" tabindex="0"><td class="strong">${esc(s.name)}<div class="sm">${esc(s.contact)}</div></td><td class="d">${esc(s.phone)}</td><td class="d">${s.termsDays ? s.termsDays + " days" : "—"}</td>
+          <td class="num d">${state.purchases.filter((p) => p.supplier.toLowerCase() === s.name.toLowerCase()).length}</td><td class="num strong">${rm(sum(supplierOwed(s.name), (p) => p.total))}</td></tr>`).join("")}
+        ${extra.map((n) => `<tr><td>${esc(n)}<div class="sm">From receipts · <button type="button" class="btn ghost sm" data-addsp="${esc(n)}">Add details</button></div></td><td class="d"></td><td class="d"></td><td class="num d">${state.purchases.filter((p) => p.supplier === n).length}</td><td class="num strong">${rm(sum(supplierOwed(n), (p) => p.total))}</td></tr>`).join("")}
+        </tbody></table></div>` : emptyBox("parts", "No suppliers yet. They appear here from your supplier receipts.")}</div>`;
+    $("#spAdd").onclick = () => supplierDialog(null);
+    $$("[data-sp]").forEach((el) => (el.onclick = () => supplierDialog(state.suppliers.find((s) => s.id === el.dataset.sp))));
+    $$("[data-addsp]").forEach((b) => (b.onclick = async () => {
+      try { await api("/suppliers", { method: "POST", body: { name: b.dataset.addsp } }); await refresh("suppliers"); route(); } catch (err) { toast(err.message); }
+    }));
+    $$("[data-pay]").forEach((b) => (b.onclick = async () => {
+      const d = prompt("Paid on (YYYY-MM-DD):", todayKL());
+      if (d === null) return;
+      try { await api(`/purchases/${b.dataset.pay}`, { method: "PATCH", body: { status: "Paid", paidOn: d } }); await refresh("purchases"); toast("Marked paid"); route(); } catch (err) { toast(err.message); }
+    }));
+  }
+
+  // ---------- parts ordered for a job ----------
+
+  const ORD_CLS = { Ordered: "warn", Arrived: "info", Fitted: "ok", Cancelled: "" };
+
+  function orderDialog(o, job) {
+    const d = o || { part: "", qty: 1, jobId: job?.id || "", docNo: job ? docNo(job) : "", plate: job?.plate || "", status: "Ordered" };
+    const open = state.jobs.filter((j) => j.status !== "Cancelled" && j.stage !== "Collected");
+    const m = modal(o ? "Part order" : "Order a part", `<form id="pof" novalidate><div class="fgrid">
+      <div class="full"><label for="po_p" class="req">Part</label><input id="po_p" name="part" value="${esc(d.part)}" placeholder="e.g. Water pump"></div>
+      <div><label for="po_n">Part no</label><input id="po_n" name="partNo" value="${esc(d.partNo || "")}"></div><div><label for="po_s">Supplier</label><input id="po_s" name="supplier" list="supList" value="${esc(d.supplier || "")}"></div>
+      <div><label for="po_q">Qty</label><input id="po_q" name="qty" type="number" step="any" min="0" value="${esc(d.qty)}"></div><div><label for="po_c">Cost (RM)</label><input id="po_c" name="cost" type="number" step="0.01" min="0" inputmode="decimal" value="${esc(d.cost ?? "")}"></div>
+      <div><label for="po_e">Expected</label><input id="po_e" name="eta" type="date" value="${esc(d.eta || "")}"></div>
+      <div><label for="po_j">For job</label><select id="po_j" name="jobId"><option value="">— stock / no job —</option>${open.map((j) => `<option value="${j.id}" ${j.id === d.jobId ? "selected" : ""}>${esc(docNo(j))} · ${esc(j.plate)} · ${esc(j.customerName)}</option>`).join("")}</select></div>
+      <div class="full"><label for="po_no">Notes</label><input id="po_no" name="notes" value="${esc(d.notes || "")}"></div>
+      ${o ? `<div class="full"><label>Status</label><div class="seg" id="poSt">${["Ordered", "Arrived", "Fitted", "Cancelled"].map((x) => `<button type="button" data-s="${x}" class="${x === d.status ? "on" : ""}">${x}</button>`).join("")}</div></div>` : ""}</div>
+      <datalist id="supList">${[...new Set([...state.suppliers.map((x) => x.name), ...state.purchases.map((x) => x.supplier)].filter(Boolean))].map((n) => `<option value="${esc(n)}">`).join("")}</datalist>
+      <div class="btns"><button class="btn" type="submit">${icon("check")}Save</button></div></form>`);
+    let status = d.status;
+    const st = m.$("#poSt");
+    if (st) st.onclick = (e) => { const b = e.target.closest("[data-s]"); if (!b) return; status = b.dataset.s; $$("#poSt button", m.el).forEach((x) => x.classList.toggle("on", x === b)); };
+    m.$("#pof").onsubmit = async (e) => {
+      e.preventDefault();
+      const b = formObj(e.target);
+      const j = state.jobs.find((x) => x.id === b.jobId);
+      Object.assign(b, { docNo: j ? docNo(j) : "", plate: j ? j.plate : "" });
+      if (o) b.status = status;
+      busy(e.submitter, true, "Saving…");
+      try {
+        if (o) await api(`/partorders/${o.id}`, { method: "PATCH", body: b });
+        else await api("/partorders", { method: "POST", body: b });
+        await refresh("partorders");
+        m.close();
+        toast("Saved");
+        route();
+      } catch (err) {
+        toast(err.message);
+        busy(e.submitter, false);
+      }
+    };
+  }
+
+  function pageOrders(q) {
+    crumbs([["Part orders"]]);
+    const t = todayKL();
+    let f = q.get("f") || "open";
+    const F = { open: ["Waiting", (o) => ["Ordered", "Arrived"].includes(o.status)], fitted: ["Fitted", (o) => o.status === "Fitted"], cancelled: ["Cancelled", (o) => o.status === "Cancelled"], all: ["All", () => true] };
+    view.innerHTML = `${pageHead("Part orders", { sub: "Parts ordered for a car, until they arrive and are fitted", acts: `<button class="btn" id="poNew">${icon("plus")}Order a part</button>` })}
+      <div class="toolbar"><div class="chips" id="pof2">${Object.entries(F).map(([k, [l, fn]]) => `<button type="button" class="chip ${k === f ? "on" : ""}" data-f="${k}">${l} <span class="n">${state.partorders.filter(fn).length}</span></button>`).join("")}</div></div>
+      <div class="card flush" id="poT"></div>`;
+    const draw = () => {
+      const list = state.partorders.filter(F[f][1]);
+      $("#poT").innerHTML = list.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Part</th><th>For</th><th class="d">Supplier</th><th class="d">Ordered</th><th>Expected</th><th>Status</th><th></th></tr></thead><tbody>
+        ${list.map((o) => `<tr class="tap" data-po="${o.id}"><td class="strong">${esc(o.part)}<div class="sm">${esc([o.partNo, o.qty !== 1 ? "× " + o.qty : "", o.cost ? rm(o.cost) : ""].filter(Boolean).join(" · "))}</div></td>
+          <td>${o.jobId ? `<a href="#/jobs/${o.jobId}">${esc(o.docNo)}</a><div class="sm">${plateTag(o.plate)}</div>` : '<span class="sm">Stock</span>'}</td><td class="d">${esc(o.supplier)}</td><td class="d nowrap">${dmy(o.orderedOn)}</td>
+          <td class="nowrap">${o.eta ? (o.status === "Ordered" && o.eta < t ? pill(dmy(o.eta), "bad") : dmy(o.eta)) : "—"}</td><td>${pill(o.status, ORD_CLS[o.status])}</td>
+          <td class="num nowrap">${o.status === "Ordered" ? `<button type="button" class="btn alt sm" data-st="${o.id}:Arrived">Arrived</button>` : o.status === "Arrived" ? `<button type="button" class="btn alt sm" data-st="${o.id}:Fitted">Fitted</button>` : ""}</td></tr>`).join("")}</tbody></table></div>`
+        : emptyBox("box", "No part orders here.");
+      $$("#poT [data-po]").forEach((el) => (el.onclick = (e) => !e.target.closest("button,a") && orderDialog(state.partorders.find((o) => o.id === el.dataset.po))));
+      $$("#poT [data-st]").forEach((b) => (b.onclick = async () => {
+        const [id, st] = b.dataset.st.split(":");
+        try { await api(`/partorders/${id}`, { method: "PATCH", body: { status: st } }); await refresh("partorders"); toast(`Marked ${st.toLowerCase()}`); draw(); } catch (err) { toast(err.message); }
+      }));
+    };
+    $("#pof2").onclick = (e) => { const b = e.target.closest("[data-f]"); if (!b) return; f = b.dataset.f; $$("#pof2 .chip").forEach((x) => x.classList.toggle("on", x === b)); draw(); };
+    $("#poNew").onclick = () => orderDialog(null, null);
+    draw();
+  }
+
+  // ---------- stock count ----------
+
+  function pageStockCount() {
+    crumbs([["Parts & stock", "#/parts"], ["Stock count"]]);
+    const parts = state.parts.slice().sort((a, b) => a.name.localeCompare(b.name));
+    view.innerHTML = `${pageHead("Stock count", { back: "#/parts", sub: "Count what is on the shelf. Leave a box empty if you did not count it." })}
+      <form id="scf"><div class="card flush"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Part</th><th class="num">System</th><th class="num" style="width:130px">Counted</th></tr></thead><tbody>
+      ${parts.map((p) => `<tr><td class="strong">${esc(p.name)}<div class="sm">${esc([p.brand, p.partNo, p.supplier].filter(Boolean).join(" · "))}</div></td><td class="num">${p.qtyLeft}</td>
+        <td class="num"><input data-id="${p.id}" type="number" step="any" min="0" inputmode="decimal" aria-label="Counted ${esc(p.name)}" style="text-align:right"></td></tr>`).join("") || `<tr><td colspan="3">${emptyBox("parts", "No parts yet.")}</td></tr>`}
+      </tbody></table></div></div>
+      <div class="card"><div class="fgrid"><div><label for="scR">Reason</label><input id="scR" value="Stock count" placeholder="e.g. Monthly count, broken, lost"></div></div>
+        <div class="btns"><button class="btn" type="submit">${icon("check")}Save count</button></div></div></form>`;
+    $("#scf").onsubmit = async (e) => {
+      e.preventDefault();
+      const counts = $$("#scf input[data-id]").filter((i) => i.value !== "").map((i) => ({ id: i.dataset.id, qty: i.value }));
+      if (!counts.length) return toast("Enter at least one count.");
+      busy(e.submitter, true, "Saving…");
+      try {
+        const out = await api("/stockcount", { method: "POST", body: { counts, reason: $("#scR").value } });
+        await refresh("parts");
+        toast(out.changed ? `${out.changed} part(s) changed` : "No differences");
+        location.hash = "#/parts";
+      } catch (err) {
+        toast(err.message);
+        busy(e.submitter, false);
+      }
+    };
+  }
+
   // ================= VEHICLES =================
 
   const FUELS = ["Petrol", "Diesel", "Hybrid", "Plug-in hybrid", "Electric"];
@@ -1813,7 +2304,7 @@
     const value = inStock.reduce((t, p) => t + p.qtyLeft * p.unitCost, 0);
     const low = state.parts.filter((p) => p.qtyLeft <= 1).length;
     view.innerHTML = `
-      ${pageHead("Parts & stock", { sub: `Selling price = cost + ${esc(s.markupPercent)}% markup`, acts: `<button class="btn alt" id="buyManual">${icon("edit")}Enter by hand</button><label class="btn upload">${icon("upload")}Upload supplier receipt<input type="file" id="buyFile" accept="image/*,application/pdf"></label>` })}
+      ${pageHead("Parts & stock", { sub: `Selling price = cost + ${esc(s.markupPercent)}% markup`, acts: `<a class="btn alt" href="#/parts/count">${icon("clipboard")}Stock count</a><button class="btn alt" id="buyManual">${icon("edit")}Enter by hand</button><label class="btn upload">${icon("upload")}Upload supplier receipt<input type="file" id="buyFile" accept="image/*,application/pdf"></label>` })}
       <div class="grid g3" style="margin-bottom:16px">
         <div class="tile"><div class="lbl">${icon("parts")}Parts in stock</div><div class="val">${inStock.length}</div><div class="foot">${state.parts.length} part lines in total</div></div>
         <div class="tile"><div class="lbl">${icon("money")}Stock value (at cost)</div><div class="val">${rm0(value)}</div><div class="foot">money sitting on the shelf</div></div>
@@ -1855,6 +2346,10 @@
         <div><label for="p_sell">Selling price (RM)</label><input id="p_sell" name="sellingPrice" type="number" step="0.01" min="0" inputmode="decimal" value="${esc(p.sellingPrice)}"></div>
         <div><label for="p_left">In stock</label><input id="p_left" name="qtyLeft" type="number" step="any" inputmode="decimal" value="${esc(p.qtyLeft)}"></div></div>
       <p class="hint">${esc([p.brand, p.partNo, p.supplier].filter(Boolean).join(" · "))}${p.boughtOn ? ` · bought ${dmy(p.boughtOn)}` : ""}</p>
+      ${(() => {
+        const hist = state.parts.filter((x) => x.id !== p.id && ((p.partNo && x.partNo === p.partNo) || x.name.toLowerCase() === p.name.toLowerCase())).sort((a, b) => (b.boughtOn || "").localeCompare(a.boughtOn || ""));
+        return hist.length ? `<label>Price history</label><div class="rows">${hist.slice(0, 8).map((x) => `<div><div class="grow"><b>${rm(x.unitCost)}</b><span class="muted">${esc(x.supplier || "—")}</span></div><span class="r muted">${dmy(x.boughtOn)}</span></div>`).join("")}</div>` : "";
+      })()}
       <div class="btns"><button class="btn" type="submit">${icon("check")}Save part</button></div></form>`);
     const f = m.$("#pf");
     const re = () => (f.sellingPrice.value = sellPrice(f.unitCost.value, f.markupPercent.value, s.roundTo));
@@ -1924,7 +2419,9 @@
           <div><label for="pu_r">Receipt no</label><input id="pu_r" class="${c(sug.receiptNo)}" name="receiptNo" value="${esc(sug.receiptNo || "")}"></div></div>
         <div id="purItems">${sug.items.map((it) => itemRow(it, ai)).join("")}</div>
         <div class="addrow"><button type="button" class="btn alt sm" id="addItem">${icon("plus")}Add part</button></div>
-        <div class="fgrid"><div><label for="pu_t">Total on receipt (RM)</label><input id="pu_t" class="${c(sug.total)}" name="total" type="number" inputmode="decimal" step="0.01" value="${esc(sug.total ?? "")}"></div></div>
+        <div class="fgrid3"><div><label for="pu_t">Total on receipt (RM)</label><input id="pu_t" class="${c(sug.total)}" name="total" type="number" inputmode="decimal" step="0.01" value="${esc(sug.total ?? "")}"></div>
+          <div><label for="pu_pay">Payment</label><select id="pu_pay" name="payst"><option value="paid">Paid now</option><option value="later">Pay later (owe supplier)</option></select></div>
+          <div id="pu_dueW" hidden><label for="pu_due">Pay by</label><input id="pu_due" name="dueDate" type="date"></div></div>
         <p class="muted" id="purCheck"></p>
         <div class="btns"><button class="btn" type="submit">${icon("check")}Save parts</button></div>
       </form>`;
@@ -1950,11 +2447,17 @@
       }
     });
     $("#addItem").onclick = () => items.insertAdjacentHTML("beforeend", itemRow({ name: "", qty: 1, unitCost: null }, false));
+    form.payst.onchange = () => {
+      $("#pu_dueW").hidden = form.payst.value !== "later";
+      const sp = state.suppliers.find((x) => x.name.toLowerCase() === form.supplier.value.trim().toLowerCase());
+      if (form.payst.value === "later" && !form.dueDate.value) form.dueDate.value = addDaysISO(form.date.value || todayKL(), sp?.termsDays || 30);
+    };
     check();
     form.onsubmit = async (e) => {
       e.preventDefault();
       const data = {
         supplier: form.supplier.value, date: form.date.value, receiptNo: form.receiptNo.value, total: form.total.value,
+        paid: form.payst.value !== "later", dueDate: form.dueDate.value,
         items: $$(".item", items).map((el) => ({
           name: $("[name=name]", el).value, qty: $("[name=qty]", el).value, unitCost: $("[name=unitCost]", el).value,
           markupPercent: $("[name=markupPercent]", el).value, sellingPrice: $("[name=sellingPrice]", el).value,
@@ -1967,7 +2470,7 @@
       busy(e.submitter, true, "Saving…");
       try {
         const out = await api("/purchases", { method: "POST", form: fd });
-        await refresh("parts");
+        await refresh("parts", "purchases");
         toast(`Saved ${out.parts.length} part(s) — ${out.ref}`);
         if (!out.fileSaved) setTimeout(() => toast("Parts saved, but the receipt file did not upload."), 1800);
         pageParts();
@@ -2148,6 +2651,10 @@
           <label for="s_roundTo">Round selling price up to</label>
           <select id="s_roundTo" name="roundTo">${[[0, "No rounding"], [0.1, "Nearest 10 sen"], [0.5, "Nearest 50 sen"], [1, "Nearest RM1"], [5, "Nearest RM5"], [10, "Nearest RM10"]].map(([val, l]) => `<option value="${val}" ${Number(s.roundTo) === val ? "selected" : ""}>${l}</option>`).join("")}</select>
           <p class="hint" id="mkEx"></p></div>
+        <div class="card"><h2>Opening balances</h2><div class="fgrid">
+          ${f("openingCash", "Cash + bank on the opening date (RM)", "number", 'step="0.01" inputmode="decimal"')}${f("openingDate", "Opening date", "date")}
+          <div class="full">${f("ownerCapital", "Owner capital put in (RM)", "number", 'step="0.01" inputmode="decimal"').replace(/^<div>|<\/div>$/g, "")}</div></div>
+          <p class="hint">Used by the Balance sheet. Pick a start date (e.g. the 1st of this month) and enter your cash and bank total on that day.</p></div>
         <div class="card"><h2>Service reminders</h2><div class="fgrid">
           ${f("serviceIntervalKm", "Service every (km)", "number", 'inputmode="numeric" min="1000" step="500"')}${f("serviceIntervalMonths", "or every (months)", "number", 'inputmode="numeric" min="1"')}</div>
           <p class="hint">Used when you tick "Set next service reminder" on an invoice.</p></div>
