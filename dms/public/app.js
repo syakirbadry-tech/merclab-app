@@ -2717,6 +2717,8 @@
           <label for="s_roundTo">Round selling price up to</label>
           <select id="s_roundTo" name="roundTo">${[[0, "No rounding"], [0.1, "Nearest 10 sen"], [0.5, "Nearest 50 sen"], [1, "Nearest RM1"], [5, "Nearest RM5"], [10, "Nearest RM10"]].map(([val, l]) => `<option value="${val}" ${Number(s.roundTo) === val ? "selected" : ""}>${l}</option>`).join("")}</select>
           <p class="hint" id="mkEx"></p></div>
+        <div class="card"><h2>Import old records</h2><p class="muted" style="margin-top:-6px">Upload the import file (.json) made from your Excel. Anything already in the DMS is skipped, so it is safe to run again.</p>
+          <div class="btns"><label class="btn alt upload">${icon("upload")}Choose import file<input type="file" id="impFile" accept=".json,application/json"></label></div><div id="impOut"></div></div>
         <div class="card"><h2>WhatsApp inbox</h2>${state.whatsapp?.enabled ? `<p style="margin:0">${pill("Connected", "ok")} Accepting bills from ${esc((state.whatsapp.allowed || []).join(", "))}.</p>` : `<p class="muted" style="margin:0">Not connected. <a href="#/inbox">See how to connect</a>.</p>`}</div>
         <div class="card"><h2>Opening balances</h2><div class="fgrid">
           ${f("openingCash", "Cash + bank on the opening date (RM)", "number", 'step="0.01" inputmode="decimal"')}${f("openingDate", "Opening date", "date")}
@@ -2745,6 +2747,25 @@
         toast(err.message);
       } finally {
         busy(e.submitter, false);
+      }
+    };
+    $("#impFile").onchange = async (e) => {
+      const file = e.target.files[0];
+      e.target.value = "";
+      if (!file) return;
+      if (!confirm(`Import ${file.name} into the DMS now?`)) return;
+      const box = $("#impOut");
+      box.innerHTML = `<div class="notice"><span class="spin"></span><div>Importing… this can take a minute. Keep this page open.</div></div>`;
+      const fd = new FormData();
+      fd.append("file", file);
+      try {
+        const r = await api("/import", { method: "POST", form: fd });
+        const line = (o) => Object.entries(o).map(([k, v]) => `${v} ${k}`).join(", ") || "nothing";
+        box.innerHTML = `<div class="notice ok">${icon("check")}<div><b>Done.</b> Added: ${esc(line(r.created))}.<br>Already there (skipped): ${esc(line(r.skipped))}.</div></div>
+          ${r.problems.length ? `<div class="notice warn">${icon("alert")}<div>Please check:<br>${r.problems.map(esc).join("<br>")}</div></div>` : ""}`;
+        await loadAll();
+      } catch (err) {
+        box.innerHTML = `<div class="notice bad">${icon("alert")}<div>${esc(err.message)}</div></div>`;
       }
     };
     $("#qrFile").onchange = async (e) => {
