@@ -1,0 +1,16 @@
+{
+  "name": "merclab-dms",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Merc Lab DMS: supplier receipt to parts with selling price, quotations, payments and receipts.",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "express": "^4.21.2",
+    "multer": "^2.0.2"
+  }
+}

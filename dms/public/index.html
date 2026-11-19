@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f1420">
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Merc Lab DMS">
+  <title>Merc Lab DMS</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="logo"><svg width="26" height="26" viewBox="0 0 120 120" aria-hidden="true"><polygon points="60,10 104,35 104,85 60,110 16,85 16,35" fill="#5b9bf5"/><polygon points="60,10 104,35 60,60 16,35" fill="#3f77d1"/></svg><span>Merc Lab DMS</span></div>
+  </header>
+
+  <main id="view" aria-live="polite"></main>
+
+  <div id="toast" role="status"></div>
+
+  <nav class="tabs" id="tabs" hidden>
+    <button data-tab="buy" class="on"><span>🧾</span>Parts</button>
+    <button data-tab="quote"><span>📝</span>Quotes</button>
+    <button data-tab="money"><span>💰</span>Money</button>
+    <button data-tab="settings"><span>⚙️</span>Settings</button>
+  </nav>
+
+  <script src="app.js"></script>
+</body>
+</html>
