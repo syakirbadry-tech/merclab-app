@@ -764,3 +764,62 @@ test("finance: expenses, credit notes with refund, suppliers owed, part orders, 
   assert.equal(st.body.openingCash, 5000);
   assert.equal(st.body.openingDate, "2026-11-01");
 });
+
+// ================= WhatsApp inbox =================
+test("WhatsApp: only signed messages from the owner's number land in the Inbox, then save as a parts receipt", async () => {
+  reset();
+  const WA = require("../server/whatsapp");
+  const crypto = require("crypto");
+  // Feature is off until every key is set.
+  assert.equal((await call("GET", "/wa/webhook?hub.mode=subscribe&hub.verify_token=x&hub.challenge=1", { noAuth: true })).status, 404);
+  Object.assign(process.env, { WA_TOKEN: "t", WA_PHONE_ID: "111", WA_APP_SECRET: "s3cret", WA_VERIFY_TOKEN: "verify-me", WA_ALLOWED: "60123456789" });
+  const v = await call("GET", "/wa/webhook?hub.mode=subscribe&hub.verify_token=verify-me&hub.challenge=4242", { noAuth: true });
+  assert.equal(v.status, 200);
+  assert.equal(v.text, "4242");
+  assert.equal((await call("GET", "/wa/webhook?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=1", { noAuth: true })).status, 403);
+
+  const sent = [];
+  WA.http.fetch = async (url, opts = {}) => {
+    if (url.endsWith("/111/messages")) { sent.push(JSON.parse(opts.body)); return new Response("{}", { status: 200 }); }
+    if (url.includes("/media-1")) return new Response(JSON.stringify({ url: "https://lookaside.test/file", mime_type: "image/jpeg", file_size: 5 }), { status: 200 });
+    if (url === "https://lookaside.test/file") return new Response("jpegbytes", { status: 200 });
+    return new Response("nope", { status: 404 });
+  };
+  aiError = null;
+  aiReply = { supplier: "Auto Parts KL", date: "2026-11-18", receiptNo: "A1", total: 52, items: [{ name: "Oil filter", qty: 2, unitPrice: 26, amount: 52 }] };
+  const post = async (payload, secret = "s3cret") => {
+    const raw = JSON.stringify(payload);
+    const sig = "sha256=" + crypto.createHmac("sha256", secret).update(raw).digest("hex");
+    const res = await fetch(base + "/wa/webhook", { method: "POST", headers: { "Content-Type": "application/json", "X-Hub-Signature-256": sig }, body: raw });
+    await WA.lastJob;
+    return res.status;
+  };
+  const msg = (from, id) => ({ entry: [{ changes: [{ value: { messages: [{ from, id, timestamp: "1763540000", type: "image", image: { id: "media-1", caption: "" } }] } }] }] });
+  assert.equal(await post(msg("60123456789", "wamid.1"), "wrong"), 401);
+  assert.equal(store.inbox.length, 0);
+  assert.equal(await post(msg("60999999999", "wamid.2")), 200);
+  assert.equal(store.inbox.length, 0, "stranger ignored");
+  assert.equal(await post(msg("60123456789", "wamid.3")), 200);
+  assert.equal(await post(msg("60123456789", "wamid.3")), 200); // Meta retry
+  assert.equal(store.inbox.length, 1);
+  assert.equal(store.inbox[0].fields.Kind, "Supplier bill");
+  assert.match(store.inbox[0].fields.Summary, /Auto Parts KL · RM 52\.00/);
+  assert.equal(uploads.at(-1).key, "inboxFile");
+  assert.match(sent.at(-1).text.body, /Got it/);
+  assert.equal(WA.kindOf("TNB bil"), "Expense");
+  assert.equal(WA.kindOf("customer slip"), "Payment slip");
+
+  // In the app: list, then save as parts receipt (once).
+  await login();
+  const ib = await call("GET", "/api/inbox");
+  assert.equal(ib.body.whatsapp.enabled, true);
+  const item = ib.body.inbox[0];
+  assert.equal(item.suggestion.supplier, "Auto Parts KL");
+  store.inbox[0].fields.File = [{ id: "attX", url: "https://files.test/bill.jpg", filename: "bill.jpg" }];
+  const sv = await call("POST", "/api/purchases", { data: { inboxId: item.id, supplier: "Auto Parts KL", date: "2026-11-18", items: [{ name: "Oil filter", qty: 2, unitCost: 26 }] } });
+  assert.equal(sv.status, 201);
+  assert.equal(store.purchases[0].fields.Receipt[0].url, "https://files.test/bill.jpg");
+  assert.equal(store.inbox[0].fields.Status, "Saved");
+  assert.equal((await call("POST", "/api/purchases", { data: { inboxId: item.id, supplier: "x", items: [{ name: "a", qty: 1, unitCost: 1 }] } })).status, 400);
+  for (const k of ["WA_TOKEN", "WA_PHONE_ID", "WA_APP_SECRET", "WA_VERIFY_TOKEN", "WA_ALLOWED"]) delete process.env[k];
+});

@@ -27,7 +27,7 @@
     return `${Math.round(d / 365)} years ago`;
   }
 
-  const state = { settings: null, parts: [], jobs: [], payments: [], customers: [], vehicles: [], packages: [], faults: [], interactions: [], bookings: [], expenses: [], creditnotes: [], suppliers: [], purchases: [], partorders: [], route: "" };
+  const state = { settings: null, parts: [], jobs: [], payments: [], customers: [], vehicles: [], packages: [], faults: [], interactions: [], bookings: [], expenses: [], creditnotes: [], suppliers: [], purchases: [], partorders: [], inbox: [], whatsapp: null, route: "" };
 
   // ---------- icons (simple line icons, 24px grid) ----------
   const ICONS = {
@@ -195,7 +195,9 @@
   // ---------- data ----------
 
   async function loadAll() {
-    const [s, p, q, pay, c, v, pk, fc, ia, bk, ex, cn, sp, pu, po] = await Promise.all([api("/settings"), api("/parts"), api("/jobs"), api("/payments"), api("/customers"), api("/vehicles"), api("/packages"), api("/faults"), api("/interactions"), api("/bookings"), api("/expenses"), api("/creditnotes"), api("/suppliers"), api("/purchases"), api("/partorders")]);
+    const [s, p, q, pay, c, v, pk, fc, ia, bk, ex, cn, sp, pu, po, ib] = await Promise.all([api("/settings"), api("/parts"), api("/jobs"), api("/payments"), api("/customers"), api("/vehicles"), api("/packages"), api("/faults"), api("/interactions"), api("/bookings"), api("/expenses"), api("/creditnotes"), api("/suppliers"), api("/purchases"), api("/partorders"), api("/inbox")]);
+    state.inbox = ib.inbox;
+    state.whatsapp = ib.whatsapp;
     Object.assign(state, { expenses: ex.expenses, creditnotes: cn.creditnotes, suppliers: sp.suppliers, purchases: pu.purchases, partorders: po.partorders });
     state.interactions = ia.interactions;
     state.bookings = bk.bookings;
@@ -209,7 +211,7 @@
     state.vehicles = v.vehicles;
   }
   async function refresh(...what) {
-    const map = { jobs: "/jobs", payments: "/payments", customers: "/customers", parts: "/parts", vehicles: "/vehicles", packages: "/packages", faults: "/faults", interactions: "/interactions", bookings: "/bookings", expenses: "/expenses", creditnotes: "/creditnotes", suppliers: "/suppliers", purchases: "/purchases", partorders: "/partorders" };
+    const map = { jobs: "/jobs", payments: "/payments", customers: "/customers", parts: "/parts", vehicles: "/vehicles", packages: "/packages", faults: "/faults", interactions: "/interactions", bookings: "/bookings", expenses: "/expenses", creditnotes: "/creditnotes", suppliers: "/suppliers", purchases: "/purchases", partorders: "/partorders", inbox: "/inbox" };
     const out = await Promise.all(what.map((w) => api(map[w])));
     what.forEach((w, i) => (state[w] = out[i][w]));
   }
@@ -235,7 +237,7 @@
   // ---------- shell ----------
 
   const NAV = [
-    ["Overview", [["dashboard", "Dashboard", "dashboard"]]],
+    ["Overview", [["dashboard", "Dashboard", "dashboard"], ["inbox", "Inbox", "chat"]]],
     ["Workshop", [["jobs", "Jobs", "jobs"], ["bookings", "Bookings", "calendar"], ["vehicles", "Vehicles", "car"], ["packages", "Packages", "box"], ["faults", "Fault cases", "book"]]],
     ["CRM", [["customers", "Customers", "users"], ["followups", "Follow-ups", "phone"], ["reminders", "Service reminders", "bell"]]],
     ["Finance", [["money", "Money in", "money"], ["expenses", "Expenses", "receipt"], ["creditnotes", "Credit notes", "file"], ["pnl", "Profit & Loss", "dashboard"], ["balance", "Balance sheet", "book"]]],
@@ -246,7 +248,7 @@
     $("#side").innerHTML = `
       <div class="brand"><svg width="30" height="30" viewBox="0 0 120 120" aria-hidden="true"><polygon points="60,10 104,35 104,85 60,110 16,85 16,35" fill="#5b9bf5"/><polygon points="60,10 104,35 60,60 16,35" fill="#3f77d1"/></svg>
         <div>The Merc Lab<small>Workshop DMS</small></div></div>
-      <nav class="nav">${NAV.map(([h, items]) => `<div class="nav-h">${h}</div>${items.map(([k, l, ic]) => `<a href="#/${k}" data-nav="${k}">${icon(ic)}<span>${l}</span>${k === "jobs" ? '<span class="count" id="navWs" hidden></span>' : ""}</a>`).join("")}`).join("")}</nav>
+      <nav class="nav">${NAV.map(([h, items]) => `<div class="nav-h">${h}</div>${items.map(([k, l, ic]) => `<a href="#/${k}" data-nav="${k}">${icon(ic)}<span>${l}</span>${k === "jobs" ? '<span class="count" id="navWs" hidden></span>' : k === "inbox" ? '<span class="count" id="navIb" hidden></span>' : ""}</a>`).join("")}`).join("")}</nav>
       <div class="side-foot"><a href="#/settings" data-nav="settings">${icon("settings")}<span>Settings</span></a>
         <button type="button" id="logoutBtn">${icon("logout")}<span>Log out</span></button></div>`;
     $("#bottom").innerHTML = [["dashboard", "Home", "dashboard"], ["jobs", "Jobs", "jobs"], ["vehicles", "Cars", "car"], ["money", "Money", "money"]]
@@ -268,6 +270,12 @@
   function setActive(section) {
     $$("[data-nav]").forEach((a) => a.classList.toggle("on", a.dataset.nav === section));
     const ws = state.jobs.filter(isWorkshop).length;
+    const ib = $("#navIb");
+    if (ib) {
+      const n = inboxNew();
+      ib.hidden = !n;
+      ib.textContent = n;
+    }
     const b = $("#navWs");
     if (b) {
       b.hidden = !ws;
@@ -348,7 +356,8 @@
       }
       if (sec === "vehicles") return a ? pageVehicle(a, b || "details") : pageVehicles(q);
       if (sec === "customers") return a ? pageCustomer(a) : pageCustomers();
-      if (sec === "parts") return a === "count" ? pageStockCount() : pageParts();
+      if (sec === "parts") return a === "count" ? pageStockCount() : pageParts(q);
+      if (sec === "inbox") return pageInbox();
       if (sec === "expenses") return pageExpenses(q);
       if (sec === "creditnotes") return pageCredits();
       if (sec === "pnl") return pagePnl(q);
@@ -421,6 +430,7 @@
           </div>
         </div>
         <div>
+          ${inboxNew() ? `<a class="notice" href="#/inbox" style="text-decoration:none">${icon("chat")}<div><b>${inboxNew()} new bill(s) from WhatsApp</b> waiting to be checked and saved.</div></a>` : ""}
           ${(() => {
             const bks = state.bookings.filter((b) => b.date === today && b.status !== "Cancelled");
             const fus = state.customers.filter((c) => c.nextFollowUp && c.nextFollowUp <= today);
@@ -1467,7 +1477,7 @@
 
   // ---------- expenses ----------
 
-  function expenseDialog(x, file, ai) {
+  function expenseDialog(x, file, ai, inboxItem) {
     const d = x || { date: todayKL(), category: "", method: "Bank transfer" };
     const c = (v) => (ai && v != null && v !== "" ? "ai" : "");
     const m = modal(x?.id ? "Expense" : "Add expense", `<form id="exf" novalidate>
@@ -1481,6 +1491,7 @@
         <div class="full"><label for="ex_n">Notes</label><input id="ex_n" name="notes" value="${esc(d.notes || "")}"></div></div>
       <p class="hint">Parts you buy for stock go in Parts &amp; stock (supplier receipt), not here. "Tools &amp; equipment" counts as an asset, and "Owner drawings" is money you take out; neither lowers profit.</p>
       ${x?.receipt ? `<p><a href="${esc(x.receipt)}" target="_blank" rel="noopener">${icon("file")} View receipt</a></p>` : ""}
+      ${inboxItem ? `<p>${icon("chat")} From WhatsApp · ${inboxFileLink(inboxItem)}</p>` : ""}
       <div class="btns"><button class="btn" type="submit">${icon("check")}Save</button></div></form>`);
     m.$("#exf").addEventListener("input", (e) => e.target.classList.remove("ai"));
     m.$("#exf").onsubmit = async (e) => {
@@ -1492,11 +1503,11 @@
         else {
           const fd = new FormData();
           if (file) fd.append("file", file);
-          fd.append("data", JSON.stringify(b));
+          fd.append("data", JSON.stringify({ ...b, inboxId: inboxItem ? inboxItem.id : "" }));
           const out = await api("/expenses", { method: "POST", form: fd });
           if (!out.fileSaved) toast("Saved, but the receipt file did not upload.");
         }
-        await refresh("expenses");
+        await refresh("expenses", "inbox");
         m.close();
         toast("Expense saved");
         route();
@@ -1889,6 +1900,56 @@
         busy(e.submitter, false);
       }
     };
+  }
+
+  // ================= INBOX (WhatsApp) =================
+
+  const inboxNew = () => state.inbox.filter((i) => i.status === "New").length;
+  const inboxFileLink = (it) => (it?.file ? `<a class="btn ghost sm" href="${esc(it.file.url)}" target="_blank" rel="noopener">${icon("file")}Open the forwarded file</a>` : "");
+
+  function waSetupHtml() {
+    const hook = `${location.origin}/wa/webhook`;
+    return `<div class="card"><h2>Connect WhatsApp (one time)</h2>
+      <p class="muted" style="margin-top:-6px">Then you forward a supplier bill to the workshop's WhatsApp number and it appears here, already read by AI.</p>
+      <ol class="steps">
+        <li>Get a phone number for the DMS (a new SIM is easiest; it must not be on the normal WhatsApp app).</li>
+        <li>On <b>developers.facebook.com</b>: Create app → type <b>Business</b> → add <b>WhatsApp</b>. In <b>API Setup</b>, add the number and verify it by SMS. Copy the <b>Phone number ID</b>.</li>
+        <li>In <b>Meta Business settings → System users</b>: add an admin user → <b>Generate token</b> with <i>whatsapp_business_messaging</i> and <i>whatsapp_business_management</i>. Copy the token.</li>
+        <li>In the app's <b>Settings → Basic</b>: copy the <b>App secret</b>.</li>
+        <li>On <b>Render → merclab-dms → Environment</b>, add:<br><code>WA_TOKEN</code> (the token) · <code>WA_PHONE_ID</code> · <code>WA_APP_SECRET</code> · <code>WA_VERIFY_TOKEN</code> (make up a long word) · <code>WA_ALLOWED</code> (your own number, e.g. 60123456789).</li>
+        <li>Back on Meta: <b>WhatsApp → Configuration → Webhook</b>. Callback URL: <code>${esc(hook)}</code> · Verify token: the same word. Then subscribe to <b>messages</b>.</li>
+        <li>Save the DMS number in your phone and forward it a bill.</li></ol>
+      <p class="hint">Receiving bills and the automatic reply are free on WhatsApp (customer-service messages). Only numbers in WA_ALLOWED are accepted; everything else is ignored.</p></div>`;
+  }
+
+  function saveFromInbox(it) {
+    const s = it.suggestion || {};
+    if (it.kind === "Expense") {
+      return expenseDialog({ description: s.items?.[0]?.name ? (s.items.length > 1 ? `${s.items[0].name} and ${s.items.length - 1} more` : s.items[0].name) : s.supplier || "", paidTo: s.supplier || "", date: s.date || "", amount: s.total ?? "", method: "Bank transfer" }, null, !!it.suggestion, it);
+    }
+    location.hash = it.kind === "Payment slip" ? `#/money?inbox=${it.id}` : `#/parts?inbox=${it.id}`;
+  }
+
+  function pageInbox() {
+    crumbs([["Inbox"]]);
+    const wa = state.whatsapp || {};
+    const items = state.inbox.filter((i) => i.status !== "Ignored");
+    view.innerHTML = `${pageHead("Inbox", { sub: wa.enabled ? `Bills forwarded on WhatsApp from ${esc((wa.allowed || []).join(", "))}. Check each one, then save.` : "Bills forwarded on WhatsApp land here" })}
+      ${wa.enabled ? "" : waSetupHtml()}
+      <div class="vlist">${items.length ? items.map((it) => `<div class="card" style="margin:0"><div class="ibx">
+          <div class="ibf">${it.file ? (/^image\//.test(it.file.type) && it.file.thumb ? `<a href="${esc(it.file.url)}" target="_blank" rel="noopener"><img src="${esc(it.file.thumb)}" alt="Forwarded bill" loading="lazy"></a>` : `<a href="${esc(it.file.url)}" target="_blank" rel="noopener" class="pdf">${icon("file")}PDF</a>`) : `<span class="pdf">${icon("file")}</span>`}</div>
+          <div style="min-width:0"><div class="chips" style="margin-bottom:6px">${pill(it.status, it.status === "New" ? "info" : it.status === "Saved" ? "ok" : it.status === "Failed" ? "bad" : "")}
+            <select data-kind="${it.id}" aria-label="What is it" ${it.status === "Saved" ? "disabled" : ""} style="width:auto;min-height:30px;padding:3px 8px;font-size:13px">${opt(["Supplier bill", "Expense", "Payment slip"], it.kind)}</select></div>
+            <b>${esc(it.summary)}</b><div class="muted">${it.receivedAt ? new Date(it.receivedAt).toLocaleString("en-MY", { dateStyle: "medium", timeStyle: "short" }) : ""}${it.caption ? ` · "${esc(it.caption)}"` : ""}${it.savedAs ? ` · saved as ${esc(it.savedAs)}` : ""}${it.error ? ` · ${esc(it.error)}` : ""}</div></div>
+          <div class="iba">${it.status === "New" ? `<button type="button" class="btn" data-save="${it.id}">${icon("check")}Check &amp; save</button><button type="button" class="btn ghost sm" data-ign="${it.id}">Ignore</button>` : ""}</div></div></div>`).join("")
+        : `<div class="card">${emptyBox("receipt", wa.enabled ? "Nothing yet. Forward a supplier bill to the DMS WhatsApp number." : "Nothing yet.")}</div>`}</div>`;
+    $$("[data-save]").forEach((b) => (b.onclick = () => saveFromInbox(state.inbox.find((i) => i.id === b.dataset.save))));
+    $$("[data-ign]").forEach((b) => (b.onclick = async () => {
+      try { await api(`/inbox/${b.dataset.ign}`, { method: "PATCH", body: { status: "Ignored" } }); await refresh("inbox"); route(); } catch (err) { toast(err.message); }
+    }));
+    $$("[data-kind]").forEach((s) => (s.onchange = async () => {
+      try { await api(`/inbox/${s.dataset.kind}`, { method: "PATCH", body: { kind: s.value } }); await refresh("inbox"); toast("Changed"); } catch (err) { toast(err.message); }
+    }));
   }
 
   // ================= VEHICLES =================
@@ -2297,7 +2358,7 @@
 
   // ================= PARTS =================
 
-  function pageParts() {
+  function pageParts(q) {
     crumbs([["Parts & stock"]]);
     const s = state.settings;
     const inStock = state.parts.filter((p) => p.qtyLeft > 0);
@@ -2318,6 +2379,8 @@
     $("#buyClose").onclick = () => ($("#buyCard").hidden = true);
     $("#partSearch").oninput = drawParts;
     drawParts();
+    const fromInbox = q && q.get("inbox") && state.inbox.find((i) => i.id === q.get("inbox") && i.status === "New");
+    if (fromInbox) purchaseForm(fromInbox.suggestion || { supplier: "", date: "", receiptNo: "", total: null, items: [{ name: "", qty: 1, unitCost: null }] }, null, !!fromInbox.suggestion, fromInbox);
   }
 
   function drawParts() {
@@ -2407,12 +2470,13 @@
     </div>`;
   }
 
-  function purchaseForm(sug, file, ai) {
+  function purchaseForm(sug, file, ai, inboxItem) {
     $("#buyCard").hidden = false;
     const box = $("#buyForm");
     const c = (v) => (ai && v != null && v !== "" ? "ai" : "");
     box.innerHTML = `
       ${ai ? `<div class="notice">${icon("alert")}<div>AI filled the <b>blue</b> boxes. Check them against the receipt, then save.</div></div>` : ""}
+      ${inboxItem ? `<p style="margin:0 0 8px">${icon("chat")} From WhatsApp · ${inboxFileLink(inboxItem)}</p>` : ""}
       <form id="purForm" novalidate>
         <div class="fgrid3"><div><label for="pu_s">Supplier</label><input id="pu_s" class="${c(sug.supplier)}" name="supplier" value="${esc(sug.supplier || "")}"></div>
           <div><label for="pu_d">Date</label><input id="pu_d" class="${c(sug.date)}" name="date" type="date" value="${esc(sug.date || "")}"></div>
@@ -2457,7 +2521,7 @@
       e.preventDefault();
       const data = {
         supplier: form.supplier.value, date: form.date.value, receiptNo: form.receiptNo.value, total: form.total.value,
-        paid: form.payst.value !== "later", dueDate: form.dueDate.value,
+        paid: form.payst.value !== "later", dueDate: form.dueDate.value, inboxId: inboxItem ? inboxItem.id : "",
         items: $$(".item", items).map((el) => ({
           name: $("[name=name]", el).value, qty: $("[name=qty]", el).value, unitCost: $("[name=unitCost]", el).value,
           markupPercent: $("[name=markupPercent]", el).value, sellingPrice: $("[name=sellingPrice]", el).value,
@@ -2470,7 +2534,7 @@
       busy(e.submitter, true, "Saving…");
       try {
         const out = await api("/purchases", { method: "POST", form: fd });
-        await refresh("parts", "purchases");
+        await refresh("parts", "purchases", "inbox");
         toast(`Saved ${out.parts.length} part(s) — ${out.ref}`);
         if (!out.fileSaved) setTimeout(() => toast("Parts saved, but the receipt file did not upload."), 1800);
         pageParts();
@@ -2532,6 +2596,8 @@
     $("#payCash").onclick = () => paymentForm({ method: "Cash" }, null, null);
     $("#payClose").onclick = () => ($("#payCard").hidden = true);
     draw();
+    const fromInbox = q.get("inbox") && state.inbox.find((i) => i.id === q.get("inbox") && i.status === "New");
+    if (fromInbox) return paymentForm(fromInbox.suggestion || { method: "Bank transfer" }, null, null, !!fromInbox.suggestion, fromInbox);
     const forJob = q.get("pay") && state.jobs.find((j) => j.id === q.get("pay"));
     if (forJob) paymentForm({ amount: forJob.balance, method: "Bank transfer" }, null, [{ id: forJob.id, docNo: docNo(forJob), customerName: forJob.customerName, plate: forJob.plate, balance: forJob.balance, why: [] }]);
     else if (q.get("upload")) $("#payFile").click();
@@ -2560,7 +2626,7 @@
       .map((j) => ({ id: j.id, docNo: docNo(j), customerName: j.customerName, plate: j.plate, balance: j.balance, why: [] }));
   }
 
-  function paymentForm(sug, file, matches, ai) {
+  function paymentForm(sug, file, matches, ai, inboxItem) {
     const card = $("#payCard");
     if (!card) return;
     card.hidden = false;
@@ -2590,14 +2656,14 @@
     form.onsubmit = async (e) => {
       e.preventDefault();
       if (!form.jobId.value) return toast("Choose which estimate or invoice this payment is for.");
-      const data = { jobId: form.jobId.value, amount: form.amount.value, paidOn: form.paidOn.value, method: form.method.value, reference: form.reference.value, payerName: form.payerName.value };
+      const data = { jobId: form.jobId.value, amount: form.amount.value, paidOn: form.paidOn.value, method: form.method.value, reference: form.reference.value, payerName: form.payerName.value, inboxId: inboxItem ? inboxItem.id : "" };
       const fd = new FormData();
       if (file) fd.append("file", file);
       fd.append("data", JSON.stringify(data));
       busy(e.submitter, true, "Recording…");
       try {
         const out = await api("/payments", { method: "POST", form: fd });
-        await refresh("payments", "jobs");
+        await refresh("payments", "jobs", "inbox");
         if (!out.fileSaved) toast("Payment saved, but the slip file did not upload.");
         location.hash = `#/money/receipt/${out.payment.id}`;
       } catch (err) {
@@ -2651,6 +2717,7 @@
           <label for="s_roundTo">Round selling price up to</label>
           <select id="s_roundTo" name="roundTo">${[[0, "No rounding"], [0.1, "Nearest 10 sen"], [0.5, "Nearest 50 sen"], [1, "Nearest RM1"], [5, "Nearest RM5"], [10, "Nearest RM10"]].map(([val, l]) => `<option value="${val}" ${Number(s.roundTo) === val ? "selected" : ""}>${l}</option>`).join("")}</select>
           <p class="hint" id="mkEx"></p></div>
+        <div class="card"><h2>WhatsApp inbox</h2>${state.whatsapp?.enabled ? `<p style="margin:0">${pill("Connected", "ok")} Accepting bills from ${esc((state.whatsapp.allowed || []).join(", "))}.</p>` : `<p class="muted" style="margin:0">Not connected. <a href="#/inbox">See how to connect</a>.</p>`}</div>
         <div class="card"><h2>Opening balances</h2><div class="fgrid">
           ${f("openingCash", "Cash + bank on the opening date (RM)", "number", 'step="0.01" inputmode="decimal"')}${f("openingDate", "Opening date", "date")}
           <div class="full">${f("ownerCapital", "Owner capital put in (RM)", "number", 'step="0.01" inputmode="decimal"').replace(/^<div>|<\/div>$/g, "")}</div></div>
