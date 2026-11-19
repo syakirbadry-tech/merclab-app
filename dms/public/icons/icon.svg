@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="The Merc Lab">
+  <rect width="512" height="512" fill="#ffffff"/>
+  <g font-family="Arimo, Arial, Helvetica, sans-serif" font-weight="700" fill="#111111">
+    <text x="266" y="132" font-size="40" letter-spacing="20" text-anchor="middle">THE</text>
+    <text x="256" y="250" font-size="120" letter-spacing="-1" text-anchor="middle">MERC</text>
+    <rect x="116" y="272" width="280" height="126" fill="#111111"/>
+    <text x="256" y="378" font-size="120" letter-spacing="-1" text-anchor="middle" fill="#ffffff">LAB</text>
+    <polyline points="76,440 214,440 228,426 242,454 256,422 270,458 284,440 436,440" fill="none" stroke="#111111" stroke-width="9" stroke-linejoin="round" stroke-linecap="round"/>
+  </g>
+</svg>
