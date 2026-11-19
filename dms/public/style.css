@@ -379,3 +379,13 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 .tl .tlh { display: flex; gap: 10px; justify-content: space-between; flex-wrap: wrap; }
 @media (max-width: 1100px) { .week { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 860px) { .week { grid-template-columns: minmax(0, 1fr); } .day { min-height: 0; } }
+
+/* finance statements */
+.tbl.fin td { padding: 9px 18px; }
+.tbl.fin tr.sec td { background: var(--surface2); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding-top: 12px; }
+.tbl.fin tr.tot td { border-top: 1.5px solid var(--line2); font-weight: 600; }
+.tbl.fin tr.grand td { border-top: 2px solid var(--ink); font-size: 17px; font-weight: 700; background: var(--surface2); }
+.tbl.fin td.num { font-variant-numeric: tabular-nums; }
+/* longer menu: tighter rows */
+.nav a { min-height: 38px; padding: 8px 10px; }
+.nav-h { padding: 10px 10px 4px; }

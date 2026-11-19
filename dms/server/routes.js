@@ -75,8 +75,12 @@ const SETTINGS_FIELDS = {
   estimateValidityDays: "Quote valid days",
   serviceIntervalKm: "Service interval km",
   serviceIntervalMonths: "Service interval months",
+  openingCash: "Opening cash",
+  openingDate: "Opening date",
+  ownerCapital: "Owner capital",
 };
-const NUMERIC_SETTINGS = ["markupPercent", "roundTo", "estimateValidityDays", "partsWarrantyMonths", "serviceIntervalKm", "serviceIntervalMonths"];
+const NUMERIC_SETTINGS = ["markupPercent", "roundTo", "estimateValidityDays", "partsWarrantyMonths", "serviceIntervalKm", "serviceIntervalMonths", "openingCash", "ownerCapital"];
+const MONEY_SETTINGS = ["openingCash", "ownerCapital"];
 
 async function loadSettings() {
   const rows = await db.list("settings");
@@ -124,13 +128,17 @@ router.put("/settings", wrap(async (req, res) => {
   const fields = {};
   for (const [k, f] of Object.entries(SETTINGS_FIELDS)) {
     if (!(k in req.body)) continue;
+    if (k === "openingDate") {
+      fields[f] = /^\d{4}-\d{2}-\d{2}$/.test(req.body[k] || "") ? req.body[k] : null;
+      continue;
+    }
     if (NUMERIC_SETTINGS.includes(k)) {
       if (req.body[k] === "" || req.body[k] === null) {
-        if (k === "partsWarrantyMonths") fields[f] = null;
+        if (k === "partsWarrantyMonths" || MONEY_SETTINGS.includes(k)) fields[f] = null;
         continue;
       }
       const n = Number(req.body[k]);
-      const max = k === "serviceIntervalKm" ? 100000 : 1000;
+      const max = MONEY_SETTINGS.includes(k) ? 1e8 : k === "serviceIntervalKm" ? 100000 : 1000;
       if (!Number.isFinite(n) || n < 0 || n > max) throw bad(`${f} must be a number from 0 to ${max}.`);
       fields[f] = n;
     } else fields[f] = text(req.body[k], 1000);
@@ -217,6 +225,9 @@ router.post("/purchases", oneFile, wrap(async (req, res) => {
     "Total paid": total,
     Items: items.map((i) => `${i.qty} x ${i.name}${i.partNo ? ` (${i.partNo})` : ""} @ RM${i.unitCost.toFixed(2)}`).join("\n"),
     Notes: text(d.notes, 1000),
+    "Payment status": d.paid === false ? "Unpaid" : "Paid",
+    "Paid on": d.paid === false ? null : date,
+    "Due date": d.paid === false && /^\d{4}-\d{2}-\d{2}$/.test(d.dueDate || "") ? d.dueDate : null,
   }]);
 
   const parts = await db.create("parts", items.map((i) => ({
@@ -332,6 +343,7 @@ function jobOut(r) {
     subtotal: f.Subtotal ?? 0,
     total: f.Total ?? 0,
     paid: f.Paid ?? 0,
+    credited: f.Credited ?? 0,
     balance: f.Balance ?? f.Total ?? 0,
     status: f.Status || "Draft",
     stage: f.Stage || "",
@@ -684,7 +696,7 @@ router.post("/payments", oneFile, wrap(async (req, res) => {
     Notes: text(d.notes, 1000),
   }]);
 
-  const state = P.paymentState(j.total, j.paid + amount);
+  const state = P.paymentState(P.round2(j.total - j.credited), j.paid + amount);
   await db.update("quotes", [{ id: j.id, fields: { Paid: state.paid, Balance: state.balance, Status: state.status } }]);
 
   let fileSaved = true;
@@ -702,5 +714,6 @@ router.post("/payments", oneFile, wrap(async (req, res) => {
 V.register(router, { wrap, oneFile, fileOf, bodyData, jobOut, customerOut });
 require("./workshop").register(router, { wrap, oneFile, fileOf, bodyData, jobOut, newToken });
 require("./crm").register(router, { wrap, customerOut });
+require("./finance").register(router, { wrap, oneFile, fileOf, bodyData, jobOut, newToken });
 
 module.exports = { router, rankMatches, jobOut, paymentOut, partOut, loadSettings, companyFor, parseJob, docNoOf };
