@@ -1,0 +1,22 @@
+{
+  "_comment": "Fixed brand settings and switches. Personal details (phone, address, bank, SSM no, warranty, DuitNow QR) are NOT kept here because this repository is public: they are entered in the app's Settings screen and override the placeholders below.",
+  "brandName": "THE MERC LAB",
+  "tagline": "Independent Mercedes-Benz Specialist",
+  "hotline": "[PHONE NO.]",
+  "legalName": "TNS Legacy",
+  "registrationNo": "[SSM NO.]",
+  "sstRegistrationNo": null,
+  "address": "[WORKSHOP ADDRESS]",
+  "tel": "[TEL]",
+  "email": "[EMAIL]",
+  "bank": { "name": "[BANK NAME]", "accountName": "TNS Legacy", "accountNo": "[ACCOUNT NO.]" },
+  "duitNowQrImage": null,
+  "whatsapp": "[WHATSAPP NO.]",
+  "partsWarrantyMonths": null,
+  "estimateValidityDays": 7,
+  "serviceTaxRate": 0.08,
+  "roundTo5Sen": false,
+  "receiptLineItems": "full",
+  "estimateWatermark": true,
+  "defaultInvoiceTo": { "name": "Service Retail Cash Sales", "address": [] }
+}
