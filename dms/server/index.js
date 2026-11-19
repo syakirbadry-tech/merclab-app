@@ -6,7 +6,7 @@ const path = require("path");
 const express = require("express");
 const auth = require("./auth");
 const { router } = require("./routes");
-const { docRoute } = require("./docs");
+const { docRoute, approveRoute } = require("./docs");
 
 function createApp() {
   const app = express();
@@ -39,6 +39,7 @@ function createApp() {
 
   app.use("/api", auth.requireLogin, router);
   app.get("/d/:token", docRoute);
+  app.post("/d/:token/approve", (req, res, next) => (auth.tooManyFails("ap:" + (req.ip || "x")) ? res.status(429).json({ error: "Too many tries. Wait 15 minutes." }) : next()), approveRoute);
 
   app.use(express.static(path.join(__dirname, "..", "public"), { etag: true, maxAge: 0 }));
   return app;

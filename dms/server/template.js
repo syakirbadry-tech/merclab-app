@@ -77,12 +77,12 @@ const rowUnits = (r) => (r.kind === "gap" ? 0 : 1 + (descLines(r.desc) - 1) * (1
 
 // Split rows into pages. The last page keeps the totals, bottom section and
 // footer together, so it holds fewer rows.
-function paginate(rows) {
+function paginate(rows, lastCap = LAST_PAGE_ROWS) {
   const units = (rs) => rs.reduce((t, r) => t + rowUnits(r), 0);
-  if (units(rows) <= LAST_PAGE_ROWS) return [rows];
+  if (units(rows) <= lastCap) return [rows];
   const pages = [];
   let rest = rows.slice();
-  while (units(rest) > LAST_PAGE_ROWS) {
+  while (units(rest) > lastCap) {
     const cap = Math.min(MIDDLE_PAGE_ROWS, units(rest) - 1); // leave at least one row for the last page
     let take = 0, u = 0;
     while (take < rest.length && u + rowUnits(rest[take]) <= cap) u += rowUnits(rest[take++]);
@@ -169,7 +169,7 @@ ${R(`<div>${dash(doc.referenceNo)}</div><div>${dash(v.regNo)}</div><div>${dash(v
 function totalsRows(doc, sstOn, rate) {
   const t = doc.totals;
   const cell = (label, amount, extra = "") => `<tr${extra}><td colspan="3" class="r" style="padding: 5px 8px; border-top: 1px solid #8a8a8a">${label}</td><td style="border-left: 1px solid #8a8a8a; border-top: 1px solid #8a8a8a"></td><td style="border-left: 1px solid #8a8a8a; border-top: 1px solid #8a8a8a"></td><td class="r" style="padding: 5px 8px; border-left: 1px solid #8a8a8a; border-top: 1px solid #8a8a8a">${fmt(amount)}</td></tr>`;
-  let out = "";
+  let out = t.discount ? cell("Less Discount", -t.discount) : "";
   if (sstOn) {
     const pct = Math.round(rate * 10000) / 100;
     out += cell("Total Amount Exclusive of Service Tax", t.subtotal);
@@ -223,6 +223,7 @@ function bottom(doc, c) {
 <div>Labour</div><div class="r">${fmt(t.labour)}</div>
 <div>Sublet/Sundries</div><div class="r">${fmt(t.sublet)}</div>
 <div>Menus</div><div class="r">${fmt(t.menus)}</div>
+${t.discount ? `<div>Discount</div><div class="r">-${fmt(t.discount)}</div>` : ""}
 </div>`;
 
   let box;
@@ -320,11 +321,12 @@ function render(doc, company, { screen = true, fontBase = "/fonts/" } = {}) {
   const sstOn = !!company.sstRegistrationNo;
   const rate = Number(company.serviceTaxRate) || 0;
   if (!doc.totals) {
-    doc.totals = computeTotals(doc.groups, { surcharge: doc.surcharge, menus: doc.menus, sst: { on: sstOn, rate }, round5: !!company.roundTo5Sen });
+    doc.totals = computeTotals(doc.groups, { surcharge: doc.surcharge, menus: doc.menus, discount: doc.discount, sst: { on: sstOn, rate }, round5: !!company.roundTo5Sen });
   }
   const title = doc.type === "invoice" && sstOn ? "TAX INVOICE" : TITLES[doc.type];
   const watermark = doc.type === "estimate" ? (company.estimateWatermark !== false ? "Customer copy" : "") : doc.type === "receipt" ? "PAID" : "";
-  const pages = paginate(tableRows(doc, company));
+  // A discount adds a totals row and a summary line: two rows less room.
+  const pages = paginate(tableRows(doc, company), doc.totals.discount ? LAST_PAGE_ROWS - 2 : LAST_PAGE_ROWS);
   const html = pages.map((rows, i) => {
     const last = i === pages.length - 1;
     return `<div class="page">

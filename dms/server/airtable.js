@@ -15,6 +15,8 @@ const TABLES = {
   quotes: "tblwjVJuJARYbfYhl",
   payments: "tblhz031eVXvVZdcd",
   vehicles: "tbl7WHw77Y0IKsHHf",
+  packages: "tblET3exu2ZWkx3QK",
+  faults: "tblWpQd8poWDX9TtM",
 };
 
 // Attachment fields need their field ID for the upload endpoint.
@@ -24,6 +26,7 @@ const ATTACHMENT_FIELDS = {
   settingsQr: "fldvowTv1iG6o6XQu",
   vehiclePhoto: "fldrRYcQvqpjaDMNU",
   conditionPhotos: "fldqm0WfL8ftbOvzD",
+  jobPhotos: "flduOq0QvNrKmv0JP",
 };
 
 async function request(path, options = {}) {
