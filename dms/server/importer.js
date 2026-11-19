@@ -17,7 +17,7 @@ const iso = (v) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v :
 const plateKey = (p) => String(p || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 16);
 const token = (k) => k + crypto.randomBytes(16).toString("hex");
 const n2 = (v) => (Number.isFinite(Number(v)) ? Math.round(Number(v) * 100) / 100 : 0);
-const CATS = ["Rent", "Utilities", "Wages", "Workshop supplies", "Sublet (outside work)", "Tools & equipment (asset)", "Transport", "Marketing", "Phone & internet", "Bank fees", "Insurance & licences", "Owner drawings", "Other"];
+const CATS = ["Rent", "Utilities", "Wages", "Workshop supplies", "Sublet (outside work)", "Parts for jobs (no stock)", "Tools & equipment (asset)", "Transport", "Marketing", "Phone & internet", "Bank fees", "Insurance & licences", "Owner drawings", "Other"];
 const METHODS = ["Bank transfer", "DuitNow", "Cash", "Card", "Cheque", "E-wallet", "Other"];
 
 async function runImport(data) {
@@ -74,6 +74,13 @@ async function runImport(data) {
   }
   await db.create("parts", newP);
   add("parts", newP.length);
+  // Part no → stock record, so imported invoice lines carry the real cost.
+  const noKey = (v) => String(v || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const partByNo = new Map();
+  for (const r of await db.list("parts")) {
+    const k = noKey(r.fields["Part no"]);
+    if (k && !partByNo.has(k)) partByNo.set(k, r.id);
+  }
 
   // Packages (by name)
   const pkgNames = new Set((await db.list("packages")).map((r) => String(r.fields.Name || "").toLowerCase()));
@@ -103,7 +110,8 @@ async function runImport(data) {
     if (!no || invNos.has(no)) { skip("invoices"); continue; }
     let groups;
     try {
-      groups = M.cleanGroups(j.groups);
+      const linked = (j.groups || []).map((g) => ({ ...g, lines: (g.lines || []).map((l) => (l.type === "part" && !l.partId && partByNo.has(noKey(l.partNo)) ? { ...l, partId: partByNo.get(noKey(l.partNo)) } : l)) }));
+      groups = M.cleanGroups(linked);
     } catch (err) {
       out.problems.push(`Invoice ${no}: ${err.message}`);
       continue;
@@ -174,6 +182,12 @@ async function runImport(data) {
     const row = rows.find((r) => r.fields.Key === "main") || rows[0];
     const fields = {};
     if (row && !row.fields["Registration no"] && text(data.settings.registrationNo)) fields["Registration no"] = text(data.settings.registrationNo, 40);
+    // Opening balances: only when not set yet.
+    if (row && !row.fields["Opening date"] && iso(data.settings.openingDate)) {
+      fields["Opening date"] = data.settings.openingDate;
+      if (Number.isFinite(Number(data.settings.openingCash))) fields["Opening cash"] = n2(data.settings.openingCash);
+      if (Number(data.settings.ownerCapital) > 0) fields["Owner capital"] = n2(data.settings.ownerCapital);
+    }
     if (row && Object.keys(fields).length) await db.update("settings", [{ id: row.id, fields }]);
   }
   return out;

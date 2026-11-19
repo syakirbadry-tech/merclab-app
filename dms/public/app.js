@@ -1432,7 +1432,7 @@
 
   // ================= FINANCE =================
 
-  const ECATS = ["Rent", "Utilities", "Wages", "Workshop supplies", "Sublet (outside work)", "Tools & equipment (asset)", "Transport", "Marketing", "Phone & internet", "Bank fees", "Insurance & licences", "Owner drawings", "Other"];
+  const ECATS = ["Rent", "Utilities", "Wages", "Workshop supplies", "Sublet (outside work)", "Parts for jobs (no stock)", "Tools & equipment (asset)", "Transport", "Marketing", "Phone & internet", "Bank fees", "Insurance & licences", "Owner drawings", "Other"];
   const NOT_PNL = ["Tools & equipment (asset)", "Owner drawings"];
   const METHODS = ["Bank transfer", "DuitNow", "Cash", "Card", "Cheque", "E-wallet", "Other"];
   const inRange = (d, [a, b]) => !!d && d >= a && d <= b;
@@ -1638,10 +1638,11 @@
     const credits = sum(state.creditnotes.filter((c) => inRange(c.date, r)), (c) => c.amount);
     const net = parts + labour + other - discount - credits;
     const exp = state.expenses.filter((x) => inRange(x.date, r) && !NOT_PNL.includes(x.category));
-    const sublet = sum(exp.filter((x) => x.category === "Sublet (outside work)"), (x) => x.amount);
+    const DIRECT = ["Sublet (outside work)", "Parts for jobs (no stock)"];
+    const sublet = sum(exp.filter((x) => DIRECT.includes(x.category)), (x) => x.amount);
     const gross = net - cost - sublet;
     const cats = {};
-    exp.filter((x) => x.category !== "Sublet (outside work)").forEach((x) => (cats[x.category] = (cats[x.category] || 0) + x.amount));
+    exp.filter((x) => !DIRECT.includes(x.category)).forEach((x) => (cats[x.category] = (cats[x.category] || 0) + x.amount));
     const expenses = sum(Object.values(cats), (v) => v);
     // Cash view
     const cashIn = sum(state.payments.filter((p) => inRange(p.paidOn, r)), (p) => p.amount);
@@ -1670,7 +1671,7 @@
         <div class="split"><div class="card flush"><div class="card-h" style="padding:16px 18px 0"><h2>Profit &amp; Loss · ${periodLabel(per)}</h2><div class="r"><button type="button" class="btn ghost sm" id="plCsv">${icon("file")}Excel</button></div></div>
           <table class="tbl fin" style="margin-top:10px"><tbody>
           <tr class="sec"><td colspan="2">Sales</td></tr>${L("Parts", x.parts)}${L("Labour &amp; sundries", x.labour)}${L("Sublet, surcharge &amp; menus", x.other)}${x.discount ? L("Less discounts", -x.discount) : ""}${x.credits ? L("Less credit notes", -x.credits) : ""}${L("<b>Net sales</b>", x.net, "tot")}
-          <tr class="sec"><td colspan="2">Cost of sales</td></tr>${L(`Parts used (at cost)${x.estLines ? ` <span class="sm">· ${x.estLines} line(s) estimated</span>` : ""}`, -x.cost)}${x.sublet ? L("Sublet (outside work)", -x.sublet) : ""}${L(`<b>Gross profit</b> <span class="sm">${margin}%</span>`, x.gross, "tot")}
+          <tr class="sec"><td colspan="2">Cost of sales</td></tr>${L(`Parts used (at cost)${x.estLines ? ` <span class="sm">· ${x.estLines} line(s) estimated</span>` : ""}`, -x.cost)}${x.sublet ? L("Sublet &amp; parts bought for jobs", -x.sublet) : ""}${L(`<b>Gross profit</b> <span class="sm">${margin}%</span>`, x.gross, "tot")}
           <tr class="sec"><td colspan="2">Running costs</td></tr>${Object.entries(x.cats).sort((a, b) => b[1] - a[1]).map(([k, v]) => L(esc(k), -v)).join("") || `<tr><td class="sm" colspan="2">No expenses recorded</td></tr>`}${L("<b>Total running costs</b>", -x.expenses, "tot")}
           ${L(`<b>Net ${x.profit >= 0 ? "profit" : "loss"}</b>`, x.profit, "grand")}</tbody></table></div>
         <div><div class="card"><h2>Cash in and out</h2><div class="sum">
