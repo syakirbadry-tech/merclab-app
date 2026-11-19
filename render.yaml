@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: merclab-dms
+    runtime: node
+    rootDir: dms
+    plan: free
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: AIRTABLE_BASE_ID
+        value: appfipyDV5e2cZtyB
+      - key: AIRTABLE_PAT
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: APP_PASSWORD
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
