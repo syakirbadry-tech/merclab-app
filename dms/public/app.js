@@ -29,42 +29,74 @@
 
   const state = { settings: null, parts: [], jobs: [], payments: [], customers: [], vehicles: [], packages: [], faults: [], interactions: [], bookings: [], expenses: [], creditnotes: [], suppliers: [], purchases: [], partorders: [], inbox: [], whatsapp: null, route: "" };
 
-  // ---------- icons (simple line icons, 24px grid) ----------
+  // ---------- icons v1.1 (from the design handover; chat, trash and book kept) ----------
   const ICONS = {
-    dashboard: '<path d="M4 4h7v7H4zM13 4h7v4h-7zM13 10h7v10h-7zM4 13h7v7H4z"/>',
-    jobs: '<path d="M14.7 6.3a4 4 0 0 0-5.4 5.2L3.6 17.2a1.6 1.6 0 0 0 2.3 2.3l5.7-5.7a4 4 0 0 0 5.2-5.4l-2.5 2.5-2.3-.4-.4-2.3z"/>',
-    car: '<path d="M3 13l2-5.2A2 2 0 0 1 6.9 6.5h10.2a2 2 0 0 1 1.9 1.3L21 13v4a1 1 0 0 1-1 1h-1M5 18H4a1 1 0 0 1-1-1v-4h18M9 18h6"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/>',
-    users: '<path d="M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20M20 20v-1.5a3.5 3.5 0 0 0-2.5-3.3M15.5 4.2a3.5 3.5 0 0 1 0 6.6"/><circle cx="10" cy="7.5" r="3.5"/>',
-    parts: '<path d="M21 8l-9-5-9 5v8l9 5 9-5zM3 8l9 5 9-5M12 13v8"/>',
-    money: '<path d="M3 7a2 2 0 0 1 2-2h12v4M3 7v10a2 2 0 0 0 2 2h15V9H5a2 2 0 0 1-2-2z"/><circle cx="16" cy="14" r="1"/>',
-    settings: '<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/>',
-    search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
-    plus: '<path d="M12 5v14M5 12h14"/>',
-    upload: '<path d="M12 16V4M7 9l5-5 5 5M4 20h16"/>',
-    camera: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/>',
+    // ---- names already used in app.js (same name, new drawing) ----
+    dashboard: '<rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect>',
+    jobs: '<path d="M15 4.5a4.5 4.5 0 0 0-5.6 5.6L3.8 15.7a2.1 2.1 0 0 0 3 3l5.6-5.6A4.5 4.5 0 0 0 18 7.5l-2.6 2.6-2.5-.5-.5-2.5z"></path>',
+    car: '<path d="M5 17h14M3.5 17v-4l2-5a2 2 0 0 1 1.9-1.3h9.2A2 2 0 0 1 18.5 8l2 5v4"></path><path d="M3.5 13h17"></path><circle cx="7.5" cy="17.5" r="1.8"></circle><circle cx="16.5" cy="17.5" r="1.8"></circle>',
+    users: '<circle cx="9" cy="8" r="3.5"></circle><path d="M2.5 20a6.5 6.5 0 0 1 13 0"></path><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.5a6.5 6.5 0 0 1 3.5 5.5"></path>',
+    parts: '<circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"></path>',
+    money: '<path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H19v4"></path><path d="M3 7.5V18a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-9a1 1 0 0 0-1-1H5.5A2.5 2.5 0 0 1 3 7.5"></path><circle cx="16.5" cy="14.5" r="1.2"></circle>',
+    settings: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"></path><circle cx="16" cy="6" r="2"></circle><circle cx="10" cy="12" r="2"></circle><circle cx="18" cy="18" r="2"></circle>',
+    search: '<circle cx="11" cy="11" r="6.5"></circle><path d="m20 20-4.2-4.2"></path>',
+    plus: '<path d="M12 5v14M5 12h14"></path>',
+    upload: '<path d="M12 15V4M7.5 8.5 12 4l4.5 4.5M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"></path>',
+    camera: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1"></path><circle cx="12" cy="13.5" r="3.5"></circle>',
+    back: '<path d="m15 5-7 7 7 7"></path>',
+    menu: '<path d="M4 7h16M4 12h16M4 17h16"></path>',
+    logout: '<path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"></path>',
+    file: '<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"></path><path d="M14 3v5h5M9 13h6M9 17h4"></path>',
+    check: '<path d="m5 12.5 4.5 4.5L19 7.5"></path>',
+    x: '<path d="M6 6l12 12M18 6 6 18"></path>',
+    alert: '<circle cx="12" cy="12" r="8.5"></circle><path d="M12 7.5v5M12 15.8v.2"></path>',
+    calendar: '<rect x="3" y="4.5" width="18" height="16" rx="2"></rect><path d="M3 9.5h18M8 3v3M16 3v3"></path>',
+    edit: '<path d="M4 20h4L19 9l-4-4L4 16z"></path><path d="m13.5 6.5 4 4"></path>',
+    open: '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"></path>',
+    receipt: '<path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2z"></path><path d="M9 8h6M9 12h6"></path>',
+    gauge: '<path d="M3.5 17a9 9 0 1 1 17 0"></path><path d="m12 13 4-4"></path><circle cx="12" cy="13.5" r="1.2"></circle>',
+    shield: '<path d="M12 3 4.5 6v6c0 4.5 3.2 7.8 7.5 9 4.3-1.2 7.5-4.5 7.5-9V6z"></path>',
+    box: '<path d="M21 8 12 3 3 8v8l9 5 9-5z"></path><path d="m3 8 9 5 9-5M12 13v8"></path>',
+    print: '<path d="M7 9V3h10v6M7 17H4v-7a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v7h-3"></path><path d="M7 14h10v7H7z"></path>',
+    clipboard: '<rect x="5" y="4" width="14" height="17" rx="2"></rect><path d="M9 3h6v3H9zM9 11h6M9 15h4"></path>',
+    phone: '<path d="M5 3h4l2 5-2.5 1.5a11 11 0 0 0 6 6L16 13l5 2v4a2 2 0 0 1-2 2A17 17 0 0 1 3 5a2 2 0 0 1 2-2"></path>',
+    bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"></path><path d="M10 20.5a2 2 0 0 0 4 0"></path>',
+    more: '<circle cx="5" cy="12" r="1.3"></circle><circle cx="12" cy="12" r="1.3"></circle><circle cx="19" cy="12" r="1.3"></circle>',
+    // ---- kept from the earlier set: chat, trash, book ----
     chat: '<path d="M21 12a8.5 8.5 0 0 1-12.6 7.4L3 21l1.6-5.2A8.5 8.5 0 1 1 21 12z"/>',
-    back: '<path d="M15 18l-6-6 6-6"/>',
-    menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
-    logout: '<path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 17l5-5-5-5M15 12H4"/>',
-    file: '<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8zM14 3v5h5M9 13h6M9 17h6"/>',
-    check: '<path d="M5 12l5 5 9-10"/>',
-    x: '<path d="M6 6l12 12M18 6L6 18"/>',
-    alert: '<path d="M12 9v4M12 17h.01M10.3 4.2L2.5 18a2 2 0 0 0 1.7 3h15.6a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0z"/>',
-    calendar: '<path d="M4 6a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zM4 10h16M8 3v4M16 3v4"/>',
-    edit: '<path d="M4 20h4L19 9l-4-4L4 16zM14 6l4 4"/>',
     trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
-    open: '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
-    receipt: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6M9 16h3"/>',
-    gauge: '<path d="M12 14l4-4M3.5 17a9 9 0 1 1 17 0"/>',
-    shield: '<path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/>',
     book: '<path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5zM5 19.5A1.5 1.5 0 0 0 6.5 21H19M9 7h6"/>',
-    box: '<path d="M4 7l8-4 8 4-8 4zM4 7v10l8 4 8-4V7M12 11v10"/>',
-    print: '<path d="M7 8V3h10v5M7 17H5a1 1 0 0 1-1-1v-6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v6a1 1 0 0 1-1 1h-2M7 14h10v7H7z"/>',
-    clipboard: '<path d="M9 4h6v3H9zM9 5H6a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-3M9 12l2 2 4-4"/>',
-    phone: '<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a1 1 0 0 1-1 1A16 16 0 0 1 4 5a1 1 0 0 1 1-1z"/>',
-    bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 21h4"/>',
-    more: '<circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/>',
+    // ---- new in v1.1 / v2 ----
+    home: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"></path>',
+    inbox: '<path d="M3 13h5l1.5 3h5L16 13h5"></path><path d="M5.5 5h13L21 13v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6z"></path>',
+    fault: '<path d="M12 3 2.5 19.5h19z"></path><path d="M12 10v4M12 17v.5"></path>',
+    user: '<circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path>',
+    cn: '<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"></path><path d="M14 3v5h5M9 14h6"></path>',
+    chart: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"></path>',
+    scale: '<path d="M12 3v18M5 21h14M4 7h16"></path><path d="m4 7-2.5 6a3 3 0 0 0 5 0zM20 7l-2.5 6a3 3 0 0 0 5 0z"></path>',
+    count: '<rect x="5" y="4" width="14" height="17" rx="2"></rect><path d="M9 3h6v3H9zM9 12l2 2 4-4"></path>',
+    truck: '<path d="M2 6h12v10H2zM14 9h4l3 3.5V16h-7"></path><circle cx="6" cy="17.5" r="1.8"></circle><circle cx="17" cy="17.5" r="1.8"></circle>',
+    order: '<path d="M3 3h2l2.5 12h11L21 7H6.2"></path><circle cx="9" cy="19.5" r="1.5"></circle><circle cx="18" cy="19.5" r="1.5"></circle>',
+    download: '<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"></path>',
+    cr: '<path d="m9 5 7 7-7 7"></path>',
+    cd: '<path d="m5 9 7 7 7-7"></path>',
+    ar: '<path d="M4 12h15M13 6l6 6-6 6"></path>',
+    clock: '<circle cx="12" cy="12" r="8.5"></circle><path d="M12 7.5V12l3 2"></path>',
+    filter: '<path d="M3 5h18l-7 8v6l-4 2v-8z"></path>',
+    card: '<rect x="2.5" y="5" width="19" height="14" rx="2"></rect><path d="M2.5 10h19M6 15h4"></path>',
+    info: '<circle cx="12" cy="12" r="8.5"></circle><path d="M12 11v5M12 8v.2"></path>',
+    send: '<path d="M21 3 10 14M21 3l-7 18-4-7-7-4z"></path>',
+    sparkle: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"></path>',
+    history: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5M12 7.5V12l3 2"></path>',
+    tag: '<path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9z"></path><circle cx="8" cy="8" r="1.5"></circle>',
+    layers: '<path d="m12 3 9 5-9 5-9-5z"></path><path d="m3 13 9 5 9-5"></path>',
+    trend: '<path d="m3 17 6-6 4 4 8-8"></path><path d="M15 7h6v6"></path>',
+    swipe: '<path d="M8 7 4 11l4 4M16 7l4 4-4 4"></path>',
+    photo: '<rect x="3" y="4" width="18" height="16" rx="2"></rect><circle cx="9" cy="10" r="2"></circle><path d="m21 16-5-5-9 9"></path>',
+    lock: '<rect x="4.5" y="10.5" width="15" height="10" rx="2"></rect><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"></path>',
+    sun: '<circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path>',
   };
+  const WA_GLYPH = '<svg class="wa-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M17.47 14.38c-.3-.15-1.76-.87-2.03-.97-.27-.1-.47-.15-.67.15-.2.3-.77.97-.94 1.16-.17.2-.35.22-.64.08-.3-.15-1.26-.47-2.39-1.48-.88-.79-1.48-1.76-1.65-2.06-.17-.3-.02-.46.13-.6.13-.14.3-.35.45-.52.15-.17.2-.3.3-.5.1-.2.05-.37-.03-.52-.07-.15-.67-1.61-.92-2.2-.24-.58-.49-.5-.67-.51h-.57c-.2 0-.52.07-.79.37-.27.3-1.04 1.02-1.04 2.48 0 1.46 1.07 2.88 1.21 3.07.15.2 2.1 3.2 5.08 4.49.71.31 1.26.49 1.7.63.71.23 1.36.2 1.87.12.57-.09 1.76-.72 2.01-1.41.25-.7.25-1.29.17-1.41-.07-.13-.27-.2-.57-.35m-5.42 7.4h-.01a9.87 9.87 0 0 1-5.03-1.38l-.36-.21-3.74.98 1-3.65-.24-.37a9.86 9.86 0 0 1-1.51-5.26c0-5.45 4.44-9.88 9.89-9.88 2.64 0 5.12 1.03 6.99 2.9a9.83 9.83 0 0 1 2.89 6.99c0 5.45-4.44 9.88-9.88 9.88m8.41-18.3A11.82 11.82 0 0 0 12.05 0C5.5 0 .16 5.34.16 11.89c0 2.1.55 4.14 1.59 5.95L.06 24l6.3-1.65a11.88 11.88 0 0 0 5.68 1.45h.01c6.55 0 11.89-5.34 11.89-11.89a11.82 11.82 0 0 0-3.48-8.41Z"></path></svg>';
   const icon = (n, cls = "") => `<svg class="ic ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n] || ""}</svg>`;
 
   const AV = [["#e0ecff", "#1d4ed8"], ["#e6f6ec", "#15803d"], ["#fdf3e2", "#b45309"], ["#f3e8ff", "#7e22ce"], ["#ffe4e6", "#be123c"], ["#e0f2fe", "#0369a1"]];
@@ -78,9 +110,10 @@
   }
 
   const STAGES = ["Booked", "In workshop", "Waiting parts", "Ready", "Collected"];
-  const STAGE_CLS = { Booked: "", "In workshop": "info", "Waiting parts": "warn", Ready: "ok", Collected: "" };
-  const STATUS_CLS = { Draft: "", Sent: "info", "Part paid": "warn", Paid: "ok", Cancelled: "bad" };
-  const pill = (txt, cls = "") => `<span class="pill ${cls}">${cls ? '<span class="dot"></span>' : ""}${esc(txt)}</span>`;
+  // One status system (merclab.css): ok · soon · now · info · neutral. Used by every list, card and tile.
+  const STAGE_CLS = { Booked: "", "In workshop": "info", "Waiting parts": "soon", Ready: "ok", Collected: "" };
+  const STATUS_CLS = { Draft: "", Sent: "info", Approved: "ok", "Part paid": "soon", Paid: "ok", Unpaid: "now", Overdue: "now", Cancelled: "now" };
+  const pill = (txt, cls = "") => `<span class="pill ${({ warn: "soon", bad: "now" })[cls] || cls}">${esc(txt)}</span>`;
   const statusPill = (s) => pill(s, STATUS_CLS[s] ?? "");
   const stagePill = (s) => (s ? pill(s, STAGE_CLS[s] ?? "") : "");
   const plateTag = (p) => (p ? `<span class="plate">${esc(p)}</span>` : "");
@@ -236,30 +269,46 @@
 
   // ---------- shell ----------
 
+  const NAV_TOP = [["dashboard", "Dashboard", "dashboard"], ["inbox", "Inbox", "inbox"], ["assistant", "Assistant", "sparkle"]];
   const NAV = [
-    ["Overview", [["dashboard", "Dashboard", "dashboard"], ["inbox", "Inbox", "chat"]]],
-    ["Workshop", [["jobs", "Jobs", "jobs"], ["bookings", "Bookings", "calendar"], ["vehicles", "Vehicles", "car"], ["packages", "Packages", "box"], ["faults", "Fault cases", "book"]]],
+    ["Workshop", [["jobs", "Jobs", "jobs"], ["bookings", "Bookings", "calendar"], ["vehicles", "Vehicles", "car"], ["packages", "Packages", "box"], ["faults", "Fault cases", "fault"], ["hub", "Merc HUB", "layers"]]],
     ["CRM", [["customers", "Customers", "users"], ["followups", "Follow-ups", "phone"], ["reminders", "Service reminders", "bell"]]],
-    ["Finance", [["money", "Money in", "money"], ["expenses", "Expenses", "receipt"], ["creditnotes", "Credit notes", "file"], ["pnl", "Profit & Loss", "dashboard"], ["balance", "Balance sheet", "book"]]],
-    ["Stock", [["parts", "Parts & stock", "parts"], ["suppliers", "Suppliers", "users"], ["orders", "Part orders", "box"]]],
+    ["Finance", [["money", "Money in", "money"], ["expenses", "Expenses", "receipt"], ["creditnotes", "Credit notes", "cn"], ["pnl", "Profit & Loss", "chart"], ["balance", "Balance sheet", "scale"], ["statements", "Financial statements", "book"]]],
+    ["Stock", [["parts", "Parts & stock", "parts"], ["suppliers", "Suppliers", "truck"], ["orders", "Part orders", "order"]]],
   ];
+  const navLink = ([k, l, ic]) => `<a href="#/${k}" data-nav="${k}">${icon(ic)}<span>${l}</span>${k === "jobs" ? '<span class="count" id="navWs" hidden></span>' : k === "inbox" ? '<span class="count" id="navIb" hidden></span>' : ""}</a>`;
 
   function buildShell() {
     $("#side").innerHTML = `
-      <div class="brand"><svg width="30" height="30" viewBox="0 0 120 120" aria-hidden="true"><polygon points="60,10 104,35 104,85 60,110 16,85 16,35" fill="#5b9bf5"/><polygon points="60,10 104,35 60,60 16,35" fill="#3f77d1"/></svg>
-        <div>The Merc Lab<small>Workshop DMS</small></div></div>
-      <nav class="nav">${NAV.map(([h, items]) => `<div class="nav-h">${h}</div>${items.map(([k, l, ic]) => `<a href="#/${k}" data-nav="${k}">${icon(ic)}<span>${l}</span>${k === "jobs" ? '<span class="count" id="navWs" hidden></span>' : k === "inbox" ? '<span class="count" id="navIb" hidden></span>' : ""}</a>`).join("")}`).join("")}</nav>
+      <a class="brand" href="#/dashboard" aria-label="The Merc Lab: dashboard"><img src="brand/merc-lab-logo.svg" alt="The Merc Lab" width="168" height="58"></a>
+      <nav class="nav">${NAV_TOP.map(navLink).join("")}
+        ${NAV.map(([h, items]) => `<details class="nav-g" data-g="${h}"><summary>${h}<span class="dot-n" data-gn="${h}"></span>${icon("cd", "s chev")}</summary>${items.map(navLink).join("")}</details>`).join("")}</nav>
       <div class="side-foot"><a href="#/settings" data-nav="settings">${icon("settings")}<span>Settings</span></a>
         <button type="button" id="logoutBtn">${icon("logout")}<span>Log out</span></button></div>`;
-    $("#bottom").innerHTML = [["dashboard", "Home", "dashboard"], ["jobs", "Jobs", "jobs"], ["vehicles", "Cars", "car"], ["money", "Money", "money"]]
-      .map(([k, l, ic]) => `<a href="#/${k}" data-nav="${k}">${icon(ic)}${l}</a>`).join("") + `<button type="button" id="moreBtn">${icon("menu")}Menu</button>`;
+    $("#bottom").className = "bar";
+    $("#bottom").innerHTML = `<a href="#/dashboard" data-nav="dashboard">${icon("home")}Home</a><a href="#/jobs" data-nav="jobs">${icon("jobs")}Jobs</a>
+      <button type="button" class="fab" id="createBtn" aria-label="Create">${icon("plus")}</button>
+      <a href="#/money" data-nav="money">${icon("money")}Money</a><button type="button" id="moreBtn">${icon("more")}More</button>`;
     $("#menuBtn").innerHTML = icon("menu");
     $("#gIcon").outerHTML = icon("search");
+    if (!$(".gsearch .kbd")) $(".gsearch").insertAdjacentHTML("beforeend", `<span class="kbd" aria-hidden="true">Ctrl K</span>`);
     const open = (on) => document.body.classList.toggle("nav-open", on);
     $("#menuBtn").onclick = () => open(true);
     $("#moreBtn").onclick = () => open(true);
     $("#scrim").onclick = () => open(false);
     $("#side").addEventListener("click", (e) => e.target.closest("a") && open(false));
+    $("#createBtn").onclick = () => {
+      const items = [["#/jobs/new", "plus", "New estimate", "Customer, car and the work to do"], ["#/money?upload=1", "upload", "Payment slip", "Upload a slip; AI reads it"], ["#/money?cash=1", "money", "Record payment", "Cash or any payment without a slip"], ["#/bookings?new=1", "calendar", "New booking", "When a customer is coming in"]];
+      const m = modal("Create", `<div class="rows">${items.map(([h, ic, t, s]) => `<a href="${h}"><span class="mini">${icon(ic)}</span><div class="grow"><b>${t}</b><span>${s}</span></div>${icon("cr", "s")}</a>`).join("")}</div>`);
+      m.el.classList.add("sheet-modal");
+      m.el.addEventListener("click", (e) => e.target.closest("a") && m.close());
+    };
+    document.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        $("#gq").focus();
+      }
+    });
     $("#logoutBtn").onclick = async () => {
       await api("/logout", { method: "POST" }).catch(() => {});
       showLogin();
@@ -269,6 +318,8 @@
 
   function setActive(section) {
     $$("[data-nav]").forEach((a) => a.classList.toggle("on", a.dataset.nav === section));
+    // Only the menu group holding this page is open, so the menu fits a 900px-high screen.
+    $$(".nav-g").forEach((g) => (g.open = !!g.querySelector(`[data-nav="${section}"]`)));
     const ws = state.jobs.filter(isWorkshop).length;
     const ib = $("#navIb");
     if (ib) {
@@ -282,6 +333,11 @@
       b.textContent = ws;
       b.title = `${ws} car(s) in the workshop`;
     }
+    const today = todayKL();
+    const due = state.customers.filter((c) => c.nextFollowUp && c.nextFollowUp <= today).length;
+    const low = state.parts.filter((p) => Number(p.qtyLeft) <= 1).length;
+    const gn = { Workshop: ws ? `${ws} in` : "", CRM: due ? `${due} due` : "", Finance: "", Stock: low ? `${low} low` : "" };
+    $$("[data-gn]").forEach((s) => (s.textContent = gn[s.dataset.gn] || ""));
   }
 
   function crumbs(list) {
@@ -358,14 +414,17 @@
       if (sec === "customers") return a ? pageCustomer(a) : pageCustomers();
       if (sec === "parts") return a === "count" ? pageStockCount() : pageParts(q);
       if (sec === "inbox") return pageInbox();
+      if (sec === "assistant") return pageAssistant();
       if (sec === "expenses") return pageExpenses(q);
       if (sec === "creditnotes") return pageCredits();
       if (sec === "pnl") return pagePnl(q);
       if (sec === "balance") return pageBalance();
+      if (sec === "statements") return pageStatements(q);
       if (sec === "suppliers") return pageSuppliers();
       if (sec === "orders") return pageOrders(q);
       if (sec === "packages") return a ? packageForm(a) : pagePackages();
       if (sec === "faults") return pageFaults();
+      if (sec === "hub") return pageHub(q);
       if (sec === "bookings") return pageBookings(q);
       if (sec === "followups") return pageFollowups(q);
       if (sec === "reminders") return pageReminders();
@@ -406,12 +465,13 @@
 
     view.innerHTML = `
       ${pageHead("Dashboard", { sub: new Date(today + "T00:00:00Z").toLocaleDateString("en-MY", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }), acts: `<a class="btn alt" href="#/money?upload=1">${icon("upload")}Payment slip</a><a class="btn" href="#/jobs/new">${icon("plus")}New estimate</a>` })}
-      <div class="grid g4" style="margin-bottom:16px">
+      <div class="grid g4 dash-tiles" style="margin-bottom:16px">
         ${tile("#/money", "money", "Money in today", rm(inToday), `${monthName}: ${rm(inMonth)}`)}
         ${tile("#/jobs?f=invoices", "receipt", `Invoiced in ${monthName}`, rm(invMonth.reduce((t, j) => t + j.total, 0)), `${invMonth.length} invoice${invMonth.length === 1 ? "" : "s"}`)}
         ${tile("#/money?tab=owed", "alert", "Owed to you", rm(owed.reduce((t, j) => t + j.balance, 0)), `${owed.length} unpaid invoice${owed.length === 1 ? "" : "s"}`)}
         ${tile("#/jobs?f=workshop", "car", "Cars in workshop", ws.length, `${ready} ready for pickup`)}
       </div>
+      <div class="card dash-todo"><div class="card-h"><h2>Needs action</h2><div class="r"><a class="btn ghost sm" href="#/assistant">Assistant</a></div></div>${morningBrief()}</div>
       <div class="split">
         <div>
           <div class="card">
@@ -1024,6 +1084,206 @@
     draw();
   }
 
+  // ---------- Merc HUB: diagnosis database ----------
+  // Every fault the workshop has solved, searchable by model (chassis code),
+  // fault code and symptom. Built from the fault cases, with no customer names
+  // or plates, so it can later be shared as the Merc HUB across workshops.
+
+  const chassisOf = (s) => (String(s || "").toUpperCase().match(/\b[WXCRSAVH]\d{3}\b/g) || [""]).pop(); // last match: "C200 W205" → W205
+  const codesOf = (s) => [...new Set(String(s || "").toUpperCase().split(/[\s,;/|]+/).filter((c) => /^[PBCU][0-9A-F]{4}(-[0-9A-F]{2,3})?$/.test(c) || /^[0-9A-F]{4,6}-[0-9A-F]{2,3}$/.test(c)))];
+
+  function hubCase(f) {
+    // The shareable form: no plate, job or customer, mileage rounded to 5,000 km.
+    return { model: f.makeModel, chassis: chassisOf(`${f.makeModel} ${f.title}`), engine: f.engine, mileageBand: f.mileageKm ? `${Math.floor(f.mileageKm / 5000) * 5}k km` : "",
+      symptom: f.symptom, codes: codesOf(f.codes), tests: f.tests, cause: f.cause, fix: f.fix, parts: f.parts, hours: f.hours, tags: f.tags, verified: f.verified, year: (f.date || "").slice(0, 4) };
+  }
+
+  function pageHub(q) {
+    crumbs([["Merc HUB"]]);
+    let model = q.get("m") || "";
+    let verifiedOnly = q.get("v") === "1";
+    const all = state.faults.map((f) => ({ f, h: hubCase(f) }));
+    const models = {};
+    const codes = {};
+    for (const { h } of all) {
+      if (h.chassis) models[h.chassis] = (models[h.chassis] || 0) + 1;
+      for (const c of h.codes) codes[c] = (codes[c] || 0) + 1;
+    }
+    view.innerHTML = `${pageHead("Merc HUB", { sub: "Diagnosis database: symptom → codes → tests → cause → fix, by Mercedes model", acts: `<button type="button" class="btn alt" id="hubExport">${icon("download")}Export for HUB</button><button class="btn" id="hubNew">${icon("plus")}New fault case</button>` })}
+      <div class="grid g4" style="margin-bottom:16px">
+        <div class="tile"><div class="lbl">${icon("layers")}Cases</div><div class="val">${all.length}</div><div class="foot">fault cases recorded</div></div>
+        <div class="tile"><div class="lbl">${icon("check")}Verified</div><div class="val">${all.filter((x) => x.h.verified).length}</div><div class="foot">fix confirmed on the car</div></div>
+        <div class="tile"><div class="lbl">${icon("car")}Models</div><div class="val">${Object.keys(models).length}</div><div class="foot">chassis codes covered</div></div>
+        <div class="tile"><div class="lbl">${icon("fault")}Fault codes</div><div class="val">${Object.keys(codes).length}</div><div class="foot">different codes logged</div></div></div>
+      <div class="split"><div>
+        <div class="toolbar"><div class="search">${icon("search")}<input id="hq" type="search" placeholder="Symptom, fault code, model, part" aria-label="Search the diagnosis database" value="${esc(q.get("q") || "")}"></div>
+          <label class="chip" style="margin:0"><input type="checkbox" id="hv" ${verifiedOnly ? "checked" : ""} style="width:auto;min-height:0;margin:0"> Verified only</label></div>
+        <div class="chips scroll" id="hm" style="margin-bottom:14px"><button type="button" class="chip" data-m="">All models</button>${Object.entries(models).sort((a, b) => b[1] - a[1]).map(([m, n]) => `<button type="button" class="chip" data-m="${esc(m)}">${esc(m)} <span class="n">${n}</span></button>`).join("")}</div>
+        <div id="hl"></div></div>
+        <div class="stack">
+          <div class="card"><div class="card-h"><h2>Most seen fault codes</h2></div>${Object.keys(codes).length ? `<div class="rows">${Object.entries(codes).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([c, n]) => `<a href="#/hub?q=${encodeURIComponent(c)}"><div class="grow"><b>${esc(c)}</b><span>${n} case${n === 1 ? "" : "s"}</span></div>${icon("cr", "s")}</a>`).join("")}</div>` : `<p class="muted">Codes appear here as you record fault cases with their codes.</p>`}</div>
+          <div class="card"><div class="card-h"><h2>About Merc HUB</h2></div>
+            <p class="muted" style="margin-top:0">The Merc HUB (Workshop Diagnostic Network) is the diagnosis database we are building for independent Mercedes-Benz workshops. Each solved job becomes a case: what the customer noticed, the codes, the tests, the root cause and the fix.</p>
+            <div class="rows">
+              <div><span class="mini">${icon("check")}</span><div class="grow"><b>Stage 1 · now</b><span>Our own cases, searchable here</span></div>${pill("Live", "ok")}</div>
+              <div><span class="mini">${icon("layers")}</span><div class="grow"><b>Stage 2 · shared HUB</b><span>Anonymised cases from partner workshops</span></div>${pill("Planned")}</div>
+              <div><span class="mini">${icon("sparkle")}</span><div class="grow"><b>Stage 3 · AI diagnosis</b><span>Likely causes suggested from symptoms and codes</span></div>${pill("Planned")}</div></div>
+            <p class="hint">No customer names, plates or prices ever leave the DMS. "Export for HUB" downloads the anonymised cases.</p></div></div></div>`;
+    const draw = () => {
+      $$("#hm [data-m]").forEach((b) => b.classList.toggle("on", b.dataset.m === model));
+      const words = $("#hq").value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      const list = all.filter(({ f, h }) => (!model || h.chassis === model) && (!verifiedOnly || h.verified) && words.every((w) => `${f.title} ${f.makeModel} ${f.engine} ${f.symptom} ${f.codes} ${f.tests} ${f.cause} ${f.fix} ${f.parts} ${f.tags}`.toLowerCase().includes(w)));
+      $("#hl").innerHTML = list.length
+        ? `<div class="stack">${list.map(({ f, h }) => `<a class="card" style="display:block;text-decoration:none;color:inherit" data-fc="${f.id}" href="#/hub">
+            <div class="card-h" style="margin-bottom:6px"><h2>${esc(f.title)}</h2><div class="r">${h.verified ? pill("Verified", "ok") : pill("Not verified")}</div></div>
+            <div class="row wrap" style="margin-bottom:8px">${h.chassis ? `<span class="pill ink plain">${esc(h.chassis)}</span>` : ""}<span class="muted">${esc([f.makeModel, f.engine, h.mileageBand, h.year].filter(Boolean).join(" · "))}</span>${h.codes.map((c) => `<span class="pill info plain">${esc(c)}</span>`).join("")}</div>
+            <dl class="kv"><dt>Symptom</dt><dd>${esc(f.symptom) || "—"}</dd>${f.tests ? `<dt>Tests</dt><dd>${esc(f.tests)}</dd>` : ""}<dt>Cause</dt><dd>${esc(f.cause) || "—"}</dd><dt>Fix</dt><dd>${esc(f.fix) || "—"}</dd>${f.parts ? `<dt>Parts</dt><dd>${esc(f.parts)}</dd>` : ""}</dl></a>`).join("")}</div>`
+        : `<div class="card">${emptyBox("layers", all.length ? "No case matches. Try fewer words or another model." : "No cases yet. Record a fault case on a job (what was wrong and how you fixed it) and it appears here.")}</div>`;
+      $$("#hl [data-fc]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); faultDialog(state.faults.find((x) => x.id === a.dataset.fc)); }));
+    };
+    $("#hq").oninput = draw;
+    $("#hv").onchange = () => { verifiedOnly = $("#hv").checked; draw(); };
+    $("#hm").onclick = (e) => {
+      const b = e.target.closest("[data-m]");
+      if (!b) return;
+      model = b.dataset.m;
+      draw();
+    };
+    $("#hubNew").onclick = () => faultDialog(null, null);
+    $("#hubExport").onclick = () => {
+      const blob = new Blob([JSON.stringify({ hub: "Merc HUB", version: 1, format: "Workshop Diagnostic Network cases", source: "The Merc Lab", exported: todayKL(), cases: all.map(({ h }, i) => ({ case_number: `ML-${todayKL().slice(0, 4)}-${String(i + 1).padStart(4, "0")}`, case_date: h.year, vehicle_model: h.model, model_series: h.chassis, engine: h.engine, mileage: h.mileageBand, fault_codes: h.codes.join(", "), symptom: h.symptom, diagnosis_steps: h.tests, root_cause: h.cause, fix_applied: h.fix, parts_used: h.parts, time_spent_hours: h.hours, status: h.verified ? "Resolved" : "Open", notes: h.tags })) }, null, 2)], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `merc-hub-cases-${todayKL()}.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    };
+    draw();
+  }
+
+  // ---------- Merc Lab Assistant + the AI team ----------
+  // Read-only: the Assistant answers from the records and drafts; the owner acts.
+
+  const AI_TEAM = [
+    ["ML-CEO", "Kazumi", "CEO", "The overall picture and what to focus on today", "dashboard", ["How is the workshop doing this month?", "What should I focus on today?"]],
+    ["ML-COO", "COO", "Operations", "Cars in the workshop, parts waiting, bookings", "jobs", ["Which cars are waiting for parts?", "What is booked this week?"]],
+    ["ML-CFO", "CFO", "Finance", "Money in, who owes, expenses, profit", "money", ["Who owes us money and for how long?", "What did we spend most on this month?"]],
+    ["ML-CRM", "Customer CRM", "Customers", "Follow-ups, service reminders, win-backs", "users", ["Who should I follow up today?", "Which cars are due for service soon?"]],
+    ["ML-TEC", "Technical", "Merc HUB", "Fault cases and the diagnosis database", "layers", ["What faults have we fixed on W205 cars?", "Which fault codes come up most?"]],
+  ];
+  const assistantLog = [];
+
+  function assistantContext() {
+    const today = todayKL();
+    const month = periodRange("m:" + today.slice(0, 7));
+    const x = pnlFor(month);
+    const in7 = new Date(Date.parse(today) + 7 * 864e5).toISOString().slice(0, 10);
+    return {
+      today,
+      workshop: state.jobs.filter(isWorkshop).map((j) => ({ no: docNo(j), stage: j.stage, status: j.status, car: j.car, plate: j.plate, customer: j.customerName, total: j.total })),
+      openEstimates: state.jobs.filter((j) => j.estimateNo && !j.invoiceNo && j.status !== "Cancelled").slice(0, 40).map((j) => ({ no: j.estimateNo, date: j.date, customer: j.customerName, car: j.car, total: j.total, status: j.status, approvedOnline: !!j.approvedAt })),
+      owed: owedInvoices().map((j) => ({ no: j.invoiceNo, date: j.invoiceDate, customer: j.customerName, balance: j.balance, total: j.total })),
+      thisMonth: { netSales: x.net, grossProfit: x.gross, runningCosts: x.expenses, netProfit: x.profit, invoices: x.invs.length, cashIn: x.cashIn, costsByCategory: x.cats },
+      recentInvoices: state.jobs.filter((j) => j.invoiceNo).sort((a, b) => (b.invoiceDate || "").localeCompare(a.invoiceDate || "")).slice(0, 40).map((j) => ({ no: j.invoiceNo, date: j.invoiceDate, customer: j.customerName, car: j.car, total: j.total, balance: j.balance, status: j.status })),
+      recentPayments: state.payments.slice(0, 30).map((p) => ({ no: p.receiptNo, date: p.paidOn, customer: p.customerName, amount: p.amount, method: p.method, for: p.docNo })),
+      bookingsNext7Days: state.bookings.filter((b) => b.date >= today && b.date <= in7).map((b) => ({ date: b.date, time: b.time, customer: b.customerName, plate: b.plate, work: b.work, status: b.status })),
+      followUpsDue: state.customers.filter((c) => c.nextFollowUp && c.nextFollowUp <= in7).map((c) => ({ customer: c.name, due: c.nextFollowUp, note: c.followUpNote })),
+      serviceDue: state.vehicles.filter((v) => v.nextServiceDate && v.nextServiceDate <= new Date(Date.parse(today) + 30 * 864e5).toISOString().slice(0, 10)).map((v) => ({ plate: v.plate, car: v.makeModel, owner: v.ownerName, due: v.nextServiceDate })),
+      lowStock: state.parts.filter((p) => Number(p.qtyLeft) <= 1).map((p) => ({ part: p.name, partNo: p.partNo, left: p.qtyLeft })),
+      expensesThisMonth: state.expenses.filter((e) => inRange(e.date, month)).map((e) => ({ date: e.date, description: e.description, category: e.category, amount: e.amount })),
+      faultCases: state.faults.slice(0, 80).map((f) => ({ title: f.title, model: f.makeModel, engine: f.engine, codes: f.codes, symptom: f.symptom, cause: f.cause, fix: f.fix, verified: f.verified })),
+      supplierBillsUnpaid: state.purchases.filter((p) => p.status === "Unpaid").map((p) => ({ ref: p.ref, supplier: p.supplier, date: p.date, total: p.total })),
+    };
+  }
+
+  function morningBrief() {
+    const today = todayKL();
+    const owed = owedInvoices();
+    const late = owed.filter((j) => (Date.parse(today) - Date.parse(j.invoiceDate)) / 864e5 > 30);
+    const ready = state.jobs.filter((j) => isWorkshop(j) && j.stage === "Ready");
+    const waiting = state.jobs.filter((j) => isWorkshop(j) && j.stage === "Waiting parts");
+    const bks = state.bookings.filter((b) => b.date === today && b.status !== "Cancelled");
+    const fus = state.customers.filter((c) => c.nextFollowUp && c.nextFollowUp <= today);
+    const low = state.parts.filter((p) => Number(p.qtyLeft) <= 0);
+    const ib = inboxNew();
+    const items = [
+      late.length && ["now", "alert", `${rm(sum(late, (j) => j.balance))} overdue over 30 days`, `${late.length} invoice(s): ${late.slice(0, 2).map((j) => j.customerName).join(", ")}`, "#/money?tab=owed"],
+      ready.length && ["ok", "check", `${ready.length} car(s) ready for pickup`, ready.map((j) => j.plate || j.customerName).join(", "), "#/jobs?f=workshop"],
+      waiting.length && ["soon", "clock", `${waiting.length} car(s) waiting for parts`, waiting.map((j) => j.plate || j.customerName).join(", "), "#/orders"],
+      bks.length && ["info", "calendar", `${bks.length} booking(s) today`, bks.map((b) => `${b.time || ""} ${b.customerName}`.trim()).join(", "), "#/bookings"],
+      fus.length && ["info", "phone", `${fus.length} follow-up(s) due`, fus.slice(0, 3).map((c) => c.name).join(", "), "#/followups"],
+      low.length && ["soon", "parts", `${low.length} part(s) out of stock`, low.slice(0, 3).map((p) => p.name).join(", "), "#/parts"],
+      ib && ["info", "inbox", `${ib} new item(s) in the WhatsApp inbox`, "Bills and slips to check and save", "#/inbox"],
+    ].filter(Boolean);
+    return items.length
+      ? `<div class="list" style="border:0;background:none;box-shadow:none">${items.map(([c, ic, t, s, h]) => `<a class="todo" href="${h}"><span class="ai ${c}">${icon(ic)}</span><div style="min-width:0"><b>${esc(t)}</b><span>${esc(s)}</span></div>${icon("cr", "s")}</a>`).join("")}</div>`
+      : `<p class="muted">${icon("check")} Nothing needs you right now.</p>`;
+  }
+
+  function pageAssistant() {
+    crumbs([["Assistant"]]);
+    let role = "ML-CEO";
+    view.innerHTML = `${pageHead("Assistant", { sub: "Ask about your workshop. It reads your DMS records and never changes them." })}
+      <div class="split"><div class="stack">
+        <div class="card"><div class="card-h"><h2>${icon("sun")} Morning brief</h2><div class="r"><span class="muted">${dmy(todayKL())}</span></div></div>${morningBrief()}</div>
+        <div class="card"><div class="card-h"><h2>${icon("sparkle")} Ask</h2></div>
+          <div class="seg" id="asRole" style="flex-wrap:wrap;margin-bottom:12px">${AI_TEAM.map(([id, n]) => `<button type="button" data-r="${id}">${esc(n)}</button>`).join("")}</div>
+          <form id="asF"><label for="asQ" class="sr">Your question</label><textarea id="asQ" rows="3" maxlength="500" placeholder="e.g. Who owes us money and for how long?"></textarea>
+            <div class="chips" id="asSug" style="margin-top:10px"></div>
+            <div class="btns"><button class="btn" type="submit" id="asGo">${icon("send")}Ask</button></div></form>
+          <p class="hint" id="asStat"></p></div>
+        <div id="asLog" class="stack"></div></div>
+        <div class="stack">
+          <div class="card"><div class="card-h"><h2>Your AI team</h2></div>
+            <p class="muted" style="margin-top:0">The Merc Lab team from your Command Center. Each one knows this DMS and answers here from its own angle.</p>
+            <div class="rows">${AI_TEAM.map(([id, n, r, what, ic]) => `<div><span class="mini">${icon(ic)}</span><div class="grow"><b>${esc(n)} <span class="pill plain">${esc(id)}</span></b><span>${esc(r)} · ${esc(what)}</span></div></div>`).join("")}</div></div>
+          <div class="card"><div class="card-h"><h2>${icon("shield")} Safe by design</h2></div>
+            <div class="rows">
+              <div><div class="grow"><b>Reads only</b><span>It cannot save, send, pay or delete anything</span></div></div>
+              <div><div class="grow"><b>You decide</b><span>It tells you what to press; you do it</span></div></div>
+              <div><div class="grow"><b>Shows its sources</b><span>Every answer lists the records it used</span></div></div>
+              <div><div class="grow"><b>Daily limit</b><span>A cap on questions per day keeps AI costs small</span></div></div></div></div></div></div>`;
+    const drawRole = () => {
+      $$("#asRole button").forEach((b) => b.classList.toggle("on", b.dataset.r === role));
+      const t = AI_TEAM.find((a) => a[0] === role);
+      $("#asSug").innerHTML = t[5].map((s) => `<button type="button" class="chip" data-s="${esc(s)}">${esc(s)}</button>`).join("");
+    };
+    const drawLog = () => {
+      $("#asLog").innerHTML = assistantLog.map((e) => `<div class="card"><div class="muted" style="margin-bottom:6px">${esc(AI_TEAM.find((a) => a[0] === e.role)?.[1] || "Assistant")} · ${esc(e.q)}</div>
+        ${e.err ? `<div class="notice bad">${icon("alert")}<div>${esc(e.err)}</div></div>` : e.a === null ? `<p class="muted">Thinking…</p>` : `<div style="white-space:pre-wrap">${esc(e.a)}</div>${e.src && e.src.length ? `<div class="chips" style="margin-top:10px">${e.src.map((s) => `<span class="pill line plain">${esc(s)}</span>`).join("")}</div>` : ""}`}</div>`).join("");
+    };
+    $("#asRole").onclick = (e) => {
+      const b = e.target.closest("[data-r]");
+      if (b) { role = b.dataset.r; drawRole(); }
+    };
+    $("#asSug").onclick = (e) => {
+      const b = e.target.closest("[data-s]");
+      if (b) { $("#asQ").value = b.dataset.s; $("#asF").requestSubmit(); }
+    };
+    $("#asF").onsubmit = async (e) => {
+      e.preventDefault();
+      const q = $("#asQ").value.trim();
+      if (!q) return $("#asQ").focus();
+      const entry = { q, role, a: null };
+      assistantLog.unshift(entry);
+      drawLog();
+      busy($("#asGo"), true, "Asking…");
+      try {
+        const out = await api("/assistant/ask", { method: "POST", body: { question: q, role, context: assistantContext() } });
+        entry.a = out.answer;
+        entry.src = out.sources;
+        $("#asQ").value = "";
+      } catch (err) {
+        entry.err = err.message;
+      }
+      busy($("#asGo"), false);
+      drawLog();
+    };
+    api("/assistant/status").then((s) => { $("#asStat").textContent = s.on ? `${s.usedToday} of ${s.cap} questions used today.` : "The Assistant is switched off or not set up (needs the Gemini key)."; }).catch(() => {});
+    drawRole();
+    drawLog();
+  }
+
   function pagePackages() {
     crumbs([["Packages"]]);
     view.innerHTML = `${pageHead("Packages", { sub: "Ready-made jobs. One tap adds them to an estimate.", acts: `<a class="btn" href="#/packages/new">${icon("plus")}New package</a>` })}
@@ -1416,6 +1676,7 @@
     $("#wToday").onclick = () => go(weekStart(today));
     $("#bkNew").onclick = () => bookingDialog(null);
     draw();
+    if (q.get("new")) bookingDialog(null);
   }
 
   // Activity on the customer page: log form + timeline of contacts, jobs and payments.
@@ -1749,6 +2010,190 @@
       [["Cash & bank", cash], ["Customers owe you", owedToYou], ["Parts in stock (at cost)", stock], ["Tools & equipment", equipment], ["Total assets", assets], ["Supplier bills not paid", owedSuppliers], ["Customer deposits", deposits], ["Total liabilities", liabilities], ["Owner capital", capital], ["Less owner drawings", -drawings], ["Profit kept in the business", kept], ["Total equity", assets - liabilities]]);
   }
 
+  // ---------- financial statements (MPERS) ----------
+  // Malaysian Private Entities Reporting Standard layout, built from the DMS
+  // records: statement of financial position, profit or loss and other
+  // comprehensive income, changes in equity, cash flows (direct method) and
+  // notes. Read-only; it never changes any record.
+
+  const DEP_RATE = 0.2; // tools & equipment: straight line over 5 years
+  const FS_COS = ["Sublet (outside work)", "Parts for jobs (no stock)"];
+  const FS_SELL = ["Marketing"];
+  const FS_FIN = ["Bank fees"];
+
+  function fsAt(t) {
+    // Balances as at date t (yyyy-mm-dd).
+    const s = state.settings;
+    const from = s.openingDate || "0000-01-01";
+    const upto = (d) => !!d && d >= from && d <= t;
+    const opening = t >= from ? Number(s.openingCash) || 0 : 0;
+    const cashIn = sum(state.payments.filter((p) => upto(p.paidOn)), (p) => p.amount);
+    const refunds = sum(state.creditnotes.filter((c) => upto(c.date)), (c) => c.refund);
+    const spent = sum(state.expenses.filter((x) => upto(x.date)), (x) => x.amount);
+    const bills = sum(state.purchases.filter((p) => p.status === "Paid" && upto(p.paidOn || p.date)), (p) => p.total);
+    const cash = opening + cashIn - refunds - spent - bills;
+    // Trade receivables: invoices dated on or before t, less credit notes and payments up to t.
+    const recv = [];
+    for (const j of state.jobs) {
+      if (!j.invoiceNo || j.status === "Cancelled" || !j.invoiceDate || j.invoiceDate > t) continue;
+      const credited = sum(state.creditnotes.filter((c) => c.jobId === j.id && c.date <= t), (c) => c.amount);
+      const paid = sum(state.payments.filter((p) => p.jobId === j.id && p.paidOn <= t), (p) => p.amount);
+      const bal = Math.round((j.total - credited - paid) * 100) / 100;
+      if (bal > 0.009) recv.push({ j, bal, days: Math.round((Date.parse(t) - Date.parse(j.invoiceDate)) / 864e5) });
+    }
+    const receivables = sum(recv, (r) => r.bal);
+    const stock = sum(state.parts.filter((p) => p.qtyLeft > 0), (p) => p.qtyLeft * p.unitCost);
+    // Property, plant and equipment: tools bought, depreciated monthly.
+    const tools = state.expenses.filter((x) => x.category === "Tools & equipment (asset)" && x.date && x.date <= t);
+    const months = (a, b) => Math.max(0, (Number(b.slice(0, 4)) - Number(a.slice(0, 4))) * 12 + Number(b.slice(5, 7)) - Number(a.slice(5, 7)) + 1);
+    const ppeCost = sum(tools, (x) => x.amount);
+    const accDep = sum(tools, (x) => Math.min(x.amount, (x.amount * DEP_RATE * months(x.date, t)) / 12));
+    const payables = sum(state.purchases.filter((p) => p.date && p.date <= t && (p.status === "Unpaid" || (p.paidOn && p.paidOn > t))), (p) => p.total);
+    const deposits = sum(state.jobs.filter((j) => j.status !== "Cancelled" && (!j.invoiceNo || j.invoiceDate > t)), (j) => sum(state.payments.filter((p) => p.jobId === j.id && p.paidOn <= t), (p) => p.amount));
+    const drawingsTo = sum(state.expenses.filter((x) => x.category === "Owner drawings" && x.date && x.date <= t), (x) => x.amount);
+    return { t, cash, opening, receivables, recv, stock, ppeCost, accDep, ppe: ppeCost - accDep, payables, deposits, drawingsTo,
+      assets: cash + receivables + stock + ppeCost - accDep, liabilities: payables + deposits };
+  }
+
+  function fsYear(year) {
+    const today = todayKL();
+    const a = `${year}-01-01`;
+    const b = `${year}-12-31` < today ? `${year}-12-31` : today;
+    const prevEnd = `${year - 1}-12-31`;
+    const x = pnlFor([a, b]);
+    const end = fsAt(b);
+    const start = fsAt(prevEnd);
+    const exp = state.expenses.filter((e) => inRange(e.date, [a, b]));
+    const by = (cats) => sum(exp.filter((e) => cats.includes(e.category)), (e) => e.amount);
+    const revenue = x.net;
+    const cos = x.cost + by(FS_COS);
+    const selling = by(FS_SELL);
+    const finance = by(FS_FIN);
+    const depreciation = end.accDep - start.accDep;
+    const adminCats = {};
+    exp.filter((e) => !NOT_PNL.includes(e.category) && ![...FS_COS, ...FS_SELL, ...FS_FIN].includes(e.category)).forEach((e) => (adminCats[e.category] = (adminCats[e.category] || 0) + e.amount));
+    const admin = sum(Object.values(adminCats), (v) => v) + depreciation;
+    const profit = revenue - cos - selling - admin - finance;
+    const s = state.settings;
+    const firstYear = !s.openingDate || s.openingDate.slice(0, 4) === String(year);
+    const capitalIn = firstYear ? Number(s.ownerCapital) || 0 : 0;
+    const drawings = sum(exp.filter((e) => e.category === "Owner drawings"), (e) => e.amount);
+    const equityOpen = firstYear ? 0 : start.assets - start.liabilities;
+    const equityClose = end.assets - end.liabilities;
+    const diff = Math.round((equityClose - (equityOpen + capitalIn + profit - drawings)) * 100) / 100;
+    // Cash flows (direct method) for the part of the year after the opening date.
+    const from = s.openingDate && s.openingDate > a ? s.openingDate : a;
+    const r = [from, b];
+    const cfOpen = s.openingDate && s.openingDate >= a ? Number(s.openingCash) || 0 : start.cash;
+    const fromCustomers = sum(state.payments.filter((p) => inRange(p.paidOn, r)), (p) => p.amount) - sum(state.creditnotes.filter((c) => inRange(c.date, r)), (c) => c.refund);
+    const toSuppliers = sum(state.purchases.filter((p) => p.status === "Paid" && inRange(p.paidOn || p.date, r)), (p) => p.total);
+    const opEx = sum(state.expenses.filter((e) => inRange(e.date, r) && !NOT_PNL.includes(e.category)), (e) => e.amount);
+    const ppeBought = sum(state.expenses.filter((e) => inRange(e.date, r) && e.category === "Tools & equipment (asset)"), (e) => e.amount);
+    const drawn = sum(state.expenses.filter((e) => inRange(e.date, r) && e.category === "Owner drawings"), (e) => e.amount);
+    const cfOps = fromCustomers - toSuppliers - opEx;
+    const cfInv = -ppeBought;
+    const cfFin = -drawn;
+    return { year, a, b, x, end, start, revenue, cos, gross: revenue - cos, selling, admin, adminCats, depreciation, finance, profit, firstYear, capitalIn, drawings, equityOpen, equityClose, diff,
+      cf: { from, fromCustomers, toSuppliers, opEx, cfOps, ppeBought, cfInv, drawn, cfFin, net: cfOps + cfInv + cfFin, open: cfOpen, close: cfOpen + cfOps + cfInv + cfFin } };
+  }
+
+  function pageStatements(q) {
+    crumbs([["Financial statements"]]);
+    const thisYear = Number(todayKL().slice(0, 4));
+    const years = [];
+    const firstData = [state.settings.openingDate, ...state.jobs.map((j) => j.invoiceDate), ...state.expenses.map((e) => e.date)].filter(Boolean).sort()[0];
+    for (let y = thisYear; y >= Math.min(thisYear, Number((firstData || String(thisYear)).slice(0, 4))); y--) years.push(y);
+    let year = Number(q.get("y")) || thisYear;
+    const s = state.settings;
+    const name = s.legalName || "TNS Legacy";
+    view.innerHTML = `${pageHead("Financial statements", { sub: "MPERS format · Malaysian Private Entities Reporting Standard", acts: `<button type="button" class="btn alt" id="fsCsv">${icon("download")}Excel</button><button type="button" class="btn" id="fsPrint">${icon("print")}Print / PDF</button>` })}
+      <div class="toolbar"><div class="seg" id="fsYears">${years.map((y) => `<button type="button" data-y="${y}">${y}</button>`).join("")}</div><span class="muted" id="fsPer"></span></div>
+      <div id="fs"></div>`;
+    const draw = () => {
+      $$("#fsYears button").forEach((b) => b.classList.toggle("on", Number(b.dataset.y) === year));
+      const f = fsYear(year);
+      const e = f.end;
+      const ongoing = f.b !== `${year}-12-31`;
+      $("#fsPer").textContent = `${dmy(f.a)} to ${dmy(f.b)}${ongoing ? " (year to date)" : ""}`;
+      const N = (v) => (Math.abs(v) < 0.005 ? "–" : v < 0 ? `(${rm(-v).replace("RM ", "")})` : rm(v).replace("RM ", ""));
+      const L = (label, v, cls = "", note = "") => `<tr class="${cls}"><td>${label}</td><td class="nt">${note}</td><td class="num">${N(v)}</td></tr>`;
+      const H = (label) => `<tr class="sec"><td colspan="3">${label}</td></tr>`;
+      const head = `<thead><tr><th></th><th class="nt">Note</th><th class="num">RM</th></tr></thead>`;
+      const T = (title, rows) => `<div class="card flush fs-st"><div class="card-h"><h2>${title}</h2></div><div class="tbl-wrap"><table class="tbl fin keep">${head}<tbody>${rows}</tbody></table></div></div>`;
+      const ageing = [[0, 30, "0–30 days"], [31, 60, "31–60 days"], [61, 90, "61–90 days"], [91, 1e9, "Over 90 days"]].map(([lo, hi, l]) => [l, sum(e.recv.filter((r) => r.days >= lo && r.days <= hi), (r) => r.bal)]);
+      $("#fs").innerHTML = `
+        <div class="card fs-cover"><div class="eyebrow">Financial statements for the financial year ended ${dmy(`${year}-12-31`)}${ongoing ? " · year to date " + dmy(f.b) : ""}</div>
+          <h2 class="h2" style="margin:6px 0 2px">${esc(name)} <span class="muted">(trading as The Merc Lab)</span></h2>
+          <div class="muted">${s.registrationNo ? "Registration no. " + esc(s.registrationNo) + " · " : ""}Sole proprietorship registered in Malaysia · Amounts in Ringgit Malaysia (RM)</div>
+          ${f.diff ? `<div class="notice warn" style="margin-top:12px">${icon("alert")}<div>The equity movement does not fully reconcile by <b>${rm(Math.abs(f.diff))}</b>. Usually a record is missing (an expense, supplier bill or opening balance). Shown as "Unreconciled difference" in the statement of changes in equity for your accountant to clear.</div></div>` : ""}</div>
+
+        ${T(`Statement of financial position as at ${dmy(f.b)}`, `
+          ${H("Assets")}<tr class="sub"><td colspan="3">Non-current assets</td></tr>${L("Property, plant and equipment", e.ppe, "", "4")}${L("<b>Total non-current assets</b>", e.ppe, "tot")}
+          <tr class="sub"><td colspan="3">Current assets</td></tr>${L("Inventories", e.stock, "", "5")}${L("Trade receivables", e.receivables, "", "6")}${L("Cash and bank balances", e.cash, "", "7")}${L("<b>Total current assets</b>", e.stock + e.receivables + e.cash, "tot")}
+          ${L("<b>TOTAL ASSETS</b>", e.assets, "grand")}
+          ${H("Owner's equity and liabilities")}${L("Owner's equity", f.equityClose, "", "SOCE")}
+          <tr class="sub"><td colspan="3">Current liabilities</td></tr>${L("Trade payables", e.payables, "", "8")}${L("Customer deposits (contract liabilities)", e.deposits, "", "8")}${L("<b>Total current liabilities</b>", e.liabilities, "tot")}
+          ${L("<b>TOTAL EQUITY AND LIABILITIES</b>", f.equityClose + e.liabilities, "grand")}`)}
+
+        ${T(`Statement of profit or loss and other comprehensive income for the year ended ${dmy(`${year}-12-31`)}`, `
+          ${L("Revenue", f.revenue, "", "9")}${L("Cost of sales", -f.cos, "", "10")}${L("<b>Gross profit</b>", f.gross, "tot")}
+          ${L("Other income", 0)}${L("Selling and distribution expenses", -f.selling, "", "10")}${L("Administrative and other operating expenses", -f.admin, "", "10")}${L("Finance costs", -f.finance, "", "10")}
+          ${L("<b>Profit before tax</b>", f.profit, "tot")}${L("Income tax expense", 0, "", "11")}${L(`<b>Profit for the ${ongoing ? "period" : "year"}</b>`, f.profit, "tot")}
+          ${L("Other comprehensive income", 0)}${L(`<b>Total comprehensive income for the ${ongoing ? "period" : "year"}</b>`, f.profit, "grand")}`)}
+
+        ${T("Statement of changes in owner's equity", `
+          ${L(`At 1 January ${year}`, f.equityOpen)}${f.capitalIn ? L("Capital introduced", f.capitalIn) : ""}${L(`Profit for the ${ongoing ? "period" : "year"}`, f.profit)}${L("Drawings", -f.drawings, "", "12")}
+          ${f.diff ? L("Unreconciled difference (to be cleared by the accountant)", f.diff) : ""}${L(`<b>At ${dmy(f.b)}</b>`, f.equityClose, "grand")}`)}
+
+        ${T("Statement of cash flows (direct method)", `
+          ${H("Cash flows from operating activities")}${L("Receipts from customers (net of refunds)", f.cf.fromCustomers)}${L("Payments to suppliers for parts", -f.cf.toSuppliers)}${L("Payments for operating expenses", -f.cf.opEx)}${L("<b>Net cash from operating activities</b>", f.cf.cfOps, "tot")}
+          ${H("Cash flows from investing activities")}${L("Purchase of property, plant and equipment", -f.cf.ppeBought)}${L("<b>Net cash used in investing activities</b>", f.cf.cfInv, "tot")}
+          ${H("Cash flows from financing activities")}${L("Drawings by the owner", -f.cf.drawn)}${L("<b>Net cash used in financing activities</b>", f.cf.cfFin, "tot")}
+          ${L("<b>Net change in cash and bank balances</b>", f.cf.net, "tot")}${L(`Cash and bank balances at ${dmy(f.cf.from)}${state.settings.openingDate && state.settings.openingDate >= f.a ? " (opening balance)" : ""}`, f.cf.open)}${L(`<b>Cash and bank balances at ${dmy(f.b)}</b>`, f.cf.close, "grand", "7")}`)}
+
+        <div class="card fs-notes"><div class="card-h"><h2>Notes to the financial statements</h2></div>
+          <h3 class="h3">1. General information</h3><p>${esc(name)} is a sole proprietorship registered in Malaysia, trading as The Merc Lab. Its principal activity is the repair, servicing and maintenance of Mercedes-Benz vehicles and the sale of related parts.</p>
+          <h3 class="h3">2. Basis of preparation</h3><p>These financial statements are prepared in accordance with the Malaysian Private Entities Reporting Standard (MPERS) issued by the Malaysian Accounting Standards Board, under the historical cost convention, and are presented in Ringgit Malaysia (RM). They are compiled from the records kept in the Merc Lab DMS and have not been audited.</p>
+          <h3 class="h3">3. Significant accounting policies</h3>
+          <p><b>Revenue (Section 23).</b> Revenue from repair services and parts is recognised when the work is completed and invoiced, at the invoiced amount less discounts and credit notes.</p>
+          <p><b>Inventories (Section 13).</b> Parts are stated at the lower of cost and estimated selling price less costs to sell. Cost is the purchase price per supplier receipt.</p>
+          <p><b>Property, plant and equipment (Section 17).</b> Tools and equipment are stated at cost less accumulated depreciation, depreciated on a straight-line basis at ${DEP_RATE * 100}% a year from the month of purchase.</p>
+          <p><b>Financial instruments (Section 11).</b> Trade receivables and payables are measured at the transaction price. Receivables are reviewed for impairment at the reporting date.</p>
+          <p><b>Income tax (Section 29).</b> As a sole proprietorship, the business is not taxed separately. Its income is assessed on the owner personally (Form B), so no tax is charged in these statements.</p>
+          <h3 class="h3">4. Property, plant and equipment</h3>${fsTable([["Cost", e.ppeCost], ["Accumulated depreciation", -e.accDep], ["Carrying amount", e.ppe], [`Depreciation charge for the ${ongoing ? "period" : "year"}`, f.depreciation]])}
+          <h3 class="h3">5. Inventories</h3>${fsTable([["Parts in stock, at cost", e.stock]])}<p class="hint">Stock is valued from the quantities in the DMS on the day this report is opened. Do a stock count close to the year end.</p>
+          <h3 class="h3">6. Trade receivables</h3>${fsTable([...ageing, ["Total", e.receivables]])}
+          <h3 class="h3">7. Cash and bank balances</h3>${fsTable([["Cash and bank", e.cash]])}<p class="hint">Opening balance ${rm(e.opening)}${state.settings.openingDate ? " on " + dmy(state.settings.openingDate) : ""}, plus money received, less money paid.</p>
+          <h3 class="h3">8. Trade payables and customer deposits</h3>${fsTable([["Supplier bills not yet paid", e.payables], ["Deposits received on estimates not yet invoiced", e.deposits]])}
+          <h3 class="h3">9. Revenue</h3>${fsTable([["Parts", f.x.parts], ["Labour and sundries", f.x.labour], ["Sublet, surcharge and menus", f.x.other], ["Less discounts", -f.x.discount], ["Less credit notes", -f.x.credits], ["Revenue", f.revenue]])}
+          <h3 class="h3">10. Expenses by nature</h3>${fsTable([["Parts used (at cost)", f.x.cost], ...FS_COS.map((c) => [c, sum(state.expenses.filter((x) => x.category === c && inRange(x.date, [f.a, f.b])), (x) => x.amount)]), ...Object.entries(f.adminCats).sort((p, q2) => q2[1] - p[1]), ["Depreciation", f.depreciation], ["Marketing", f.selling], ["Bank fees", f.finance]].filter(([, v]) => Math.abs(v) > 0.004))}
+          ${f.x.estLines ? `<p class="hint">${f.x.estLines} part line(s) were not picked from stock, so their cost is estimated from the ${esc(state.settings.markupPercent)}% markup.</p>` : ""}
+          <h3 class="h3">11. Income tax</h3><p>No tax expense is recognised. The owner declares the business income on Form B.</p>
+          <h3 class="h3">12. Related party transactions</h3><p>Drawings by the owner during the ${ongoing ? "period" : "year"}: ${rm(f.drawings)}.</p>
+          <p class="hint" style="margin-top:16px">Prepared from the DMS records. Give these to your accountant or tax agent to review before filing.</p></div>`;
+      $("#fsCsv").onclick = () => {
+        const rows = [["Statement of financial position", ""], ["Property, plant and equipment", e.ppe], ["Inventories", e.stock], ["Trade receivables", e.receivables], ["Cash and bank balances", e.cash], ["Total assets", e.assets], ["Owner's equity", f.equityClose], ["Trade payables", e.payables], ["Customer deposits", e.deposits], ["Total equity and liabilities", f.equityClose + e.liabilities],
+          ["Profit or loss", ""], ["Revenue", f.revenue], ["Cost of sales", -f.cos], ["Gross profit", f.gross], ["Selling and distribution expenses", -f.selling], ["Administrative and other operating expenses", -f.admin], ["Finance costs", -f.finance], ["Profit for the year", f.profit],
+          ["Changes in equity", ""], ["Opening equity", f.equityOpen], ["Capital introduced", f.capitalIn], ["Profit", f.profit], ["Drawings", -f.drawings], ["Unreconciled difference", f.diff], ["Closing equity", f.equityClose],
+          ["Cash flows", ""], ["Receipts from customers", f.cf.fromCustomers], ["Payments to suppliers", -f.cf.toSuppliers], ["Operating expenses paid", -f.cf.opEx], ["Purchase of PPE", -f.cf.ppeBought], ["Drawings", -f.cf.drawn], ["Opening cash", f.cf.open], ["Closing cash", f.cf.close]];
+        downloadCsv(`financial-statements-${year}.csv`, [["Line", (r0) => r0[0]], ["RM", (r0) => (r0[1] === "" ? "" : Number(r0[1]).toFixed(2))]], rows);
+      };
+    };
+    $("#fsYears").onclick = (ev) => {
+      const b = ev.target.closest("button[data-y]");
+      if (!b) return;
+      year = Number(b.dataset.y);
+      history.replaceState(null, "", `#/statements?y=${year}`);
+      draw();
+    };
+    $("#fsPrint").onclick = () => window.print();
+    draw();
+  }
+
+  function fsTable(rows) {
+    return `<table class="tbl fin keep fs-note"><tbody>${rows.map(([l, v]) => `<tr><td>${esc(l)}</td><td class="num">${Math.abs(v) < 0.005 ? "–" : v < 0 ? `(${rm(-v).replace("RM ", "")})` : rm(v).replace("RM ", "")}</td></tr>`).join("")}</tbody></table>`;
+  }
+
   // ================= STOCK =================
 
   const supplierOwed = (name) => state.purchases.filter((p) => p.status === "Unpaid" && p.supplier.toLowerCase() === String(name).toLowerCase());
@@ -1880,7 +2325,7 @@
     crumbs([["Parts & stock", "#/parts"], ["Stock count"]]);
     const parts = state.parts.slice().sort((a, b) => a.name.localeCompare(b.name));
     view.innerHTML = `${pageHead("Stock count", { back: "#/parts", sub: "Count what is on the shelf. Leave a box empty if you did not count it." })}
-      <form id="scf"><div class="card flush"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Part</th><th class="num">System</th><th class="num" style="width:130px">Counted</th></tr></thead><tbody>
+      <form id="scf"><div class="card flush"><div class="tbl-wrap"><table class="tbl keep"><thead><tr><th>Part</th><th class="num">System</th><th class="num" style="width:130px">Counted</th></tr></thead><tbody>
       ${parts.map((p) => `<tr><td class="strong">${esc(p.name)}<div class="sm">${esc([p.brand, p.partNo, p.supplier].filter(Boolean).join(" · "))}</div></td><td class="num">${p.qtyLeft}</td>
         <td class="num"><input data-id="${p.id}" type="number" step="any" min="0" inputmode="decimal" aria-label="Counted ${esc(p.name)}" style="text-align:right"></td></tr>`).join("") || `<tr><td colspan="3">${emptyBox("parts", "No parts yet.")}</td></tr>`}
       </tbody></table></div></div>
@@ -2602,6 +3047,7 @@
     const forJob = q.get("pay") && state.jobs.find((j) => j.id === q.get("pay"));
     if (forJob) paymentForm({ amount: forJob.balance, method: "Bank transfer" }, null, [{ id: forJob.id, docNo: docNo(forJob), customerName: forJob.customerName, plate: forJob.plate, balance: forJob.balance, why: [] }]);
     else if (q.get("upload")) $("#payFile").click();
+    else if (q.get("cash")) paymentForm({ method: "Cash" }, null, null);
   }
 
   async function onPaymentFile(e) {

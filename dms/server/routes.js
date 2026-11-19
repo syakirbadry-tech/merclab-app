@@ -726,5 +726,6 @@ require("./crm").register(router, { wrap, customerOut });
 WA.register(router, { wrap });
 require("./importer").register(router, { wrap });
 require("./finance").register(router, { wrap, oneFile, fileOf, bodyData, jobOut, newToken });
+require("./assistant").register(router, { wrap });
 
 module.exports = { router, rankMatches, jobOut, paymentOut, partOut, loadSettings, companyFor, parseJob, docNoOf };
