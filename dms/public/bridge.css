@@ -1,7 +1,89 @@
-/* Phase 1 bridge: keeps the old shell readable while style.css and
-   merclab.css are both loaded. Delete this file in phase 2 (app shell). */
+/* App glue for the Workshop Glass design (merclab.css).
+   merclab.css is the design system; style.css still holds the page rules
+   that have no counterpart there yet. This file joins the two: the fixed
+   desktop sidebar, the phone drawer and bottom bar, and a few overrides. */
+
+html { background: var(--bg); }
+body.ml { background: var(--bg-grad); min-height: 100vh; }
 .pill .dot { display: none; }                         /* merclab.css draws the dot itself */
-.brand { display: flex; align-items: center; gap: 10px; color: var(--ink); font-weight: 700; font-size: 16px; }
-.brand small { color: var(--muted); }
+
+/* ---------- sidebar ---------- */
+.side { position: fixed; inset: 0 auto 0 0; width: var(--side-w); z-index: 30; overflow-y: auto; padding: calc(20px + env(safe-area-inset-top)) 12px 12px; }
+.main { margin-left: var(--side-w); }
+.brand { display: block; padding: 2px 10px 18px; }
+.brand img { width: 168px; height: auto; display: block; }
+.nav { overflow: visible; }
+.nav-g > a { padding-left: 10px; }
+.nav-g > summary .chev { width: 16px; height: 16px; }
+
+/* ---------- top bar ---------- */
+.topbar { padding-top: env(safe-area-inset-top); height: auto; min-height: var(--top-h); }
 .topbar .menu-btn { color: #fff; }
 .topbar .menu-btn:hover { background: rgba(255, 255, 255, .12); }
+.gsearch input { color: #fff; }
+.gsearch .kbd { pointer-events: none; }
+main#view { padding: 28px 32px 48px; }
+
+/* ---------- bottom bar (phone only) ---------- */
+#bottom { display: none; }
+
+/* ---------- phone ---------- */
+@media (max-width: 860px) {
+  .side { display: flex; width: min(300px, 86vw); background: var(--bg); transform: translateX(-100%); transition: transform .2s; box-shadow: 0 0 40px rgba(0, 0, 0, .3); }
+  body.nav-open .side { transform: none; }
+  .main { margin-left: 0; }
+  .gsearch .kbd { display: none; }
+  .gsearch input { padding-right: 12px; }
+  main#view { padding: 16px 16px calc(96px + env(safe-area-inset-bottom)); }
+  #bottom.bar { display: grid; position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; padding: 4px 6px env(safe-area-inset-bottom); }
+  #bottom.bar .fab { margin-bottom: 6px; }
+  #bottom.bar .on { color: var(--accent); }
+  #toast { bottom: calc(84px + env(safe-area-inset-bottom)); }
+}
+
+/* Create sheet */
+.sheet-modal .rows > a { min-height: 60px; }
+.sheet-modal .mini { flex: none; }
+
+/* ---------- tables become two-line list rows on the phone ----------
+   Same markup as the desktop table. The first cell is the title line, other
+   text cells sit under it, amounts and status pills go to the right.
+   Tables with form inputs opt out with class "keep". */
+@media (max-width: 860px) {
+  .tbl:not(.keep) thead { display: none; }
+  .tbl:not(.keep), .tbl:not(.keep) tbody { display: block; width: 100%; }
+  .tbl:not(.keep) tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--line); min-height: 60px; }
+  .tbl:not(.keep) tbody tr:last-child { border-bottom: 0; }
+  .tbl:not(.keep) td { display: block; padding: 0; border: 0; min-width: 0; grid-column: 1; overflow: hidden; text-overflow: ellipsis; }
+  .tbl:not(.keep) td:first-child { font-size: 15px; }
+  .tbl:not(.keep) td:not(:first-child) { font-size: 13px; color: var(--muted); }
+  .tbl:not(.keep) td.num, .tbl:not(.keep) td.act, .tbl:not(.keep) td:has(> .pill:only-child) { grid-column: 2; grid-row: span 2; justify-self: end; text-align: right; color: var(--ink); font-weight: 650; }
+  .tbl:not(.keep) td:empty, .tbl:not(.keep) .d { display: none; }
+  .tbl:not(.keep) td .who { min-width: 0; }
+  .tbl:not(.keep) tbody tr.tap:hover td { background: none; }
+  .tbl.fin tr { min-height: 44px; padding: 8px 14px; }
+  .tbl.fin td.num { grid-row: auto; }
+  .tbl.fin tr.sec { padding: 8px 14px; background: var(--surface2); }
+}
+
+/* small fixes where style.css and merclab.css meet */
+.jc > .plate, .jc .plate { width: max-content; display: inline-flex; }
+label.btn { display: inline-flex; align-items: center; font: 600 14.5px/1 var(--font); color: var(--on-ink); margin: 0; }
+label.btn.alt { color: var(--ink); }
+label.btn.sm { font-size: 13.5px; }
+
+/* financial statements (MPERS) */
+.fs-st { margin-bottom: 16px; }
+.tbl.fin .nt { width: 64px; text-align: center; color: var(--muted); font-size: 12.5px; }
+.tbl.fin tr.sub td { font-weight: 600; color: var(--ink2); font-size: 13px; padding-top: 12px; }
+.fs-cover { margin-bottom: 16px; }
+.fs-notes p { margin: 6px 0 12px; color: var(--ink2); }
+.fs-notes .h3 { margin-top: 18px; }
+.fs-note { max-width: 560px; margin: 6px 0 8px; }
+@media print {
+  #bottom, .ph .acts, .toolbar, .gsearch, .back { display: none !important; }
+  body.ml { background: #fff; }
+  main#view { padding: 0; max-width: none; }
+  .card, .tile { box-shadow: none !important; backdrop-filter: none !important; background: #fff !important; border-color: #ccc !important; break-inside: avoid; }
+  .fs-st { break-before: page; }
+}

@@ -110,9 +110,10 @@
   }
 
   const STAGES = ["Booked", "In workshop", "Waiting parts", "Ready", "Collected"];
-  const STAGE_CLS = { Booked: "", "In workshop": "info", "Waiting parts": "warn", Ready: "ok", Collected: "" };
-  const STATUS_CLS = { Draft: "", Sent: "info", "Part paid": "warn", Paid: "ok", Cancelled: "bad" };
-  const pill = (txt, cls = "") => `<span class="pill ${cls}">${cls ? '<span class="dot"></span>' : ""}${esc(txt)}</span>`;
+  // One status system (merclab.css): ok · soon · now · info · neutral. Used by every list, card and tile.
+  const STAGE_CLS = { Booked: "", "In workshop": "info", "Waiting parts": "soon", Ready: "ok", Collected: "" };
+  const STATUS_CLS = { Draft: "", Sent: "info", Approved: "ok", "Part paid": "soon", Paid: "ok", Unpaid: "now", Overdue: "now", Cancelled: "now" };
+  const pill = (txt, cls = "") => `<span class="pill ${({ warn: "soon", bad: "now" })[cls] || cls}">${esc(txt)}</span>`;
   const statusPill = (s) => pill(s, STATUS_CLS[s] ?? "");
   const stagePill = (s) => (s ? pill(s, STAGE_CLS[s] ?? "") : "");
   const plateTag = (p) => (p ? `<span class="plate">${esc(p)}</span>` : "");
@@ -268,30 +269,46 @@
 
   // ---------- shell ----------
 
+  const NAV_TOP = [["dashboard", "Dashboard", "dashboard"], ["inbox", "Inbox", "inbox"], ["assistant", "Assistant", "sparkle"]];
   const NAV = [
-    ["Overview", [["dashboard", "Dashboard", "dashboard"], ["inbox", "Inbox", "chat"]]],
-    ["Workshop", [["jobs", "Jobs", "jobs"], ["bookings", "Bookings", "calendar"], ["vehicles", "Vehicles", "car"], ["packages", "Packages", "box"], ["faults", "Fault cases", "book"]]],
+    ["Workshop", [["jobs", "Jobs", "jobs"], ["bookings", "Bookings", "calendar"], ["vehicles", "Vehicles", "car"], ["packages", "Packages", "box"], ["faults", "Fault cases", "fault"], ["hub", "Merc HUB", "layers"]]],
     ["CRM", [["customers", "Customers", "users"], ["followups", "Follow-ups", "phone"], ["reminders", "Service reminders", "bell"]]],
-    ["Finance", [["money", "Money in", "money"], ["expenses", "Expenses", "receipt"], ["creditnotes", "Credit notes", "file"], ["pnl", "Profit & Loss", "dashboard"], ["balance", "Balance sheet", "book"]]],
-    ["Stock", [["parts", "Parts & stock", "parts"], ["suppliers", "Suppliers", "users"], ["orders", "Part orders", "box"]]],
+    ["Finance", [["money", "Money in", "money"], ["expenses", "Expenses", "receipt"], ["creditnotes", "Credit notes", "cn"], ["pnl", "Profit & Loss", "chart"], ["balance", "Balance sheet", "scale"], ["statements", "Financial statements", "book"]]],
+    ["Stock", [["parts", "Parts & stock", "parts"], ["suppliers", "Suppliers", "truck"], ["orders", "Part orders", "order"]]],
   ];
+  const navLink = ([k, l, ic]) => `<a href="#/${k}" data-nav="${k}">${icon(ic)}<span>${l}</span>${k === "jobs" ? '<span class="count" id="navWs" hidden></span>' : k === "inbox" ? '<span class="count" id="navIb" hidden></span>' : ""}</a>`;
 
   function buildShell() {
     $("#side").innerHTML = `
-      <div class="brand"><svg width="30" height="30" viewBox="0 0 120 120" aria-hidden="true"><polygon points="60,10 104,35 104,85 60,110 16,85 16,35" fill="#5b9bf5"/><polygon points="60,10 104,35 60,60 16,35" fill="#3f77d1"/></svg>
-        <div>The Merc Lab<small>Workshop DMS</small></div></div>
-      <nav class="nav">${NAV.map(([h, items]) => `<div class="nav-h">${h}</div>${items.map(([k, l, ic]) => `<a href="#/${k}" data-nav="${k}">${icon(ic)}<span>${l}</span>${k === "jobs" ? '<span class="count" id="navWs" hidden></span>' : k === "inbox" ? '<span class="count" id="navIb" hidden></span>' : ""}</a>`).join("")}`).join("")}</nav>
+      <a class="brand" href="#/dashboard" aria-label="The Merc Lab: dashboard"><img src="brand/merc-lab-logo.svg" alt="The Merc Lab" width="168" height="58"></a>
+      <nav class="nav">${NAV_TOP.map(navLink).join("")}
+        ${NAV.map(([h, items]) => `<details class="nav-g" data-g="${h}"><summary>${h}<span class="dot-n" data-gn="${h}"></span>${icon("cd", "s chev")}</summary>${items.map(navLink).join("")}</details>`).join("")}</nav>
       <div class="side-foot"><a href="#/settings" data-nav="settings">${icon("settings")}<span>Settings</span></a>
         <button type="button" id="logoutBtn">${icon("logout")}<span>Log out</span></button></div>`;
-    $("#bottom").innerHTML = [["dashboard", "Home", "dashboard"], ["jobs", "Jobs", "jobs"], ["vehicles", "Cars", "car"], ["money", "Money", "money"]]
-      .map(([k, l, ic]) => `<a href="#/${k}" data-nav="${k}">${icon(ic)}${l}</a>`).join("") + `<button type="button" id="moreBtn">${icon("menu")}Menu</button>`;
+    $("#bottom").className = "bar";
+    $("#bottom").innerHTML = `<a href="#/dashboard" data-nav="dashboard">${icon("home")}Home</a><a href="#/jobs" data-nav="jobs">${icon("jobs")}Jobs</a>
+      <button type="button" class="fab" id="createBtn" aria-label="Create">${icon("plus")}</button>
+      <a href="#/money" data-nav="money">${icon("money")}Money</a><button type="button" id="moreBtn">${icon("more")}More</button>`;
     $("#menuBtn").innerHTML = icon("menu");
     $("#gIcon").outerHTML = icon("search");
+    if (!$(".gsearch .kbd")) $(".gsearch").insertAdjacentHTML("beforeend", `<span class="kbd" aria-hidden="true">Ctrl K</span>`);
     const open = (on) => document.body.classList.toggle("nav-open", on);
     $("#menuBtn").onclick = () => open(true);
     $("#moreBtn").onclick = () => open(true);
     $("#scrim").onclick = () => open(false);
     $("#side").addEventListener("click", (e) => e.target.closest("a") && open(false));
+    $("#createBtn").onclick = () => {
+      const items = [["#/jobs/new", "plus", "New estimate", "Customer, car and the work to do"], ["#/money?upload=1", "upload", "Payment slip", "Upload a slip; AI reads it"], ["#/money?cash=1", "money", "Record payment", "Cash or any payment without a slip"], ["#/bookings?new=1", "calendar", "New booking", "When a customer is coming in"]];
+      const m = modal("Create", `<div class="rows">${items.map(([h, ic, t, s]) => `<a href="${h}"><span class="mini">${icon(ic)}</span><div class="grow"><b>${t}</b><span>${s}</span></div>${icon("cr", "s")}</a>`).join("")}</div>`);
+      m.el.classList.add("sheet-modal");
+      m.el.addEventListener("click", (e) => e.target.closest("a") && m.close());
+    };
+    document.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        $("#gq").focus();
+      }
+    });
     $("#logoutBtn").onclick = async () => {
       await api("/logout", { method: "POST" }).catch(() => {});
       showLogin();
@@ -301,6 +318,8 @@
 
   function setActive(section) {
     $$("[data-nav]").forEach((a) => a.classList.toggle("on", a.dataset.nav === section));
+    // Only the menu group holding this page is open, so the menu fits a 900px-high screen.
+    $$(".nav-g").forEach((g) => (g.open = !!g.querySelector(`[data-nav="${section}"]`)));
     const ws = state.jobs.filter(isWorkshop).length;
     const ib = $("#navIb");
     if (ib) {
@@ -314,6 +333,11 @@
       b.textContent = ws;
       b.title = `${ws} car(s) in the workshop`;
     }
+    const today = todayKL();
+    const due = state.customers.filter((c) => c.nextFollowUp && c.nextFollowUp <= today).length;
+    const low = state.parts.filter((p) => Number(p.qtyLeft) <= 1).length;
+    const gn = { Workshop: ws ? `${ws} in` : "", CRM: due ? `${due} due` : "", Finance: "", Stock: low ? `${low} low` : "" };
+    $$("[data-gn]").forEach((s) => (s.textContent = gn[s.dataset.gn] || ""));
   }
 
   function crumbs(list) {
@@ -394,6 +418,7 @@
       if (sec === "creditnotes") return pageCredits();
       if (sec === "pnl") return pagePnl(q);
       if (sec === "balance") return pageBalance();
+      if (sec === "statements") return pageStatements(q);
       if (sec === "suppliers") return pageSuppliers();
       if (sec === "orders") return pageOrders(q);
       if (sec === "packages") return a ? packageForm(a) : pagePackages();
@@ -1448,6 +1473,7 @@
     $("#wToday").onclick = () => go(weekStart(today));
     $("#bkNew").onclick = () => bookingDialog(null);
     draw();
+    if (q.get("new")) bookingDialog(null);
   }
 
   // Activity on the customer page: log form + timeline of contacts, jobs and payments.
@@ -1781,6 +1807,190 @@
       [["Cash & bank", cash], ["Customers owe you", owedToYou], ["Parts in stock (at cost)", stock], ["Tools & equipment", equipment], ["Total assets", assets], ["Supplier bills not paid", owedSuppliers], ["Customer deposits", deposits], ["Total liabilities", liabilities], ["Owner capital", capital], ["Less owner drawings", -drawings], ["Profit kept in the business", kept], ["Total equity", assets - liabilities]]);
   }
 
+  // ---------- financial statements (MPERS) ----------
+  // Malaysian Private Entities Reporting Standard layout, built from the DMS
+  // records: statement of financial position, profit or loss and other
+  // comprehensive income, changes in equity, cash flows (direct method) and
+  // notes. Read-only; it never changes any record.
+
+  const DEP_RATE = 0.2; // tools & equipment: straight line over 5 years
+  const FS_COS = ["Sublet (outside work)", "Parts for jobs (no stock)"];
+  const FS_SELL = ["Marketing"];
+  const FS_FIN = ["Bank fees"];
+
+  function fsAt(t) {
+    // Balances as at date t (yyyy-mm-dd).
+    const s = state.settings;
+    const from = s.openingDate || "0000-01-01";
+    const upto = (d) => !!d && d >= from && d <= t;
+    const opening = t >= from ? Number(s.openingCash) || 0 : 0;
+    const cashIn = sum(state.payments.filter((p) => upto(p.paidOn)), (p) => p.amount);
+    const refunds = sum(state.creditnotes.filter((c) => upto(c.date)), (c) => c.refund);
+    const spent = sum(state.expenses.filter((x) => upto(x.date)), (x) => x.amount);
+    const bills = sum(state.purchases.filter((p) => p.status === "Paid" && upto(p.paidOn || p.date)), (p) => p.total);
+    const cash = opening + cashIn - refunds - spent - bills;
+    // Trade receivables: invoices dated on or before t, less credit notes and payments up to t.
+    const recv = [];
+    for (const j of state.jobs) {
+      if (!j.invoiceNo || j.status === "Cancelled" || !j.invoiceDate || j.invoiceDate > t) continue;
+      const credited = sum(state.creditnotes.filter((c) => c.jobId === j.id && c.date <= t), (c) => c.amount);
+      const paid = sum(state.payments.filter((p) => p.jobId === j.id && p.paidOn <= t), (p) => p.amount);
+      const bal = Math.round((j.total - credited - paid) * 100) / 100;
+      if (bal > 0.009) recv.push({ j, bal, days: Math.round((Date.parse(t) - Date.parse(j.invoiceDate)) / 864e5) });
+    }
+    const receivables = sum(recv, (r) => r.bal);
+    const stock = sum(state.parts.filter((p) => p.qtyLeft > 0), (p) => p.qtyLeft * p.unitCost);
+    // Property, plant and equipment: tools bought, depreciated monthly.
+    const tools = state.expenses.filter((x) => x.category === "Tools & equipment (asset)" && x.date && x.date <= t);
+    const months = (a, b) => Math.max(0, (Number(b.slice(0, 4)) - Number(a.slice(0, 4))) * 12 + Number(b.slice(5, 7)) - Number(a.slice(5, 7)) + 1);
+    const ppeCost = sum(tools, (x) => x.amount);
+    const accDep = sum(tools, (x) => Math.min(x.amount, (x.amount * DEP_RATE * months(x.date, t)) / 12));
+    const payables = sum(state.purchases.filter((p) => p.date && p.date <= t && (p.status === "Unpaid" || (p.paidOn && p.paidOn > t))), (p) => p.total);
+    const deposits = sum(state.jobs.filter((j) => j.status !== "Cancelled" && (!j.invoiceNo || j.invoiceDate > t)), (j) => sum(state.payments.filter((p) => p.jobId === j.id && p.paidOn <= t), (p) => p.amount));
+    const drawingsTo = sum(state.expenses.filter((x) => x.category === "Owner drawings" && x.date && x.date <= t), (x) => x.amount);
+    return { t, cash, opening, receivables, recv, stock, ppeCost, accDep, ppe: ppeCost - accDep, payables, deposits, drawingsTo,
+      assets: cash + receivables + stock + ppeCost - accDep, liabilities: payables + deposits };
+  }
+
+  function fsYear(year) {
+    const today = todayKL();
+    const a = `${year}-01-01`;
+    const b = `${year}-12-31` < today ? `${year}-12-31` : today;
+    const prevEnd = `${year - 1}-12-31`;
+    const x = pnlFor([a, b]);
+    const end = fsAt(b);
+    const start = fsAt(prevEnd);
+    const exp = state.expenses.filter((e) => inRange(e.date, [a, b]));
+    const by = (cats) => sum(exp.filter((e) => cats.includes(e.category)), (e) => e.amount);
+    const revenue = x.net;
+    const cos = x.cost + by(FS_COS);
+    const selling = by(FS_SELL);
+    const finance = by(FS_FIN);
+    const depreciation = end.accDep - start.accDep;
+    const adminCats = {};
+    exp.filter((e) => !NOT_PNL.includes(e.category) && ![...FS_COS, ...FS_SELL, ...FS_FIN].includes(e.category)).forEach((e) => (adminCats[e.category] = (adminCats[e.category] || 0) + e.amount));
+    const admin = sum(Object.values(adminCats), (v) => v) + depreciation;
+    const profit = revenue - cos - selling - admin - finance;
+    const s = state.settings;
+    const firstYear = !s.openingDate || s.openingDate.slice(0, 4) === String(year);
+    const capitalIn = firstYear ? Number(s.ownerCapital) || 0 : 0;
+    const drawings = sum(exp.filter((e) => e.category === "Owner drawings"), (e) => e.amount);
+    const equityOpen = firstYear ? 0 : start.assets - start.liabilities;
+    const equityClose = end.assets - end.liabilities;
+    const diff = Math.round((equityClose - (equityOpen + capitalIn + profit - drawings)) * 100) / 100;
+    // Cash flows (direct method) for the part of the year after the opening date.
+    const from = s.openingDate && s.openingDate > a ? s.openingDate : a;
+    const r = [from, b];
+    const cfOpen = s.openingDate && s.openingDate >= a ? Number(s.openingCash) || 0 : start.cash;
+    const fromCustomers = sum(state.payments.filter((p) => inRange(p.paidOn, r)), (p) => p.amount) - sum(state.creditnotes.filter((c) => inRange(c.date, r)), (c) => c.refund);
+    const toSuppliers = sum(state.purchases.filter((p) => p.status === "Paid" && inRange(p.paidOn || p.date, r)), (p) => p.total);
+    const opEx = sum(state.expenses.filter((e) => inRange(e.date, r) && !NOT_PNL.includes(e.category)), (e) => e.amount);
+    const ppeBought = sum(state.expenses.filter((e) => inRange(e.date, r) && e.category === "Tools & equipment (asset)"), (e) => e.amount);
+    const drawn = sum(state.expenses.filter((e) => inRange(e.date, r) && e.category === "Owner drawings"), (e) => e.amount);
+    const cfOps = fromCustomers - toSuppliers - opEx;
+    const cfInv = -ppeBought;
+    const cfFin = -drawn;
+    return { year, a, b, x, end, start, revenue, cos, gross: revenue - cos, selling, admin, adminCats, depreciation, finance, profit, firstYear, capitalIn, drawings, equityOpen, equityClose, diff,
+      cf: { from, fromCustomers, toSuppliers, opEx, cfOps, ppeBought, cfInv, drawn, cfFin, net: cfOps + cfInv + cfFin, open: cfOpen, close: cfOpen + cfOps + cfInv + cfFin } };
+  }
+
+  function pageStatements(q) {
+    crumbs([["Financial statements"]]);
+    const thisYear = Number(todayKL().slice(0, 4));
+    const years = [];
+    const firstData = [state.settings.openingDate, ...state.jobs.map((j) => j.invoiceDate), ...state.expenses.map((e) => e.date)].filter(Boolean).sort()[0];
+    for (let y = thisYear; y >= Math.min(thisYear, Number((firstData || String(thisYear)).slice(0, 4))); y--) years.push(y);
+    let year = Number(q.get("y")) || thisYear;
+    const s = state.settings;
+    const name = s.legalName || "TNS Legacy";
+    view.innerHTML = `${pageHead("Financial statements", { sub: "MPERS format · Malaysian Private Entities Reporting Standard", acts: `<button type="button" class="btn alt" id="fsCsv">${icon("download")}Excel</button><button type="button" class="btn" id="fsPrint">${icon("print")}Print / PDF</button>` })}
+      <div class="toolbar"><div class="seg" id="fsYears">${years.map((y) => `<button type="button" data-y="${y}">${y}</button>`).join("")}</div><span class="muted" id="fsPer"></span></div>
+      <div id="fs"></div>`;
+    const draw = () => {
+      $$("#fsYears button").forEach((b) => b.classList.toggle("on", Number(b.dataset.y) === year));
+      const f = fsYear(year);
+      const e = f.end;
+      const ongoing = f.b !== `${year}-12-31`;
+      $("#fsPer").textContent = `${dmy(f.a)} to ${dmy(f.b)}${ongoing ? " (year to date)" : ""}`;
+      const N = (v) => (Math.abs(v) < 0.005 ? "–" : v < 0 ? `(${rm(-v).replace("RM ", "")})` : rm(v).replace("RM ", ""));
+      const L = (label, v, cls = "", note = "") => `<tr class="${cls}"><td>${label}</td><td class="nt">${note}</td><td class="num">${N(v)}</td></tr>`;
+      const H = (label) => `<tr class="sec"><td colspan="3">${label}</td></tr>`;
+      const head = `<thead><tr><th></th><th class="nt">Note</th><th class="num">RM</th></tr></thead>`;
+      const T = (title, rows) => `<div class="card flush fs-st"><div class="card-h"><h2>${title}</h2></div><div class="tbl-wrap"><table class="tbl fin keep">${head}<tbody>${rows}</tbody></table></div></div>`;
+      const ageing = [[0, 30, "0–30 days"], [31, 60, "31–60 days"], [61, 90, "61–90 days"], [91, 1e9, "Over 90 days"]].map(([lo, hi, l]) => [l, sum(e.recv.filter((r) => r.days >= lo && r.days <= hi), (r) => r.bal)]);
+      $("#fs").innerHTML = `
+        <div class="card fs-cover"><div class="eyebrow">Financial statements for the financial year ended ${dmy(`${year}-12-31`)}${ongoing ? " · year to date " + dmy(f.b) : ""}</div>
+          <h2 class="h2" style="margin:6px 0 2px">${esc(name)} <span class="muted">(trading as The Merc Lab)</span></h2>
+          <div class="muted">${s.registrationNo ? "Registration no. " + esc(s.registrationNo) + " · " : ""}Sole proprietorship registered in Malaysia · Amounts in Ringgit Malaysia (RM)</div>
+          ${f.diff ? `<div class="notice warn" style="margin-top:12px">${icon("alert")}<div>The equity movement does not fully reconcile by <b>${rm(Math.abs(f.diff))}</b>. Usually a record is missing (an expense, supplier bill or opening balance). Shown as "Unreconciled difference" in the statement of changes in equity for your accountant to clear.</div></div>` : ""}</div>
+
+        ${T(`Statement of financial position as at ${dmy(f.b)}`, `
+          ${H("Assets")}<tr class="sub"><td colspan="3">Non-current assets</td></tr>${L("Property, plant and equipment", e.ppe, "", "4")}${L("<b>Total non-current assets</b>", e.ppe, "tot")}
+          <tr class="sub"><td colspan="3">Current assets</td></tr>${L("Inventories", e.stock, "", "5")}${L("Trade receivables", e.receivables, "", "6")}${L("Cash and bank balances", e.cash, "", "7")}${L("<b>Total current assets</b>", e.stock + e.receivables + e.cash, "tot")}
+          ${L("<b>TOTAL ASSETS</b>", e.assets, "grand")}
+          ${H("Owner's equity and liabilities")}${L("Owner's equity", f.equityClose, "", "SOCE")}
+          <tr class="sub"><td colspan="3">Current liabilities</td></tr>${L("Trade payables", e.payables, "", "8")}${L("Customer deposits (contract liabilities)", e.deposits, "", "8")}${L("<b>Total current liabilities</b>", e.liabilities, "tot")}
+          ${L("<b>TOTAL EQUITY AND LIABILITIES</b>", f.equityClose + e.liabilities, "grand")}`)}
+
+        ${T(`Statement of profit or loss and other comprehensive income for the year ended ${dmy(`${year}-12-31`)}`, `
+          ${L("Revenue", f.revenue, "", "9")}${L("Cost of sales", -f.cos, "", "10")}${L("<b>Gross profit</b>", f.gross, "tot")}
+          ${L("Other income", 0)}${L("Selling and distribution expenses", -f.selling, "", "10")}${L("Administrative and other operating expenses", -f.admin, "", "10")}${L("Finance costs", -f.finance, "", "10")}
+          ${L("<b>Profit before tax</b>", f.profit, "tot")}${L("Income tax expense", 0, "", "11")}${L(`<b>Profit for the ${ongoing ? "period" : "year"}</b>`, f.profit, "tot")}
+          ${L("Other comprehensive income", 0)}${L(`<b>Total comprehensive income for the ${ongoing ? "period" : "year"}</b>`, f.profit, "grand")}`)}
+
+        ${T("Statement of changes in owner's equity", `
+          ${L(`At 1 January ${year}`, f.equityOpen)}${f.capitalIn ? L("Capital introduced", f.capitalIn) : ""}${L(`Profit for the ${ongoing ? "period" : "year"}`, f.profit)}${L("Drawings", -f.drawings, "", "12")}
+          ${f.diff ? L("Unreconciled difference (to be cleared by the accountant)", f.diff) : ""}${L(`<b>At ${dmy(f.b)}</b>`, f.equityClose, "grand")}`)}
+
+        ${T("Statement of cash flows (direct method)", `
+          ${H("Cash flows from operating activities")}${L("Receipts from customers (net of refunds)", f.cf.fromCustomers)}${L("Payments to suppliers for parts", -f.cf.toSuppliers)}${L("Payments for operating expenses", -f.cf.opEx)}${L("<b>Net cash from operating activities</b>", f.cf.cfOps, "tot")}
+          ${H("Cash flows from investing activities")}${L("Purchase of property, plant and equipment", -f.cf.ppeBought)}${L("<b>Net cash used in investing activities</b>", f.cf.cfInv, "tot")}
+          ${H("Cash flows from financing activities")}${L("Drawings by the owner", -f.cf.drawn)}${L("<b>Net cash used in financing activities</b>", f.cf.cfFin, "tot")}
+          ${L("<b>Net change in cash and bank balances</b>", f.cf.net, "tot")}${L(`Cash and bank balances at ${dmy(f.cf.from)}${state.settings.openingDate && state.settings.openingDate >= f.a ? " (opening balance)" : ""}`, f.cf.open)}${L(`<b>Cash and bank balances at ${dmy(f.b)}</b>`, f.cf.close, "grand", "7")}`)}
+
+        <div class="card fs-notes"><div class="card-h"><h2>Notes to the financial statements</h2></div>
+          <h3 class="h3">1. General information</h3><p>${esc(name)} is a sole proprietorship registered in Malaysia, trading as The Merc Lab. Its principal activity is the repair, servicing and maintenance of Mercedes-Benz vehicles and the sale of related parts.</p>
+          <h3 class="h3">2. Basis of preparation</h3><p>These financial statements are prepared in accordance with the Malaysian Private Entities Reporting Standard (MPERS) issued by the Malaysian Accounting Standards Board, under the historical cost convention, and are presented in Ringgit Malaysia (RM). They are compiled from the records kept in the Merc Lab DMS and have not been audited.</p>
+          <h3 class="h3">3. Significant accounting policies</h3>
+          <p><b>Revenue (Section 23).</b> Revenue from repair services and parts is recognised when the work is completed and invoiced, at the invoiced amount less discounts and credit notes.</p>
+          <p><b>Inventories (Section 13).</b> Parts are stated at the lower of cost and estimated selling price less costs to sell. Cost is the purchase price per supplier receipt.</p>
+          <p><b>Property, plant and equipment (Section 17).</b> Tools and equipment are stated at cost less accumulated depreciation, depreciated on a straight-line basis at ${DEP_RATE * 100}% a year from the month of purchase.</p>
+          <p><b>Financial instruments (Section 11).</b> Trade receivables and payables are measured at the transaction price. Receivables are reviewed for impairment at the reporting date.</p>
+          <p><b>Income tax (Section 29).</b> As a sole proprietorship, the business is not taxed separately. Its income is assessed on the owner personally (Form B), so no tax is charged in these statements.</p>
+          <h3 class="h3">4. Property, plant and equipment</h3>${fsTable([["Cost", e.ppeCost], ["Accumulated depreciation", -e.accDep], ["Carrying amount", e.ppe], [`Depreciation charge for the ${ongoing ? "period" : "year"}`, f.depreciation]])}
+          <h3 class="h3">5. Inventories</h3>${fsTable([["Parts in stock, at cost", e.stock]])}<p class="hint">Stock is valued from the quantities in the DMS on the day this report is opened. Do a stock count close to the year end.</p>
+          <h3 class="h3">6. Trade receivables</h3>${fsTable([...ageing, ["Total", e.receivables]])}
+          <h3 class="h3">7. Cash and bank balances</h3>${fsTable([["Cash and bank", e.cash]])}<p class="hint">Opening balance ${rm(e.opening)}${state.settings.openingDate ? " on " + dmy(state.settings.openingDate) : ""}, plus money received, less money paid.</p>
+          <h3 class="h3">8. Trade payables and customer deposits</h3>${fsTable([["Supplier bills not yet paid", e.payables], ["Deposits received on estimates not yet invoiced", e.deposits]])}
+          <h3 class="h3">9. Revenue</h3>${fsTable([["Parts", f.x.parts], ["Labour and sundries", f.x.labour], ["Sublet, surcharge and menus", f.x.other], ["Less discounts", -f.x.discount], ["Less credit notes", -f.x.credits], ["Revenue", f.revenue]])}
+          <h3 class="h3">10. Expenses by nature</h3>${fsTable([["Parts used (at cost)", f.x.cost], ...FS_COS.map((c) => [c, sum(state.expenses.filter((x) => x.category === c && inRange(x.date, [f.a, f.b])), (x) => x.amount)]), ...Object.entries(f.adminCats).sort((p, q2) => q2[1] - p[1]), ["Depreciation", f.depreciation], ["Marketing", f.selling], ["Bank fees", f.finance]].filter(([, v]) => Math.abs(v) > 0.004))}
+          ${f.x.estLines ? `<p class="hint">${f.x.estLines} part line(s) were not picked from stock, so their cost is estimated from the ${esc(state.settings.markupPercent)}% markup.</p>` : ""}
+          <h3 class="h3">11. Income tax</h3><p>No tax expense is recognised. The owner declares the business income on Form B.</p>
+          <h3 class="h3">12. Related party transactions</h3><p>Drawings by the owner during the ${ongoing ? "period" : "year"}: ${rm(f.drawings)}.</p>
+          <p class="hint" style="margin-top:16px">Prepared from the DMS records. Give these to your accountant or tax agent to review before filing.</p></div>`;
+      $("#fsCsv").onclick = () => {
+        const rows = [["Statement of financial position", ""], ["Property, plant and equipment", e.ppe], ["Inventories", e.stock], ["Trade receivables", e.receivables], ["Cash and bank balances", e.cash], ["Total assets", e.assets], ["Owner's equity", f.equityClose], ["Trade payables", e.payables], ["Customer deposits", e.deposits], ["Total equity and liabilities", f.equityClose + e.liabilities],
+          ["Profit or loss", ""], ["Revenue", f.revenue], ["Cost of sales", -f.cos], ["Gross profit", f.gross], ["Selling and distribution expenses", -f.selling], ["Administrative and other operating expenses", -f.admin], ["Finance costs", -f.finance], ["Profit for the year", f.profit],
+          ["Changes in equity", ""], ["Opening equity", f.equityOpen], ["Capital introduced", f.capitalIn], ["Profit", f.profit], ["Drawings", -f.drawings], ["Unreconciled difference", f.diff], ["Closing equity", f.equityClose],
+          ["Cash flows", ""], ["Receipts from customers", f.cf.fromCustomers], ["Payments to suppliers", -f.cf.toSuppliers], ["Operating expenses paid", -f.cf.opEx], ["Purchase of PPE", -f.cf.ppeBought], ["Drawings", -f.cf.drawn], ["Opening cash", f.cf.open], ["Closing cash", f.cf.close]];
+        downloadCsv(`financial-statements-${year}.csv`, [["Line", (r0) => r0[0]], ["RM", (r0) => (r0[1] === "" ? "" : Number(r0[1]).toFixed(2))]], rows);
+      };
+    };
+    $("#fsYears").onclick = (ev) => {
+      const b = ev.target.closest("button[data-y]");
+      if (!b) return;
+      year = Number(b.dataset.y);
+      history.replaceState(null, "", `#/statements?y=${year}`);
+      draw();
+    };
+    $("#fsPrint").onclick = () => window.print();
+    draw();
+  }
+
+  function fsTable(rows) {
+    return `<table class="tbl fin keep fs-note"><tbody>${rows.map(([l, v]) => `<tr><td>${esc(l)}</td><td class="num">${Math.abs(v) < 0.005 ? "–" : v < 0 ? `(${rm(-v).replace("RM ", "")})` : rm(v).replace("RM ", "")}</td></tr>`).join("")}</tbody></table>`;
+  }
+
   // ================= STOCK =================
 
   const supplierOwed = (name) => state.purchases.filter((p) => p.status === "Unpaid" && p.supplier.toLowerCase() === String(name).toLowerCase());
@@ -1912,7 +2122,7 @@
     crumbs([["Parts & stock", "#/parts"], ["Stock count"]]);
     const parts = state.parts.slice().sort((a, b) => a.name.localeCompare(b.name));
     view.innerHTML = `${pageHead("Stock count", { back: "#/parts", sub: "Count what is on the shelf. Leave a box empty if you did not count it." })}
-      <form id="scf"><div class="card flush"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Part</th><th class="num">System</th><th class="num" style="width:130px">Counted</th></tr></thead><tbody>
+      <form id="scf"><div class="card flush"><div class="tbl-wrap"><table class="tbl keep"><thead><tr><th>Part</th><th class="num">System</th><th class="num" style="width:130px">Counted</th></tr></thead><tbody>
       ${parts.map((p) => `<tr><td class="strong">${esc(p.name)}<div class="sm">${esc([p.brand, p.partNo, p.supplier].filter(Boolean).join(" · "))}</div></td><td class="num">${p.qtyLeft}</td>
         <td class="num"><input data-id="${p.id}" type="number" step="any" min="0" inputmode="decimal" aria-label="Counted ${esc(p.name)}" style="text-align:right"></td></tr>`).join("") || `<tr><td colspan="3">${emptyBox("parts", "No parts yet.")}</td></tr>`}
       </tbody></table></div></div>
@@ -2634,6 +2844,7 @@
     const forJob = q.get("pay") && state.jobs.find((j) => j.id === q.get("pay"));
     if (forJob) paymentForm({ amount: forJob.balance, method: "Bank transfer" }, null, [{ id: forJob.id, docNo: docNo(forJob), customerName: forJob.customerName, plate: forJob.plate, balance: forJob.balance, why: [] }]);
     else if (q.get("upload")) $("#payFile").click();
+    else if (q.get("cash")) paymentForm({ method: "Cash" }, null, null);
   }
 
   async function onPaymentFile(e) {
