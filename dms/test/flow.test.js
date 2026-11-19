@@ -823,3 +823,40 @@ test("WhatsApp: only signed messages from the owner's number land in the Inbox, 
   assert.equal((await call("POST", "/api/purchases", { data: { inboxId: item.id, supplier: "x", items: [{ name: "a", qty: 1, unitCost: 1 }] } })).status, 400);
   for (const k of ["WA_TOKEN", "WA_PHONE_ID", "WA_APP_SECRET", "WA_VERIFY_TOKEN", "WA_ALLOWED"]) delete process.env[k];
 });
+
+// ================= import =================
+test("import from old records: creates, links, and skips on a second run", async () => {
+  reset();
+  await login();
+  const data = {
+    version: 1, source: "test workbook",
+    customers: [{ key: "ali", name: "Ali Ahmad", phone: "012-1112222", address: "Sungai Petani" }],
+    vehicles: [{ plate: "abc 123", customerKey: "ali", chassisNo: "wdd2050421f123456" }],
+    parts: [{ name: "Oil filter", partNo: "A 270 180 01 09", supplier: "SH PEN", qtyLeft: 3, unitCost: 50, sellingPrice: 100 }],
+    packages: [{ name: "Service B", request: "To perform service B", lines: [{ type: "labour", description: "Service B", amount: 100 }] }],
+    jobs: [{ invoiceNo: "100012", date: "2026-01-08", customerKey: "ali", plate: "ABC 123", discount: 10, total: 190,
+      groups: [{ code: "C1", request: "WORK AS INVOICED", lines: [{ type: "part", description: "OIL FILTER", qty: 1, unitPrice: 100 }, { type: "labour", description: "SERVICE", amount: 100 }] }],
+      payments: [{ date: "2026-01-08", amount: 100, method: "Cash", receiptNo: "" }] }],
+    purchases: [{ date: "2026-01-01", supplier: "SH PEN", receiptNo: "CBT1", total: 150, items: ["3 x Oil filter"] }],
+    expenses: [{ date: "2026-01-10", description: "Workshop equipment", category: "Tools & equipment (asset)", amount: 1194, method: "Other" }],
+    settings: { registrationNo: "CA0000000-X" },
+  };
+  const file = { type: "application/json", name: "import.json", content: JSON.stringify(data) };
+  assert.equal((await call("POST", "/api/import", { file: { type: "application/json", content: "{}" } })).status, 400);
+  const r1 = await call("POST", "/api/import", { file });
+  assert.equal(r1.status, 200);
+  assert.deepEqual(r1.body.created, { customers: 1, vehicles: 1, parts: 1, packages: 1, invoices: 1, payments: 1, purchases: 1, expenses: 1 });
+  const job = store.quotes[0].fields;
+  assert.equal(job["Invoice no"], "100012");
+  assert.equal(job.Total, 190);
+  assert.equal(job.Balance, 90);
+  assert.equal(job.Status, "Part paid");
+  assert.equal(job["Customer record"], store.customers[0].id);
+  assert.match(store.payments[0].fields["Receipt no"], /^OR-2026-00001$/);
+  assert.equal(store.vehicles[0].fields["Plate key"], "ABC123");
+  assert.equal(store.settings[0].fields["Registration no"], "CA0000000-X");
+  const r2 = await call("POST", "/api/import", { file });
+  assert.ok(Object.values(r2.body.created).every((n) => n === 0));
+  assert.equal(r2.body.skipped.invoices, 1);
+  assert.equal(store.quotes.length, 1);
+});
