@@ -860,3 +860,18 @@ test("import from old records: creates, links, and skips on a second run", async
   assert.equal(r2.body.skipped.invoices, 1);
   assert.equal(store.quotes.length, 1);
 });
+
+test("import sets opening balances once, and the new 'Parts for jobs' cost type is accepted", async () => {
+  reset();
+  await login();
+  const data = { version: 1, source: "t", settings: { openingDate: "2026-11-01", openingCash: 2453.17, ownerCapital: 0 },
+    expenses: [{ date: "2026-10-31", description: "Parts paid to suppliers not in stock records", category: "Parts for jobs (no stock)", amount: 100 }] };
+  const r = await call("POST", "/api/import", { file: { type: "application/json", content: JSON.stringify(data) } });
+  assert.equal(r.status, 200);
+  assert.equal(store.settings[0].fields["Opening date"], "2026-11-01");
+  assert.equal(store.settings[0].fields["Opening cash"], 2453.17);
+  assert.equal(store.expenses[0].fields.Category, "Parts for jobs (no stock)");
+  data.settings.openingCash = 1;
+  await call("POST", "/api/import", { file: { type: "application/json", content: JSON.stringify(data) } });
+  assert.equal(store.settings[0].fields["Opening cash"], 2453.17, "not overwritten");
+});

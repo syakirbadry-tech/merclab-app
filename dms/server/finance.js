@@ -20,7 +20,7 @@ const money = (v, label, { allowZero = false } = {}) => {
   return sen / 100;
 };
 
-const CATS = ["Rent", "Utilities", "Wages", "Workshop supplies", "Sublet (outside work)", "Tools & equipment (asset)", "Transport", "Marketing", "Phone & internet", "Bank fees", "Insurance & licences", "Owner drawings", "Other"];
+const CATS = ["Rent", "Utilities", "Wages", "Workshop supplies", "Sublet (outside work)", "Parts for jobs (no stock)", "Tools & equipment (asset)", "Transport", "Marketing", "Phone & internet", "Bank fees", "Insurance & licences", "Owner drawings", "Other"];
 const ORDER = ["Ordered", "Arrived", "Fitted", "Cancelled"];
 
 const expenseOut = (r) => {
