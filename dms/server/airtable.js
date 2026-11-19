@@ -20,6 +20,7 @@ const TABLES = {
 const ATTACHMENT_FIELDS = {
   purchaseReceipt: "fldO6AgBLw6GO3WB7",
   paymentProof: "fldHikqbP4WNVKXZu",
+  settingsQr: "fldvowTv1iG6o6XQu",
 };
 
 async function request(path, options = {}) {

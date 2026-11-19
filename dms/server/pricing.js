@@ -52,10 +52,11 @@ function paymentState(total, paid) {
   return { paid: p, balance: balance < 0 ? 0 : balance, status };
 }
 
-// Running numbers like Q-2611-007 (prefix, 2-digit year, month, count in month).
+// Gap-free running numbers per type per year: EST-2026-00001, INV-2026-00001,
+// OR-2026-00001, PUR-2026-00001. Records are never deleted (only cancelled),
+// so max + 1 never reuses a number.
 function nextNumber(prefix, existing, isoDate) {
-  const yymm = String(isoDate).slice(2, 4) + String(isoDate).slice(5, 7);
-  const head = `${prefix}-${yymm}-`;
+  const head = `${prefix}-${String(isoDate).slice(0, 4)}-`;
   let max = 0;
   for (const no of existing) {
     if (typeof no === "string" && no.startsWith(head)) {
@@ -63,7 +64,7 @@ function nextNumber(prefix, existing, isoDate) {
       if (Number.isFinite(n) && n > max) max = n;
     }
   }
-  return head + String(max + 1).padStart(3, "0");
+  return head + String(max + 1).padStart(5, "0");
 }
 
 // Malaysian phone to WhatsApp format: 012-345 6789 → 60123456789.

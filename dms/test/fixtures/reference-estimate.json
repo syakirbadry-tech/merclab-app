@@ -1,0 +1,42 @@
+{
+  "type": "estimate",
+  "number": "EST-2026-00001",
+  "date": "2026-11-19",
+  "time": "14:45",
+  "accountNo": "",
+  "orderNo": "",
+  "referenceNo": "",
+  "wipNo": "",
+  "jobNo": "",
+  "invoiceTo": { "name": "Service Retail Cash Sales", "address": ["[INVOICE ADDRESS]"] },
+  "customer": { "name": "[CUSTOMER NAME]", "address": ["[ADDRESS LINE 1]", "[POSTCODE, TOWN, STATE]"], "phone": "" },
+  "vehicle": { "makeModel": "Mercedes-AMG A45 S 4MATIC+", "chassisNo": "[CHASSIS NO.]", "engineNo": "[ENGINE NO.]", "regNo": "[REG NO.]", "regDate": "[REG DATE]", "mileageKm": 45210 },
+  "advisor": { "name": "[ADVISOR NAME]", "operatorId": "[ID]" },
+  "groups": [
+    {
+      "code": "C1",
+      "request": "TO PERFORM SERVICE B PLUS",
+      "lines": [
+        { "type": "sundry", "category": "SUNDRY", "description": "WORKSHOP CONSUMABLES - SUNDRIES", "amount": 30.00, "taxable": false },
+        { "type": "sundry", "category": "SUNDRY", "description": "ENGINE DETAILING", "amount": 47.25, "taxable": false },
+        { "type": "sundry", "category": "SUNDRY", "description": "ANTIBAC", "amount": 168.00, "taxable": false },
+        { "type": "sundry", "category": "SUNDRY", "description": "HIGH GLOSS WAX", "amount": 94.50, "taxable": false },
+        { "type": "part", "partNo": "", "description": "WINDSHIELD CLEANING AGENT", "qty": 1, "unitPrice": 25.80, "taxable": false },
+        { "type": "part", "partNo": "", "description": "ENGINE OIL MB229.71 0W-20 1L", "qty": 1, "unitPrice": 96.30, "taxable": false },
+        { "type": "part", "partNo": "", "description": "FUEL ADDITIVE", "qty": 1, "unitPrice": 133.00, "taxable": false },
+        { "type": "part", "partNo": "", "description": "TS OIL FILTER ELEMENT", "qty": 1, "unitPrice": 286.50, "taxable": false },
+        { "type": "part", "partNo": "", "description": "FINE PARTICLE FILTER", "qty": 1, "unitPrice": 477.00, "taxable": false },
+        { "type": "part", "partNo": "", "description": "EOIL QL 229.71 0W20 5L", "qty": 1, "unitPrice": 590.50, "taxable": false },
+        { "type": "labour", "opCode": "00115800", "description": "Perform Service B with Plus package", "amount": 390.00, "taxable": true },
+        { "type": "part", "partNo": "", "description": "SEALING RING", "qty": 1, "unitPrice": 14.60, "taxable": false },
+        { "type": "labour", "opCode": "83308000", "description": "Replace Particle Filter", "amount": 30.00, "taxable": true }
+      ]
+    },
+    { "code": "C2", "request": "COMPLIMENTARY CARWASH", "lines": [] }
+  ],
+  "surcharge": 0,
+  "menus": 0,
+  "invoiceNo": null,
+  "dueDate": null,
+  "payment": { "date": null, "method": null, "reference": null, "amount": null }
+}

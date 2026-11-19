@@ -1,9 +1,10 @@
 // All /api routes. Flow:
 //   1. Upload supplier receipt → AI reads it → owner checks → parts saved
 //      with selling price = cost + markup.
-//   2. Make a quotation from parts + labour → link to send to the client.
-//   3. Upload payment slip → AI reads it → matched to the quotation →
-//      payment recorded → receipt link for the client.
+//   2. Job: ESTIMATE (before work) → INVOICE (after work, copies the lines)
+//      → links to send to the client (A4 documents, see template.js).
+//   3. Upload payment slip → AI reads it → matched to the job → payment
+//      recorded → OFFICIAL RECEIPT link for the client.
 
 const crypto = require("crypto");
 const express = require("express");
@@ -11,6 +12,8 @@ const multer = require("multer");
 const db = require("./airtable");
 const ai = require("./ai");
 const P = require("./pricing");
+const M = require("./money");
+const company = require("../config/company.json");
 
 const router = express.Router();
 
@@ -51,33 +54,63 @@ const newToken = (kind) => kind + crypto.randomBytes(16).toString("hex");
 const text = (v, max = 200) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 
 // ---------- settings ----------
+// Personal details live in Airtable (editable on the phone); fixed brand
+// settings and switches live in config/company.json.
 
 const SETTINGS_FIELDS = {
-  workshopName: "Workshop name",
-  address: "Address",
-  phone: "Phone",
-  email: "Email",
+  legalName: "Legal name",
   registrationNo: "Registration no",
+  hotline: "Hotline",
+  address: "Address",
+  tel: "Phone",
+  email: "Email",
+  whatsapp: "WhatsApp",
   bankName: "Bank name",
   bankAccountName: "Bank account name",
   bankAccountNo: "Bank account no",
+  partsWarrantyMonths: "Parts warranty months",
   markupPercent: "Markup percent",
   roundTo: "Round to",
-  quoteValidDays: "Quote valid days",
-  quoteNotes: "Quote notes",
-  receiptNotes: "Receipt notes",
+  estimateValidityDays: "Quote valid days",
 };
-const NUMERIC_SETTINGS = ["markupPercent", "roundTo", "quoteValidDays"];
+const NUMERIC_SETTINGS = ["markupPercent", "roundTo", "estimateValidityDays", "partsWarrantyMonths"];
 
 async function loadSettings() {
   const rows = await db.list("settings");
   const row = rows.find((r) => r.fields.Key === "main") || rows[0];
   const s = { id: row ? row.id : null };
   for (const [k, f] of Object.entries(SETTINGS_FIELDS)) s[k] = row ? row.fields[f] ?? null : null;
+  const qr = row?.fields["DuitNow QR"];
+  s.duitNowQr = Array.isArray(qr) && qr.length ? qr[qr.length - 1].url : null;
   if (!(s.markupPercent >= 0)) s.markupPercent = 30;
   if (!(s.roundTo >= 0)) s.roundTo = 0;
-  if (!(s.quoteValidDays > 0)) s.quoteValidDays = 14;
+  if (!(s.estimateValidityDays > 0)) s.estimateValidityDays = company.estimateValidityDays || 7;
+  s.sst = !!company.sstRegistrationNo;
   return s;
+}
+
+// company.json + the owner's Settings → what the documents print.
+function companyFor(s) {
+  const pick = (v, d) => (v === null || v === undefined || v === "" ? d : v);
+  const legalName = pick(s.legalName, company.legalName);
+  return {
+    ...company,
+    legalName,
+    registrationNo: pick(s.registrationNo, company.registrationNo),
+    hotline: pick(s.hotline, company.hotline),
+    address: pick(s.address, company.address),
+    tel: pick(s.tel, company.tel),
+    email: pick(s.email, company.email),
+    whatsapp: pick(s.whatsapp, company.whatsapp),
+    partsWarrantyMonths: pick(s.partsWarrantyMonths, company.partsWarrantyMonths),
+    estimateValidityDays: pick(s.estimateValidityDays, company.estimateValidityDays),
+    duitNowQrImage: pick(s.duitNowQr, company.duitNowQrImage),
+    bank: {
+      name: pick(s.bankName, company.bank.name),
+      accountName: pick(s.bankAccountName, pick(company.bank.accountName, legalName)),
+      accountNo: pick(s.bankAccountNo, company.bank.accountNo),
+    },
+  };
 }
 
 router.get("/settings", wrap(async (req, res) => res.json(await loadSettings())));
@@ -87,6 +120,10 @@ router.put("/settings", wrap(async (req, res) => {
   for (const [k, f] of Object.entries(SETTINGS_FIELDS)) {
     if (!(k in req.body)) continue;
     if (NUMERIC_SETTINGS.includes(k)) {
+      if (req.body[k] === "" || req.body[k] === null) {
+        if (k === "partsWarrantyMonths") fields[f] = null;
+        continue;
+      }
       const n = Number(req.body[k]);
       if (!Number.isFinite(n) || n < 0 || n > 1000) throw bad(`${f} must be a number from 0 to 1000.`);
       fields[f] = n;
@@ -95,6 +132,15 @@ router.put("/settings", wrap(async (req, res) => {
   const s = await loadSettings();
   if (s.id) await db.update("settings", [{ id: s.id, fields }]);
   else await db.create("settings", [{ Key: "main", ...fields }]);
+  res.json(await loadSettings());
+}));
+
+router.post("/settings/qr", oneFile, wrap(async (req, res) => {
+  const file = fileOf(req);
+  if (!file || !file.mimeType.startsWith("image/")) throw bad("Please choose the DuitNow QR picture (JPG or PNG).");
+  const s = await loadSettings();
+  if (!s.id) throw bad("Save the settings once first.");
+  await db.upload("settingsQr", s.id, { filename: file.filename, contentType: file.mimeType, base64: file.base64 });
   res.json(await loadSettings());
 }));
 
@@ -155,7 +201,7 @@ router.post("/purchases", oneFile, wrap(async (req, res) => {
   if (!items.length) throw bad("Add at least one part.");
 
   const existing = await db.list("purchases", { fields: ["Ref"] });
-  const ref = P.nextNumber("P", existing.map((r) => r.fields.Ref), date);
+  const ref = P.nextNumber("PUR", existing.map((r) => r.fields.Ref), date);
   const total = Number(d.total) >= 0 && d.total !== "" && d.total !== null ? P.round2(d.total) : P.round2(items.reduce((t, i) => t + i.qty * i.unitCost, 0));
   const [purchase] = await db.create("purchases", [{
     Ref: ref,
@@ -229,132 +275,296 @@ router.patch("/parts/:id", wrap(async (req, res) => {
 
 // ---------- customers ----------
 
-const customerOut = (r) => ({ id: r.id, name: r.fields.Name || "", phone: r.fields.Phone || "", car: r.fields.Car || "", plate: r.fields.Plate || "" });
+const customerOut = (r) => ({ id: r.id, name: r.fields.Name || "", phone: r.fields.Phone || "", car: r.fields.Car || "", plate: r.fields.Plate || "", address: r.fields.Address || "" });
 
 router.get("/customers", wrap(async (req, res) => {
   const rows = await db.list("customers");
   res.json({ customers: rows.map(customerOut).sort((a, b) => a.name.localeCompare(b.name)) });
 }));
 
-// ---------- quotations ----------
+// ---------- jobs (estimate → invoice) ----------
+// One Airtable record per job, in the "Quotations" table. "Quote no" holds
+// the estimate number; "Invoice no" is added when the invoice is made.
 
-function quoteOut(r) {
-  const f = r.fields;
-  let items = [];
+const parseJson = (s, d) => {
   try {
-    items = JSON.parse(f["Items JSON"] || "[]");
-  } catch {}
+    const v = JSON.parse(s || "");
+    return v ?? d;
+  } catch {
+    return d;
+  }
+};
+
+function jobOut(r) {
+  const f = r.fields;
+  const details = parseJson(f["Job JSON"], {});
+  const groups = parseJson(f["Items JSON"], []);
   return {
     id: r.id,
-    quoteNo: f["Quote no"] || "",
+    docType: f["Doc type"] || "Estimate",
+    estimateNo: f["Quote no"] || "",
+    invoiceNo: f["Invoice no"] || "",
     date: f.Date || "",
+    invoiceDate: f["Invoice date"] || "",
     validUntil: f["Valid until"] || "",
+    repairDate: f["Repair date"] || "",
+    dueDate: f["Due date"] || "",
     customerId: f["Customer record"] || "",
     customerName: f["Customer name"] || "",
     phone: f.Phone || "",
     car: f.Car || "",
     plate: f.Plate || "",
-    items,
+    mileageKm: f["Mileage km"] ?? null,
+    groups: Array.isArray(groups) ? groups : [],
+    estimateGroups: parseJson(f["Estimate JSON"], null),
+    details,
     subtotal: f.Subtotal ?? 0,
-    discount: f.Discount ?? 0,
     total: f.Total ?? 0,
     paid: f.Paid ?? 0,
     balance: f.Balance ?? f.Total ?? 0,
     status: f.Status || "Draft",
     stockTaken: !!f["Stock taken"],
     token: f["Link token"] || "",
+    invoiceToken: f["Invoice token"] || "",
     notes: f.Notes || "",
   };
 }
 
-router.get("/quotes", wrap(async (req, res) => {
-  const rows = await db.list("quotes");
-  const quotes = rows.map(quoteOut).sort((a, b) => b.quoteNo.localeCompare(a.quoteNo));
-  res.json({ quotes });
-}));
+const docNoOf = (j) => j.invoiceNo || j.estimateNo;
 
-router.get("/quotes/:id", wrap(async (req, res) => {
-  if (!isRec(req.params.id)) throw bad("Unknown quotation.");
-  res.json(quoteOut(await db.get("quotes", req.params.id)));
-}));
+const isoOrEmpty = (v) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : "");
+const linesOf = (v, n = 3) => (Array.isArray(v) ? v : String(v || "").split("\n")).map((l) => text(String(l), 80)).filter(Boolean).slice(0, n);
+const nowTimeKL = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(11, 16);
 
-router.post("/quotes", wrap(async (req, res) => {
-  const d = req.body || {};
-  const name = text(d.customerName, 120);
+// Validate the job form. Mileage is required on every estimate and invoice.
+function parseJob(d) {
+  const name = text(d.customer?.name, 120);
   if (!name) throw bad("Customer name is needed.");
-  const items = P.cleanItems(d.items);
-  if (!items.length) throw bad("Add at least one item with a price.");
-  const { subtotal, discount, total } = P.quoteTotals(items, d.discount);
-  const s = await loadSettings();
-  const date = P.todayKL();
+  const km = Number(String(d.vehicle?.mileageKm ?? "").replace(/[, ]/g, ""));
+  if (!(km > 0) || !Number.isInteger(km)) throw bad("Mileage (Km) is needed and cannot be 0.");
+  const groups = M.cleanGroups(d.groups);
+  const money = (v, label) => {
+    if (v === undefined || v === null || v === "") return 0;
+    const sen = M.toSen(v);
+    if (sen === null || sen < 0) throw bad(`${label} must be an amount in RM.`);
+    return sen / 100;
+  };
+  return {
+    customer: { name, phone: text(d.customer?.phone, 30), address: linesOf(d.customer?.address) },
+    vehicle: {
+      makeModel: text(d.vehicle?.makeModel, 80),
+      regNo: text(d.vehicle?.regNo, 20).toUpperCase(),
+      chassisNo: text(d.vehicle?.chassisNo, 30).toUpperCase(),
+      engineNo: text(d.vehicle?.engineNo, 30).toUpperCase(),
+      regDate: isoOrEmpty(d.vehicle?.regDate),
+      mileageKm: km,
+    },
+    invoiceTo: { name: text(d.invoiceTo?.name, 120) || company.defaultInvoiceTo.name, address: linesOf(d.invoiceTo?.address, 2) },
+    advisor: { name: text(d.advisor?.name, 60), operatorId: text(d.advisor?.operatorId, 20) },
+    refs: { accountNo: text(d.accountNo, 30), orderNo: text(d.orderNo, 30), referenceNo: text(d.referenceNo, 30), wipNo: text(d.wipNo, 30), jobNo: text(d.jobNo, 30) },
+    surcharge: money(d.surcharge, "Surcharge"),
+    menus: money(d.menus, "Menus"),
+    plannedDate: isoOrEmpty(d.plannedDate),
+    repairDate: isoOrEmpty(d.repairDate),
+    dueDate: isoOrEmpty(d.dueDate),
+    groups,
+    notes: text(d.notes, 1000),
+  };
+}
 
-  // Save a new customer, or update the phone/car on an existing one.
-  let customerId = isRec(d.customerId) ? d.customerId : "";
-  const cust = { Name: name, Phone: text(d.phone, 30), Car: text(d.car, 80), Plate: text(d.plate, 20).toUpperCase() };
-  if (customerId) await db.update("customers", [{ id: customerId, fields: cust }]);
-  else customerId = (await db.create("customers", [cust]))[0].id;
+const totalsFor = (job) => M.computeTotals(job.groups, { surcharge: job.surcharge, menus: job.menus, sst: { on: !!company.sstRegistrationNo, rate: company.serviceTaxRate }, round5: !!company.roundTo5Sen });
 
-  const existing = await db.list("quotes", { fields: ["Quote no"] });
-  const quoteNo = P.nextNumber("Q", existing.map((r) => r.fields["Quote no"]), date);
-  const [row] = await db.create("quotes", [{
-    "Quote no": quoteNo,
-    Date: date,
-    "Valid until": P.addDays(date, s.quoteValidDays),
-    "Customer record": customerId,
-    "Customer name": name,
-    Phone: cust.Phone,
-    Car: cust.Car,
-    Plate: cust.Plate,
-    "Items JSON": JSON.stringify(items),
-    Items: items.map((i) => `${i.qty} x ${i.description} @ RM${i.unitPrice.toFixed(2)} = RM${i.amount.toFixed(2)}`).join("\n"),
-    Subtotal: subtotal,
-    Discount: discount,
-    Total: total,
-    Paid: 0,
-    Balance: total,
-    Status: "Draft",
-    "Link token": newToken("q"),
-    Notes: text(d.notes, 1000),
-  }]);
-  res.status(201).json(quoteOut(row));
+const readable = (groups) => groups.map((g) => [`${g.code} ${g.request}`.trim(), ...g.lines.map((l) => `  ${l.type === "part" ? `${l.qty} x ` : ""}${l.description} = RM${M.fmt(M.lineSen(l))}`)].join("\n")).join("\n");
+
+async function saveCustomer(customerId, job) {
+  const cust = { Name: job.customer.name, Phone: job.customer.phone, Car: job.vehicle.makeModel, Plate: job.vehicle.regNo, Address: job.customer.address.join("\n") };
+  if (isRec(customerId)) {
+    await db.update("customers", [{ id: customerId, fields: cust }]);
+    return customerId;
+  }
+  return (await db.create("customers", [cust]))[0].id;
+}
+
+function jobFields(job, details) {
+  const t = totalsFor(job);
+  return {
+    t,
+    fields: {
+      "Customer name": job.customer.name,
+      Phone: job.customer.phone,
+      Car: job.vehicle.makeModel,
+      Plate: job.vehicle.regNo,
+      "Mileage km": job.vehicle.mileageKm,
+      "Items JSON": JSON.stringify(job.groups),
+      Items: readable(job.groups),
+      Subtotal: t.subtotal / 100,
+      Discount: 0,
+      Total: t.grand / 100,
+      "Job JSON": JSON.stringify(details),
+      Notes: job.notes,
+    },
+  };
+}
+
+const detailsOf = (job, prev = {}) => ({
+  ...prev,
+  invoiceTo: job.invoiceTo,
+  customerAddress: job.customer.address,
+  vehicle: { chassisNo: job.vehicle.chassisNo, engineNo: job.vehicle.engineNo, regDate: job.vehicle.regDate },
+  advisor: job.advisor,
+  ...job.refs,
+  surcharge: job.surcharge,
+  menus: job.menus,
+  plannedDate: job.plannedDate || prev.plannedDate || "",
+});
+
+// Take parts used on an invoice out of stock (once per job).
+async function takeStock(groups) {
+  const use = new Map();
+  for (const g of groups) for (const l of g.lines) if (l.type === "part" && isRec(l.partId)) use.set(l.partId, (use.get(l.partId) || 0) + l.qty);
+  if (!use.size) return [];
+  const parts = new Map((await db.list("parts")).map((r) => [r.id, partOut(r)]));
+  const updates = [];
+  const low = [];
+  for (const [id, qty] of use) {
+    const p = parts.get(id);
+    if (!p) continue;
+    const left = P.round2(p.qtyLeft - qty);
+    if (left < 0) low.push(p.name);
+    updates.push({ id, fields: { "Qty left": left } });
+  }
+  if (updates.length) await db.update("parts", updates);
+  return low;
+}
+
+router.get("/jobs", wrap(async (req, res) => {
+  const rows = await db.list("quotes");
+  const jobs = rows.map(jobOut).sort((a, b) => (b.invoiceDate || b.date).localeCompare(a.invoiceDate || a.date) || docNoOf(b).localeCompare(docNoOf(a)));
+  res.json({ jobs });
 }));
 
-router.post("/quotes/:id/status", wrap(async (req, res) => {
-  if (!isRec(req.params.id)) throw bad("Unknown quotation.");
+router.get("/jobs/:id", wrap(async (req, res) => {
+  if (!isRec(req.params.id)) throw bad("Unknown job.");
+  res.json(jobOut(await db.get("quotes", req.params.id)));
+}));
+
+// New job: saved as an estimate, or straight as an invoice (walk-in, work done).
+router.post("/jobs", wrap(async (req, res) => {
+  const job = parseJob(req.body || {});
+  const asInvoice = req.body?.asInvoice === true;
+  const s = await loadSettings();
+  const today = P.todayKL();
+  const customerId = await saveCustomer(req.body.customerId, job);
+  const existing = await db.list("quotes", { fields: ["Quote no", "Invoice no"] });
+  const details = detailsOf(job);
+  const { t, fields } = jobFields(job, details);
+  Object.assign(fields, { "Customer record": customerId, Paid: 0, Balance: t.grand / 100, Status: "Draft" });
+
+  if (asInvoice) {
+    details.invoiceTime = nowTimeKL();
+    Object.assign(fields, {
+      "Doc type": "Invoice",
+      "Invoice no": P.nextNumber("INV", existing.map((r) => r.fields["Invoice no"]), today),
+      "Invoice date": today,
+      "Repair date": job.repairDate || today,
+      "Due date": job.dueDate || today,
+      "Invoice token": newToken("i"),
+      "Job JSON": JSON.stringify(details),
+    });
+  } else {
+    details.estimateTime = nowTimeKL();
+    Object.assign(fields, {
+      "Doc type": "Estimate",
+      "Quote no": P.nextNumber("EST", existing.map((r) => r.fields["Quote no"]), today),
+      Date: today,
+      "Valid until": P.addDays(today, s.estimateValidityDays),
+      "Link token": newToken("q"),
+      "Job JSON": JSON.stringify(details),
+    });
+  }
+  const [row] = await db.create("quotes", [fields]);
+  let lowStock = [];
+  if (asInvoice) {
+    lowStock = await takeStock(job.groups);
+    await db.update("quotes", [{ id: row.id, fields: { "Stock taken": true } }]);
+  }
+  res.status(201).json({ job: jobOut({ ...row, fields: { ...row.fields, "Stock taken": asInvoice } }), lowStock });
+}));
+
+// Estimate approved and work done → invoice. Lines can be changed (final
+// lines); the estimate's lines are kept in "Estimate JSON".
+router.post("/jobs/:id/invoice", wrap(async (req, res) => {
+  if (!isRec(req.params.id)) throw bad("Unknown job.");
+  const cur = jobOut(await db.get("quotes", req.params.id));
+  if (cur.invoiceNo) throw bad(`This job already has invoice ${cur.invoiceNo}.`);
+  if (cur.status === "Cancelled") throw bad("This estimate is cancelled.");
+  const job = parseJob(req.body || {});
+  const today = P.todayKL();
+  const existing = await db.list("quotes", { fields: ["Invoice no"] });
+  const details = detailsOf(job, cur.details);
+  details.invoiceTime = nowTimeKL();
+  const { t, fields } = jobFields(job, details);
+  const grand = t.grand / 100;
+  if (cur.paid - grand > 0.009) throw bad(`The invoice total RM${M.fmt(t.grand)} is less than the RM${M.fmt(Math.round(cur.paid * 100))} already paid.`);
+  const state = P.paymentState(grand, cur.paid);
+  Object.assign(fields, {
+    "Doc type": "Invoice",
+    "Invoice no": P.nextNumber("INV", existing.map((r) => r.fields["Invoice no"]), today),
+    "Invoice date": today,
+    "Repair date": job.repairDate || today,
+    "Due date": job.dueDate || today,
+    "Invoice token": newToken("i"),
+    "Estimate JSON": JSON.stringify(cur.groups),
+    Paid: state.paid,
+    Balance: state.balance,
+    Status: state.status || "Draft",
+    "Stock taken": true,
+  });
+  await saveCustomer(cur.customerId, job);
+  const [row] = await db.update("quotes", [{ id: cur.id, fields }]);
+  const lowStock = cur.stockTaken ? [] : await takeStock(job.groups);
+  res.json({ job: jobOut(row), lowStock });
+}));
+
+router.post("/jobs/:id/status", wrap(async (req, res) => {
+  if (!isRec(req.params.id)) throw bad("Unknown job.");
   const status = req.body?.status;
-  if (!["Draft", "Sent", "Cancelled"].includes(status)) throw bad("Unknown status.");
-  const q = quoteOut(await db.get("quotes", req.params.id));
-  if (q.paid > 0 && status === "Cancelled") throw bad("This quotation already has a payment, so it cannot be cancelled.");
-  if (q.paid > 0) return res.json(q); // Part paid / Paid stay as they are
-  const [row] = await db.update("quotes", [{ id: q.id, fields: { Status: status } }]);
-  res.json(quoteOut(row));
+  if (!["Sent", "Cancelled"].includes(status)) throw bad("Unknown status.");
+  const j = jobOut(await db.get("quotes", req.params.id));
+  if (status === "Cancelled" && j.paid > 0) throw bad("This job already has a payment, so it cannot be cancelled.");
+  if (status === "Cancelled" && j.invoiceNo) throw bad("An invoice cannot be cancelled here. Its number stays in the records.");
+  if (j.paid > 0 || j.status === "Cancelled") return res.json(j);
+  const [row] = await db.update("quotes", [{ id: j.id, fields: { Status: status } }]);
+  res.json(jobOut(row));
 }));
 
 // ---------- payments ----------
 
 const OPEN = ["Draft", "Sent", "Part paid"];
 
-// Rank open quotations against a payment: same amount as the balance, the
-// quote number written in the payment note, and the payer's name.
-function rankMatches(quotes, p) {
+// Rank open jobs against a payment: the estimate/invoice number written in
+// the payment note, amount = balance, car plate, and the payer's name.
+function rankMatches(jobs, p) {
   const words = (s) => String(s || "").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !["bin", "binti", "bte", "sdn", "bhd", "enterprise"].includes(w));
   const payer = new Set(words(p.payerName));
   const note = `${p.recipientNote || ""} ${p.reference || ""}`.toUpperCase();
-  return quotes
-    .filter((q) => OPEN.includes(q.status) && q.balance > 0)
-    .map((q) => {
+  const flat = note.replace(/[\s-]/g, "");
+  return jobs
+    .filter((j) => OPEN.includes(j.status) && j.balance > 0)
+    .map((j) => {
       let score = 0;
       const why = [];
-      if (q.quoteNo && note.includes(q.quoteNo.toUpperCase())) { score += 5; why.push("quote no in payment note"); }
-      if (p.amount && Math.abs(q.balance - p.amount) < 0.01) { score += 3; why.push("amount = balance"); }
-      else if (p.amount && Math.abs(q.total - p.amount) < 0.01) { score += 2; why.push("amount = total"); }
-      else if (p.amount && p.amount < q.balance) { score += 0.5; }
-      if (q.plate && note.replace(/\s/g, "").includes(q.plate.replace(/\s/g, ""))) { score += 2; why.push("car plate in note"); }
-      const shared = words(q.customerName).filter((w) => payer.has(w)).length;
+      const nos = [j.invoiceNo, j.estimateNo].filter(Boolean).map((n) => n.toUpperCase().replace(/[\s-]/g, ""));
+      if (nos.some((n) => flat.includes(n))) { score += 5; why.push("document no in payment note"); }
+      if (p.amount && Math.abs(j.balance - p.amount) < 0.01) { score += 3; why.push("amount = balance"); }
+      else if (p.amount && Math.abs(j.total - p.amount) < 0.01) { score += 2; why.push("amount = total"); }
+      else if (p.amount && p.amount < j.balance) score += 0.5;
+      if (j.plate && flat.includes(j.plate.replace(/\s/g, ""))) { score += 2; why.push("car plate in note"); }
+      const shared = words(j.customerName).filter((w) => payer.has(w)).length;
       if (shared) { score += Math.min(shared, 2); why.push("payer name"); }
-      return { id: q.id, quoteNo: q.quoteNo, customerName: q.customerName, plate: q.plate, total: q.total, balance: q.balance, score, why };
+      return { id: j.id, docNo: docNoOf(j), customerName: j.customerName, plate: j.plate, total: j.total, balance: j.balance, score, why };
     })
-    .sort((a, b) => b.score - a.score || b.quoteNo.localeCompare(a.quoteNo));
+    .sort((a, b) => b.score - a.score || b.docNo.localeCompare(a.docNo));
 }
 
 router.post("/payments/extract", oneFile, wrap(async (req, res) => {
@@ -366,8 +576,8 @@ router.post("/payments/extract", oneFile, wrap(async (req, res) => {
   } catch (err) {
     return res.status(err.status === 503 ? 503 : 502).json({ error: err.message });
   }
-  const quotes = (await db.list("quotes")).map(quoteOut);
-  res.json({ suggestion, matches: rankMatches(quotes, suggestion) });
+  const jobs = (await db.list("quotes")).map(jobOut);
+  res.json({ suggestion, matches: rankMatches(jobs, suggestion) });
 }));
 
 function paymentOut(r) {
@@ -380,11 +590,12 @@ function paymentOut(r) {
     method: f.Method || "",
     reference: f.Reference || "",
     payerName: f["Payer name"] || "",
-    quoteNo: f["Quote no"] || "",
-    quoteId: f["Quotation record"] || "",
+    docNo: f["Quote no"] || "",
+    jobId: f["Quotation record"] || "",
     customerName: f["Customer name"] || "",
     token: f["Link token"] || "",
     notes: f.Notes || "",
+    createdTime: r.createdTime || "",
   };
 }
 
@@ -395,15 +606,16 @@ router.get("/payments", wrap(async (req, res) => {
 
 router.post("/payments", oneFile, wrap(async (req, res) => {
   const d = bodyData(req);
-  if (!isRec(d.quoteId)) throw bad("Choose which quotation this payment is for.");
-  const amount = P.round2(Number(d.amount));
-  if (!(amount > 0)) throw bad("Amount must be more than 0.");
+  if (!isRec(d.jobId)) throw bad("Choose which estimate or invoice this payment is for.");
+  const amountSen = M.toSen(d.amount);
+  if (!(amountSen > 0)) throw bad("Amount must be more than 0.");
+  const amount = amountSen / 100;
   const method = ai.METHODS.includes(d.method) ? d.method : "Bank transfer";
   const paidOn = ai.cleanDate(d.paidOn) || P.todayKL();
 
-  const q = quoteOut(await db.get("quotes", d.quoteId));
-  if (q.status === "Cancelled") throw bad(`${q.quoteNo} is cancelled.`);
-  if (amount - q.balance > 0.009) throw bad(`RM${amount.toFixed(2)} is more than the balance of RM${q.balance.toFixed(2)} on ${q.quoteNo}. Check the amount.`);
+  const j = jobOut(await db.get("quotes", d.jobId));
+  if (j.status === "Cancelled") throw bad(`${docNoOf(j)} is cancelled.`);
+  if (amount - j.balance > 0.009) throw bad(`RM${M.fmt(amountSen)} is more than the balance of RM${M.fmt(Math.round(j.balance * 100))} on ${docNoOf(j)}. Check the amount.`);
 
   // Same slip saved twice? Stop it.
   const reference = text(d.reference, 80);
@@ -412,7 +624,7 @@ router.post("/payments", oneFile, wrap(async (req, res) => {
     throw bad(`This payment (ref ${reference}) is already recorded.`);
   }
 
-  const receiptNo = P.nextNumber("R", payments.map((p) => p.fields["Receipt no"]), paidOn);
+  const receiptNo = P.nextNumber("OR", payments.map((p) => p.fields["Receipt no"]), paidOn);
   const [row] = await db.create("payments", [{
     "Receipt no": receiptNo,
     "Paid on": paidOn,
@@ -420,37 +632,15 @@ router.post("/payments", oneFile, wrap(async (req, res) => {
     Method: method,
     Reference: reference,
     "Payer name": text(d.payerName, 120),
-    "Quote no": q.quoteNo,
-    "Quotation record": q.id,
-    "Customer name": q.customerName,
+    "Quote no": docNoOf(j),
+    "Quotation record": j.id,
+    "Customer name": j.customerName,
     "Link token": newToken("r"),
     Notes: text(d.notes, 1000),
   }]);
 
-  const state = P.paymentState(q.total, q.paid + amount);
-  const qFields = { Paid: state.paid, Balance: state.balance, Status: state.status };
-
-  // First money in = the job is going ahead: take the parts out of stock once.
-  const lowStock = [];
-  if (!q.stockTaken) {
-    const partLines = q.items.filter((i) => i.type === "part" && isRec(i.partId));
-    if (partLines.length) {
-      const parts = new Map((await db.list("parts")).map((r) => [r.id, partOut(r)]));
-      const use = new Map();
-      for (const l of partLines) use.set(l.partId, (use.get(l.partId) || 0) + l.qty);
-      const updates = [];
-      for (const [id, qty] of use) {
-        const part = parts.get(id);
-        if (!part) continue;
-        const left = P.round2(part.qtyLeft - qty);
-        if (left < 0) lowStock.push(part.name);
-        updates.push({ id, fields: { "Qty left": left } });
-      }
-      if (updates.length) await db.update("parts", updates);
-    }
-    qFields["Stock taken"] = true;
-  }
-  await db.update("quotes", [{ id: q.id, fields: qFields }]);
+  const state = P.paymentState(j.total, j.paid + amount);
+  await db.update("quotes", [{ id: j.id, fields: { Paid: state.paid, Balance: state.balance, Status: state.status } }]);
 
   let fileSaved = true;
   const file = fileOf(req);
@@ -461,7 +651,7 @@ router.post("/payments", oneFile, wrap(async (req, res) => {
       fileSaved = false;
     }
   }
-  res.status(201).json({ payment: paymentOut(row), quote: { ...q, ...{ paid: state.paid, balance: state.balance, status: state.status } }, lowStock, fileSaved });
+  res.status(201).json({ payment: paymentOut(row), job: { ...j, paid: state.paid, balance: state.balance, status: state.status }, fileSaved });
 }));
 
-module.exports = { router, rankMatches, quoteOut, paymentOut, partOut, loadSettings };
+module.exports = { router, rankMatches, jobOut, paymentOut, partOut, loadSettings, companyFor, parseJob, docNoOf };
