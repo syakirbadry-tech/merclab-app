@@ -17,6 +17,11 @@ A dark menu on the left (on a phone: the Menu button and the bar at the bottom),
 - **On each job:** check-in (fuel, keys, items left, odometer photo), an inspection checklist (OK / Soon / Now with readings and photos) with a report link for the customer (no prices), a fault case, and a printable job card for the mechanic (no prices).
 - **Online approval:** the estimate link has an "Approve estimate" box. The customer types their name; the job shows "Approved online" and moves to In workshop.
 - **Discount** on estimates and invoices (comes off before tax; printed as "Less Discount").
+- **CRM:**
+  - *Customers:* type (Customer / Lead / Fleet), how they found you, tags, next follow-up. Each customer page has a follow-up card and an activity timeline (contacts, jobs, payments, bookings) with "Log contact".
+  - *Follow-ups:* due in the next 7 days, a win-back list (no visit for 6+ months) and leads, with WhatsApp / Call / Log buttons.
+  - *Service reminders:* cars due within 30 days or near their service km (km estimated from visit history), with a WhatsApp reminder that records the date. Tick "Set next service reminder" on an invoice (Settings has the km / month interval).
+  - *Bookings:* a week calendar. "Car arrived: start estimate" opens a new estimate linked to the booking.
 - **Customers:** a table with phone, cars, last visit, spent and owes, and a page per customer.
 - **Parts & stock**, **Money** (receipts and who owes you, with a WhatsApp reminder button) and **Settings**.
 - A search box at the top finds a plate, a customer or an EST / INV number.

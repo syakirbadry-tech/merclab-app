@@ -17,6 +17,8 @@ const TABLES = {
   vehicles: "tbl7WHw77Y0IKsHHf",
   packages: "tblET3exu2ZWkx3QK",
   faults: "tblWpQd8poWDX9TtM",
+  interactions: "tblWL55adp7Uglt4d",
+  bookings: "tbl4o2AYhv5elFmjw",
 };
 
 // Attachment fields need their field ID for the upload endpoint.
