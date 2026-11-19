@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="104" viewBox="0 0 300 104" role="img" aria-label="The Merc Lab">
+  <!-- "Lab label" logo (Logo C) from the approved estimate layout. Text uses Arial/Arimo; convert text to outlines in a design tool if the font may be missing. -->
+  <g font-family="Arial, Arimo, Helvetica, sans-serif" font-weight="700" fill="#111111">
+    <text x="0" y="11" font-size="12" letter-spacing="6">THE</text>
+    <text x="0" y="50" font-size="36" letter-spacing="-0.36">MERC</text>
+    <rect x="112" y="17" width="79" height="38" fill="#111111"/>
+    <text x="119" y="50" font-size="36" letter-spacing="-0.36" fill="#ffffff">LAB</text>
+    <polyline points="0,64 136,64 143,59 150,69 157,58 164,70 171,64 294,64" fill="none" stroke="#111111" stroke-width="2.5" stroke-linejoin="round"/>
+    <text x="0" y="86" font-size="12" letter-spacing="0.72">INDEPENDENT MERCEDES-BENZ SPECIALIST</text>
+  </g>
+</svg>

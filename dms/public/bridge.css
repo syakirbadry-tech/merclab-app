@@ -1,0 +1,7 @@
+/* Phase 1 bridge: keeps the old shell readable while style.css and
+   merclab.css are both loaded. Delete this file in phase 2 (app shell). */
+.pill .dot { display: none; }                         /* merclab.css draws the dot itself */
+.brand { display: flex; align-items: center; gap: 10px; color: var(--ink); font-weight: 700; font-size: 16px; }
+.brand small { color: var(--muted); }
+.topbar .menu-btn { color: #fff; }
+.topbar .menu-btn:hover { background: rgba(255, 255, 255, .12); }
