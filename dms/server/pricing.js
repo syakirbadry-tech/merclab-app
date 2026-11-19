@@ -87,4 +87,13 @@ function addDays(isoDate, days) {
   return d.toISOString().slice(0, 10);
 }
 
-module.exports = { round2, sellingPrice, cleanItems, quoteTotals, paymentState, nextNumber, waPhone, todayKL, addDays };
+// Same day N months later (end of month if that day does not exist).
+function addMonths(isoDate, months) {
+  const [y, m, d] = String(isoDate).split("-").map(Number);
+  const t = new Date(Date.UTC(y, m - 1 + Number(months || 0), 1));
+  const last = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0)).getUTCDate();
+  t.setUTCDate(Math.min(d, last));
+  return t.toISOString().slice(0, 10);
+}
+
+module.exports = { addMonths, round2, sellingPrice, cleanItems, quoteTotals, paymentState, nextNumber, waPhone, todayKL, addDays };

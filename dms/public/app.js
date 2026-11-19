@@ -27,7 +27,7 @@
     return `${Math.round(d / 365)} years ago`;
   }
 
-  const state = { settings: null, parts: [], jobs: [], payments: [], customers: [], vehicles: [], packages: [], faults: [], route: "" };
+  const state = { settings: null, parts: [], jobs: [], payments: [], customers: [], vehicles: [], packages: [], faults: [], interactions: [], bookings: [], route: "" };
 
   // ---------- icons (simple line icons, 24px grid) ----------
   const ICONS = {
@@ -61,6 +61,8 @@
     box: '<path d="M4 7l8-4 8 4-8 4zM4 7v10l8 4 8-4V7M12 11v10"/>',
     print: '<path d="M7 8V3h10v5M7 17H5a1 1 0 0 1-1-1v-6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v6a1 1 0 0 1-1 1h-2M7 14h10v7H7z"/>',
     clipboard: '<path d="M9 4h6v3H9zM9 5H6a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-3M9 12l2 2 4-4"/>',
+    phone: '<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a1 1 0 0 1-1 1A16 16 0 0 1 4 5a1 1 0 0 1 1-1z"/>',
+    bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 21h4"/>',
     more: '<circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/>',
   };
   const icon = (n, cls = "") => `<svg class="ic ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n] || ""}</svg>`;
@@ -193,7 +195,9 @@
   // ---------- data ----------
 
   async function loadAll() {
-    const [s, p, q, pay, c, v, pk, fc] = await Promise.all([api("/settings"), api("/parts"), api("/jobs"), api("/payments"), api("/customers"), api("/vehicles"), api("/packages"), api("/faults")]);
+    const [s, p, q, pay, c, v, pk, fc, ia, bk] = await Promise.all([api("/settings"), api("/parts"), api("/jobs"), api("/payments"), api("/customers"), api("/vehicles"), api("/packages"), api("/faults"), api("/interactions"), api("/bookings")]);
+    state.interactions = ia.interactions;
+    state.bookings = bk.bookings;
     state.packages = pk.packages;
     state.faults = fc.faults;
     state.settings = s;
@@ -204,7 +208,7 @@
     state.vehicles = v.vehicles;
   }
   async function refresh(...what) {
-    const map = { jobs: "/jobs", payments: "/payments", customers: "/customers", parts: "/parts", vehicles: "/vehicles", packages: "/packages", faults: "/faults" };
+    const map = { jobs: "/jobs", payments: "/payments", customers: "/customers", parts: "/parts", vehicles: "/vehicles", packages: "/packages", faults: "/faults", interactions: "/interactions", bookings: "/bookings" };
     const out = await Promise.all(what.map((w) => api(map[w])));
     what.forEach((w, i) => (state[w] = out[i][w]));
   }
@@ -231,7 +235,8 @@
 
   const NAV = [
     ["Overview", [["dashboard", "Dashboard", "dashboard"]]],
-    ["Workshop", [["jobs", "Jobs", "jobs"], ["vehicles", "Vehicles", "car"], ["packages", "Packages", "box"], ["faults", "Fault cases", "book"], ["customers", "Customers", "users"]]],
+    ["Workshop", [["jobs", "Jobs", "jobs"], ["bookings", "Bookings", "calendar"], ["vehicles", "Vehicles", "car"], ["packages", "Packages", "box"], ["faults", "Fault cases", "book"]]],
+    ["CRM", [["customers", "Customers", "users"], ["followups", "Follow-ups", "phone"], ["reminders", "Service reminders", "bell"]]],
     ["Business", [["parts", "Parts & stock", "parts"], ["money", "Money", "money"]]],
   ];
 
@@ -344,6 +349,9 @@
       if (sec === "parts") return pageParts();
       if (sec === "packages") return a ? packageForm(a) : pagePackages();
       if (sec === "faults") return pageFaults();
+      if (sec === "bookings") return pageBookings(q);
+      if (sec === "followups") return pageFollowups(q);
+      if (sec === "reminders") return pageReminders();
       if (sec === "money") return a === "receipt" ? pageReceipt(b) : pageMoney(q);
       if (sec === "settings") return pageSettings();
       location.hash = "#/dashboard";
@@ -405,6 +413,13 @@
           </div>
         </div>
         <div>
+          ${(() => {
+            const bks = state.bookings.filter((b) => b.date === today && b.status !== "Cancelled");
+            const fus = state.customers.filter((c) => c.nextFollowUp && c.nextFollowUp <= today);
+            return `<div class="card"><div class="card-h"><h2>Today's bookings</h2><div class="r"><a class="btn ghost sm" href="#/bookings">Calendar</a></div></div>
+              ${bks.length ? `<div class="rows">${bks.map((b) => `<a href="#/bookings"><div class="grow"><b>${esc(b.time || "Any time")} · ${esc(b.customerName)}</b><span class="muted">${esc([b.plate, b.work].filter(Boolean).join(" · "))}</span></div>${pill(b.status, BK_CLS[b.status])}</a>`).join("")}</div>` : `<p class="muted">No bookings today.</p>`}</div>
+              ${fus.length ? `<div class="card"><div class="card-h"><h2>Follow-ups due</h2><div class="r"><a class="btn ghost sm" href="#/followups">All</a></div></div><div class="rows">${fus.slice(0, 5).map((c) => `<a href="#/customers/${c.id}"><div class="grow"><b>${esc(c.name)}</b><span class="muted">${esc(c.followUpNote || "Follow up")}</span></div><span class="r">${c.nextFollowUp < today ? pill(dmy(c.nextFollowUp), "bad") : "Today"}</span></a>`).join("")}</div></div>` : ""}`;
+          })()}
           <div class="card"><div class="card-h"><h2>Who owes you</h2><div class="r"><a class="btn ghost sm" href="#/money?tab=owed">All</a></div></div>
             ${owed.length ? `<div class="rows">${owed.slice(0, 5).map((j) => `<a href="#/jobs/${j.id}"><div class="grow"><b>${esc(j.customerName)}</b><span class="muted">${esc(j.invoiceNo)} · ${ago(j.invoiceDate)}</span></div><div class="r"><b>${rm(j.balance)}</b></div></a>`).join("")}</div>` : `<p class="muted">${icon("check")} Nobody owes you money.</p>`}</div>
           <div class="card"><div class="card-h"><h2>Service due (30 days)</h2></div>
@@ -704,6 +719,7 @@
           </details>
           <div class="totbar">
             <div class="t">Parts<b id="tParts">RM 0.00</b></div><div class="t">Labour &amp; sundries<b id="tLabour">RM 0.00</b></div><div class="t" id="tDiscW" hidden>Discount<b id="tDisc">RM 0.00</b></div><div class="t grand">Grand total<b id="tGrand">RM 0.00</b></div>
+            <label class="muted" style="display:flex;gap:8px;align-items:center;margin:0;font-weight:500" title="Sets the car's next service date and km from the intervals in Settings"><input type="checkbox" id="nextSvc" ${groups.some((g) => /SERVICE/i.test(g.request || "")) ? "checked" : ""} style="width:18px;min-height:18px">Set next service reminder${mode === "new" ? " (if saved as invoice)" : ""}</label>
             <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
             ${mode === "invoice"
               ? `<button class="btn" type="submit" data-as="invoice">${icon("check")}Make invoice</button>`
@@ -771,6 +787,7 @@
       box.insertAdjacentHTML("beforeend", groupHtml({ request: pkg.request, lines: packageLines(pkg) }, 0));
       renumber();
       totals();
+      if (pkg.setsService) $("#nextSvc").checked = true;
       toast(`${pkg.name} added`);
     };
     form.surcharge.oninput = totals;
@@ -790,6 +807,7 @@
       LS.set("advisor", advisor);
       const body = {
         asInvoice: as === "invoice" && mode === "new",
+        nextService: $("#nextSvc").checked,
         customerId: job?.customerId || pre?.customerId || (cust ? cust.id : ""),
         customer: { name, phone: form.cPhone.value, address: form.cAddress.value },
         vehicle: { makeModel: form.makeModel.value, regNo: form.regNo.value, mileageKm: form.mileageKm.value, chassisNo: form.chassisNo.value, engineNo: form.engineNo.value, regDate: form.regDate.value },
@@ -811,7 +829,9 @@
         const out = mode === "invoice"
           ? await api(`/jobs/${job.id}/invoice`, { method: "POST", body })
           : await api("/jobs", { method: "POST", body });
-        await refresh("jobs", "customers", "parts", "vehicles");
+        const bkId = q && q.get("booking");
+        if (bkId) await api(`/bookings/${bkId}`, { method: "PATCH", body: { jobId: out.job.id, status: "Arrived" } }).catch(() => {});
+        await refresh("jobs", "customers", "parts", "vehicles", "bookings");
         toast(`${docNo(out.job)} saved`);
         if (out.lowStock?.length) setTimeout(() => toast(`Stock went below 0 for: ${out.lowStock.join(", ")}`), 1800);
         location.hash = `#/jobs/${out.job.id}`;
@@ -1128,6 +1148,258 @@
     w.document.close();
   }
 
+  // ================= CRM =================
+
+  const SOURCES = ["Walk-in", "Referral", "Returning", "Facebook", "Instagram", "Threads", "TikTok", "Google", "Other"];
+  const CTYPES = ["Customer", "Lead", "Fleet"];
+  const IKINDS = ["Call", "WhatsApp", "Visit", "Email", "Note"];
+  const IK_ICON = { Call: "phone", WhatsApp: "chat", Visit: "car", Email: "file", Note: "edit" };
+  const addDaysISO = (iso, n) => new Date(Date.parse(iso + "T00:00:00Z") + n * 864e5).toISOString().slice(0, 10);
+  const tagChips = (t) => String(t || "").split(",").map((x) => x.trim()).filter(Boolean).map((x) => `<span class="pill">${esc(x)}</span>`).join(" ");
+  const opt = (list, cur, empty) => `${empty !== undefined ? `<option value="">${empty}</option>` : ""}${list.map((x) => `<option ${x === cur ? "selected" : ""}>${esc(x)}</option>`).join("")}`;
+  function replaceCustomer(c) {
+    const i = state.customers.findIndex((x) => x.id === c.id);
+    if (i >= 0) state.customers[i] = c;
+  }
+
+  // Log a call / WhatsApp / visit, and set the next follow-up.
+  function logDialog(c, after) {
+    let kind = "Call";
+    const m = modal(`Log contact: ${c.name}`, `
+      <label>What happened</label><div class="seg" id="lkKind" role="group" aria-label="Contact type">${IKINDS.map((k) => `<button type="button" class="${k === kind ? "on" : ""}" data-k="${k}">${k}</button>`).join("")}</div>
+      <label for="lkNote">Note</label><textarea id="lkNote" rows="3" placeholder="e.g. Asked about Service B price. Will reply after payday."></textarea>
+      <div class="fgrid"><div><label for="lkNext">Next follow-up</label><input id="lkNext" type="date" value="${esc(c.nextFollowUp && c.nextFollowUp > todayKL() ? c.nextFollowUp : "")}"></div>
+        <div><label for="lkWhat">Follow-up about</label><input id="lkWhat" value="${esc(c.followUpNote)}" placeholder="e.g. Confirm brake job"></div></div>
+      <div class="chips" style="margin-top:8px">${[["+3 days", 3], ["+1 week", 7], ["+1 month", 30], ["No follow-up", 0]].map(([l, n]) => `<button type="button" class="chip" data-d="${n}">${l}</button>`).join("")}</div>
+      <div class="btns"><button type="button" class="btn" id="lkSave">${icon("check")}Save</button></div>`);
+    m.$("#lkKind").onclick = (e) => {
+      const b = e.target.closest("[data-k]");
+      if (!b) return;
+      kind = b.dataset.k;
+      $$("#lkKind button", m.el).forEach((x) => x.classList.toggle("on", x === b));
+    };
+    m.el.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-d]");
+      if (b) m.$("#lkNext").value = Number(b.dataset.d) ? addDaysISO(todayKL(), Number(b.dataset.d)) : "";
+    });
+    m.$("#lkSave").onclick = async (e) => {
+      busy(e.currentTarget, true, "Saving…");
+      try {
+        const out = await api("/interactions", { method: "POST", body: { customerId: c.id, type: kind, note: m.$("#lkNote").value, nextFollowUp: m.$("#lkNext").value, followUpNote: m.$("#lkWhat").value } });
+        state.interactions.unshift(out.interaction);
+        replaceCustomer(out.customer);
+        m.close();
+        toast("Saved");
+        (after || route)();
+      } catch (err) {
+        toast(err.message);
+        busy(e.currentTarget, false);
+      }
+    };
+  }
+
+  function pageFollowups(q) {
+    crumbs([["Follow-ups"]]);
+    const today = todayKL();
+    let tab = ["due", "winback", "leads"].includes(q.get("tab")) ? q.get("tab") : "due";
+    const stats = new Map(state.customers.map((c) => [c.id, customerStats(c)]));
+    const due = state.customers.filter((c) => c.nextFollowUp && c.nextFollowUp <= addDaysISO(today, 7)).sort((a, b) => a.nextFollowUp.localeCompare(b.nextFollowUp));
+    const winback = state.customers.filter((c) => {
+      const s = stats.get(c.id);
+      return s.last && daysBetween(s.last, today) > 180 && !s.jobs.some((j) => isWorkshop(j)) && !c.nextFollowUp;
+    }).sort((a, b) => stats.get(b.id).spent - stats.get(a.id).spent);
+    const leads = state.customers.filter((c) => c.type === "Lead");
+    const TABS = { due: [`Due (${due.length})`, due], winback: [`Win-back (${winback.length})`, winback], leads: [`Leads (${leads.length})`, leads] };
+    view.innerHTML = `${pageHead("Follow-ups", { sub: "Who to contact, and customers who have not come back" })}
+      <nav class="tabs" id="ftabs">${Object.entries(TABS).map(([k, [l]]) => `<a href="#/followups?tab=${k}" data-t="${k}">${l}</a>`).join("")}</nav>
+      <p class="muted" id="fhint" style="margin-top:-6px"></p><div class="card flush" id="fbody"></div>`;
+    const HINT = { due: "Follow-ups due in the next 7 days. Overdue ones are at the top.", winback: "Customers who last came more than 6 months ago and have no follow-up set. Best customers first.", leads: "People who asked but have not had work done yet." };
+    const msg = (c) => (tab === "winback" ? `Hi ${c.name}, it's ${brandName()}. It has been a while since your car's last visit. Would you like us to check it, or book a service?` : `Hi ${c.name}, it's ${brandName()}.`);
+    const draw = () => {
+      $$("#ftabs a").forEach((a) => a.classList.toggle("on", a.dataset.t === tab));
+      $("#fhint").textContent = HINT[tab];
+      const list = TABS[tab][1];
+      $("#fbody").innerHTML = list.length
+        ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Customer</th><th>${tab === "due" ? "Due" : "Last visit"}</th><th class="d">About</th><th class="num d">Spent</th><th></th></tr></thead><tbody>
+          ${list.map((c) => {
+            const s = stats.get(c.id);
+            const late = tab === "due" && c.nextFollowUp < today;
+            return `<tr><td><div class="who">${avatar(c.name)}<div style="min-width:0"><a href="#/customers/${c.id}" class="strong" style="color:inherit;text-decoration:none">${esc(c.name)}</a><div class="sm">${esc(c.phone)}${s.plates.length ? " · " + s.plates.map((p) => esc(vehicleByKey(p)?.plate || p)).join(", ") : ""}</div></div></div></td>
+              <td class="nowrap">${tab === "due" ? `${late ? pill(dmy(c.nextFollowUp), "bad") : dmy(c.nextFollowUp)}<div class="sm">${ago(c.nextFollowUp)}</div>` : s.last ? `${dmy(s.last)}<div class="sm">${ago(s.last)}</div>` : "—"}</td>
+              <td class="d">${esc(c.followUpNote) || '<span class="sm">—</span>'}</td><td class="num d">${rm(s.spent)}</td>
+              <td class="num nowrap">${c.phone ? `<a class="btn wa sm" href="${esc(waLink(c.phone, msg(c)))}" target="_blank" rel="noopener" aria-label="WhatsApp ${esc(c.name)}">${icon("chat")}</a> <a class="btn alt sm" href="tel:${esc(c.phone)}" aria-label="Call ${esc(c.name)}">${icon("phone")}</a>` : ""} <button type="button" class="btn alt sm" data-log="${c.id}">Log</button></td></tr>`;
+          }).join("")}</tbody></table></div>`
+        : emptyBox("check", tab === "due" ? "No follow-ups due. Set one from a customer's page." : tab === "winback" ? "No one to win back right now." : "No leads. Mark a customer as Lead when someone asks but has not booked.");
+      $$("[data-log]").forEach((b) => (b.onclick = () => logDialog(state.customers.find((c) => c.id === b.dataset.log))));
+    };
+    $("#ftabs").onclick = (e) => {
+      const a = e.target.closest("[data-t]");
+      if (!a) return;
+      e.preventDefault();
+      tab = a.dataset.t;
+      history.replaceState(null, "", a.getAttribute("href"));
+      draw();
+    };
+    draw();
+  }
+
+  // Expected mileage today from the car's visit history (km per day).
+  function predictKm(v) {
+    const pts = jobsOfVehicle(v.key).filter((j) => j.mileageKm && jobDate(j) && j.status !== "Cancelled").map((j) => [jobDate(j), j.mileageKm]).sort((a, b) => a[0].localeCompare(b[0]));
+    if (pts.length < 2) return null;
+    const [d0, k0] = pts[0];
+    const [d1, k1] = pts[pts.length - 1];
+    const days = daysBetween(d0, d1);
+    if (days < 30 || k1 <= k0) return null;
+    return Math.round(k1 + ((k1 - k0) / days) * daysBetween(d1, todayKL()));
+  }
+
+  function pageReminders() {
+    crumbs([["Service reminders"]]);
+    const today = todayKL();
+    const rows = state.vehicles.map((v) => ({ v, pk: predictKm(v) })).filter(({ v, pk }) =>
+      (v.nextServiceDate && daysBetween(today, v.nextServiceDate) <= 30) || (v.nextServiceKm && pk && pk >= v.nextServiceKm - 1000))
+      .sort((a, b) => (a.v.nextServiceDate || "9").localeCompare(b.v.nextServiceDate || "9"));
+    const unset = state.vehicles.filter((v) => v.visits && !v.nextServiceDate && !v.nextServiceKm).length;
+    view.innerHTML = `${pageHead("Service reminders", { sub: "Cars due for service in the next 30 days, or close to their service km" })}
+      ${unset ? `<div class="notice">${icon("alert")}<div>${unset} car(s) have no next service set. It is set when you tick "Set next service reminder" on an invoice, or on the car's Details tab.</div></div>` : ""}
+      <div class="card flush">${rows.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Car</th><th>Due</th><th class="d">Km now (estimate)</th><th class="d">Last reminded</th><th></th></tr></thead><tbody>
+        ${rows.map(({ v, pk }) => {
+          const over = v.nextServiceDate && v.nextServiceDate < today;
+          const msg = `Hi ${v.ownerName || ""}, this is ${brandName()}. Your ${v.makeModel || "car"} (${v.plate}) is due for service${v.nextServiceDate ? ` on ${dmy(v.nextServiceDate)}` : ""}${v.nextServiceKm ? ` or at ${Number(v.nextServiceKm).toLocaleString("en-MY")} km` : ""}. Would you like to book a slot?`;
+          return `<tr><td><a href="#/vehicles/${v.key}" class="strong" style="color:inherit;text-decoration:none">${esc(v.makeModel || "Car")}</a><div class="sm">${plateTag(v.plate)} ${esc(v.ownerName)}</div></td>
+            <td class="nowrap">${v.nextServiceDate ? (over ? pill(dmy(v.nextServiceDate), "bad") : dmy(v.nextServiceDate)) : "—"}${v.nextServiceKm ? `<div class="sm">or ${km(v.nextServiceKm)}</div>` : ""}</td>
+            <td class="d nowrap">${pk ? km(pk) : "—"}</td><td class="d nowrap">${v.lastReminded ? `${dmy(v.lastReminded)}<div class="sm">${ago(v.lastReminded)}</div>` : "Not yet"}</td>
+            <td class="num nowrap">${v.ownerPhone ? `<a class="btn wa sm" data-remind="${v.key}" href="${esc(waLink(v.ownerPhone, msg))}" target="_blank" rel="noopener">${icon("chat")}Remind</a>` : ""} <button type="button" class="btn alt sm" data-book="${v.key}">${icon("calendar")}Book</button></td></tr>`;
+        }).join("")}</tbody></table></div>`
+        : emptyBox("calendar", "No services due in the next 30 days.")}</div>`;
+    $$("[data-remind]").forEach((a) => a.addEventListener("click", async () => {
+      try { updateVehicle(await api(`/vehicles/${a.dataset.remind}`, { method: "PATCH", body: { lastReminded: todayKL() } })); } catch { /* the message still opens */ }
+    }));
+    $$("[data-book]").forEach((b) => (b.onclick = () => {
+      const v = vehicleByKey(b.dataset.book);
+      bookingDialog(null, { customerId: v.customerId, customerName: v.ownerName, phone: v.ownerPhone, plate: v.plate, car: v.makeModel, work: "Service" });
+    }));
+  }
+
+  // ---------- bookings ----------
+
+  const weekStart = (iso) => {
+    const d = new Date(iso + "T00:00:00Z");
+    return addDaysISO(iso, -((d.getUTCDay() + 6) % 7));
+  };
+  const BK_CLS = { Booked: "info", Arrived: "ok", "No-show": "bad", Cancelled: "" };
+
+  function bookingDialog(b, preset = {}) {
+    const d = b || { date: preset.date || todayKL(), time: "", status: "Booked", ...preset };
+    const m = modal(b ? "Booking" : "New booking", `<form id="bkf" novalidate><div class="fgrid">
+        <div><label for="bk_date" class="req">Date</label><input id="bk_date" name="date" type="date" value="${esc(d.date)}"></div>
+        <div><label for="bk_time">Time</label><input id="bk_time" name="time" type="time" value="${esc(d.time)}"></div>
+        <div><label for="bk_name" class="req">Customer</label><input id="bk_name" name="customerName" list="custList2" value="${esc(d.customerName || "")}"></div>
+        <div><label for="bk_phone">Phone</label><input id="bk_phone" name="phone" type="tel" value="${esc(d.phone || "")}"></div>
+        <div><label for="bk_plate">Plate</label><input id="bk_plate" name="plate" list="plateList2" style="text-transform:uppercase" value="${esc(d.plate || "")}"></div>
+        <div><label for="bk_car">Car</label><input id="bk_car" name="car" value="${esc(d.car || "")}"></div>
+        <div class="full"><label for="bk_work">Work</label><input id="bk_work" name="work" list="workList" value="${esc(d.work || "")}" placeholder="e.g. Service B, brake noise"></div>
+        <div class="full"><label for="bk_notes">Notes</label><textarea id="bk_notes" name="notes" rows="2">${esc(d.notes || "")}</textarea></div>
+        ${b ? `<div class="full"><label>Status</label><div class="seg" id="bkSt">${["Booked", "Arrived", "No-show", "Cancelled"].map((s) => `<button type="button" class="${s === d.status ? "on" : ""}" data-s="${s}">${s}</button>`).join("")}</div></div>` : ""}
+      </div>
+      <datalist id="custList2">${state.customers.map((c) => `<option value="${esc(c.name)}">${esc(c.phone)}</option>`).join("")}</datalist>
+      <datalist id="plateList2">${state.vehicles.map((v) => `<option value="${esc(v.plate)}">${esc(v.makeModel)} · ${esc(v.ownerName)}</option>`).join("")}</datalist>
+      <datalist id="workList">${state.packages.filter((p) => p.active).map((p) => `<option value="${esc(p.name)}">`).join("")}</datalist>
+      <div class="btns"><button class="btn" type="submit">${icon("check")}Save</button>
+        ${b && d.phone ? `<a class="btn wa" href="${esc(waLink(d.phone, `Hi ${d.customerName}, this is ${brandName()} confirming your booking on ${dmy(d.date)}${d.time ? " at " + d.time : ""}${d.work ? " for " + d.work : ""}. See you then!`))}" target="_blank" rel="noopener">${icon("chat")}Confirm by WhatsApp</a>` : ""}
+        ${b && d.jobId ? `<a class="btn alt" href="#/jobs/${d.jobId}">Open job</a>` : b && d.status !== "Cancelled" ? `<button type="button" class="btn alt" id="bkStart">${icon("jobs")}Car arrived: start estimate</button>` : ""}
+      </div></form>`);
+    let status = d.status;
+    const f = m.$("#bkf");
+    const st = m.$("#bkSt");
+    if (st) st.onclick = (e) => {
+      const x = e.target.closest("[data-s]");
+      if (!x) return;
+      status = x.dataset.s;
+      $$("#bkSt button", m.el).forEach((y) => y.classList.toggle("on", y === x));
+    };
+    f.elements.customerName.addEventListener("change", () => {
+      const c = state.customers.find((x) => x.name.toLowerCase() === f.elements.customerName.value.trim().toLowerCase());
+      if (!c) return;
+      if (!f.elements.phone.value) f.elements.phone.value = c.phone;
+      const car = state.vehicles.find((v) => v.customerId === c.id);
+      if (car && !f.elements.plate.value) { f.elements.plate.value = car.plate; f.elements.car.value = car.makeModel; }
+    });
+    f.elements.plate.addEventListener("change", () => {
+      const v = vehicleByKey(plateKey(f.elements.plate.value));
+      if (!v) return;
+      f.elements.car.value = f.elements.car.value || v.makeModel;
+      if (!f.elements.customerName.value) { f.elements.customerName.value = v.ownerName; f.elements.phone.value = v.ownerPhone; }
+    });
+    const body = () => {
+      const o = formObj(f);
+      const c = state.customers.find((x) => x.name.toLowerCase() === o.customerName.trim().toLowerCase());
+      o.customerId = c ? c.id : d.customerId || "";
+      if (b) o.status = status;
+      return o;
+    };
+    const save = async (extra = {}) => {
+      const out = b ? await api(`/bookings/${b.id}`, { method: "PATCH", body: { ...body(), ...extra } }) : await api("/bookings", { method: "POST", body: body() });
+      await refresh("bookings");
+      return out;
+    };
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      busy(e.submitter, true, "Saving…");
+      try { await save(); m.close(); toast("Booking saved"); route(); } catch (err) { toast(err.message); busy(e.submitter, false); }
+    };
+    const start = m.$("#bkStart");
+    if (start) start.onclick = async () => {
+      try {
+        const out = await save({ status: "Arrived" });
+        m.close();
+        const v = vehicleByKey(plateKey(out.plate));
+        location.hash = `#/jobs/new?booking=${out.id}${v ? `&plate=${v.key}` : ""}${out.customerId ? `&customer=${out.customerId}` : ""}`;
+      } catch (err) { toast(err.message); }
+    };
+  }
+
+  function pageBookings(q) {
+    const today = todayKL();
+    let start = weekStart(/^\d{4}-\d{2}-\d{2}$/.test(q.get("w") || "") ? q.get("w") : today);
+    crumbs([["Bookings"]]);
+    view.innerHTML = `${pageHead("Bookings", { sub: "Who is coming in, and when", acts: `<button class="btn" id="bkNew">${icon("plus")}New booking</button>` })}
+      <div class="toolbar"><div class="seg"><button type="button" id="wPrev" aria-label="Previous week">${icon("back")}</button><button type="button" id="wToday">This week</button><button type="button" id="wNext" aria-label="Next week" style="transform:scaleX(-1)">${icon("back")}</button></div><b id="wLabel"></b></div>
+      <div class="week" id="week"></div>`;
+    const fmtDay = (iso) => new Date(iso + "T00:00:00Z").toLocaleDateString("en-MY", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+    const draw = () => {
+      const days = Array.from({ length: 7 }, (_, i) => addDaysISO(start, i));
+      $("#wLabel").textContent = `${fmtDay(days[0])} – ${fmtDay(days[6])}`;
+      $("#week").innerHTML = days.map((d) => {
+        const list = state.bookings.filter((b) => b.date === d);
+        return `<div class="day ${d === today ? "today" : ""}"><div class="dh"><span>${fmtDay(d)}</span><button type="button" class="btn ghost sm icon" data-new="${d}" aria-label="New booking on ${fmtDay(d)}">${icon("plus")}</button></div>
+          ${list.map((b) => `<button type="button" class="bk ${b.status === "Cancelled" ? "off" : ""}" data-bk="${b.id}"><span class="t">${esc(b.time || "Any time")}</span>${pill(b.status, BK_CLS[b.status])}
+            <b>${esc(b.customerName)}</b><span class="m">${b.plate ? plateTag(b.plate) + " " : ""}${esc(b.work)}</span></button>`).join("") || `<div class="muted" style="padding:4px 2px">—</div>`}</div>`;
+      }).join("");
+      $$("#week [data-bk]").forEach((x) => (x.onclick = () => bookingDialog(state.bookings.find((b) => b.id === x.dataset.bk))));
+      $$("#week [data-new]").forEach((x) => (x.onclick = () => bookingDialog(null, { date: x.dataset.new })));
+    };
+    const go = (s) => { start = s; history.replaceState(null, "", `#/bookings?w=${start}`); draw(); };
+    $("#wPrev").onclick = () => go(addDaysISO(start, -7));
+    $("#wNext").onclick = () => go(addDaysISO(start, 7));
+    $("#wToday").onclick = () => go(weekStart(today));
+    $("#bkNew").onclick = () => bookingDialog(null);
+    draw();
+  }
+
+  // Activity on the customer page: log form + timeline of contacts, jobs and payments.
+  function customerActivity(c, st) {
+    const items = [
+      ...state.interactions.filter((i) => i.customerId === c.id).map((i) => ({ date: i.date, ic: IK_ICON[i.type] || "edit", title: i.type, text: i.note })),
+      ...st.jobs.map((j) => ({ date: jobDate(j), ic: "jobs", title: `${kindOf(j)} ${docNo(j)}`, text: `${j.car || ""} · ${rm(j.total)} · ${j.status}`, href: `#/jobs/${j.id}` })),
+      ...state.payments.filter((p) => st.jobs.some((j) => j.id === p.jobId)).map((p) => ({ date: p.paidOn, ic: "money", title: `Paid ${rm(p.amount)}`, text: `${p.receiptNo} · ${p.method}`, href: `#/money/receipt/${p.id}` })),
+      ...state.bookings.filter((b) => b.customerId === c.id).map((b) => ({ date: b.date, ic: "calendar", title: `Booking: ${b.status}`, text: `${b.time ? b.time + " · " : ""}${b.work}` })),
+    ].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+    return `<div class="card"><div class="card-h"><h2>Activity</h2><div class="r"><button type="button" class="btn alt sm" id="logC">${icon("plus")}Log contact</button></div></div>
+      ${items.length ? `<ol class="tl">${items.slice(0, 40).map((x) => `<li><span class="tli">${icon(x.ic)}</span><div><div class="tlh">${x.href ? `<a href="${x.href}">${esc(x.title)}</a>` : `<b>${esc(x.title)}</b>`}<span class="muted">${dmy(x.date)}</span></div>${x.text ? `<div class="muted" style="white-space:pre-line">${esc(x.text)}</div>` : ""}</div></li>`).join("")}</ol>` : `<p class="muted">Nothing yet.</p>`}</div>`;
+  }
+
   // ================= VEHICLES =================
 
   const FUELS = ["Petrol", "Diesel", "Hybrid", "Plug-in hybrid", "Electric"];
@@ -1423,26 +1695,35 @@
     crumbs([["Customers"]]);
     const rows = state.customers.map((c) => ({ c, s: customerStats(c) }));
     let sort = "recent";
+    let cfil = "all";
     view.innerHTML = `
       ${pageHead("Customers", { sub: `${state.customers.length} customer${state.customers.length === 1 ? "" : "s"}`, acts: `<button class="btn" id="addCust">${icon("plus")}Add customer</button>` })}
       <div class="toolbar"><div class="search">${icon("search")}<input id="cq" type="search" placeholder="Search name, phone, plate" aria-label="Search customers"></div>
+        <div class="chips" id="cf">${[["all", "All"], ["Customer", "Customers"], ["Lead", "Leads"], ["Fleet", "Fleet"], ["owes", "Owes"]].map(([k, l]) => `<button type="button" class="chip ${k === "all" ? "on" : ""}" data-f="${k}">${l}</button>`).join("")}</div>
         <div class="seg" id="cs" role="group" aria-label="Sort"><button type="button" class="on" data-s="recent">Recent</button><button type="button" data-s="name">A–Z</button><button type="button" data-s="owes">Owes</button></div></div>
       <div class="card flush" id="ct"></div>`;
     const draw = () => {
       const s = $("#cq").value.trim().toLowerCase();
       const digits = s.replace(/\D/g, "");
       const pk = plateKey(s);
-      const list = rows.filter(({ c, s: st }) => !s || c.name.toLowerCase().includes(s) || (digits.length > 3 && c.phone.replace(/\D/g, "").includes(digits)) || (pk && st.plates.some((p) => p.includes(pk))) || c.email.toLowerCase().includes(s));
+      const list = rows.filter(({ c, s: st }) => (cfil === "all" || (cfil === "owes" ? st.owes > 0.009 : c.type === cfil))).filter(({ c, s: st }) => !s || c.name.toLowerCase().includes(s) || (digits.length > 3 && c.phone.replace(/\D/g, "").includes(digits)) || (pk && st.plates.some((p) => p.includes(pk))) || c.email.toLowerCase().includes(s));
       list.sort((a, b) => (sort === "name" ? a.c.name.localeCompare(b.c.name) : sort === "owes" ? b.s.owes - a.s.owes : (b.s.last || b.c.createdTime || "").localeCompare(a.s.last || a.c.createdTime || "")));
       $("#ct").innerHTML = list.length
         ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Customer</th><th class="d">Phone</th><th class="d">Cars</th><th class="d">Last visit</th><th class="num d">Spent</th><th class="num">Owes</th></tr></thead><tbody>
-          ${list.map(({ c, s: st }) => `<tr class="tap" data-href="#/customers/${c.id}"><td><div class="who">${avatar(c.name)}<div style="min-width:0"><a href="#/customers/${c.id}" class="strong" style="color:inherit;text-decoration:none">${esc(c.name)}</a><div class="sm">${esc(c.email || c.phone)}</div></div></div></td>
+          ${list.map(({ c, s: st }) => `<tr class="tap" data-href="#/customers/${c.id}"><td><div class="who">${avatar(c.name)}<div style="min-width:0"><a href="#/customers/${c.id}" class="strong" style="color:inherit;text-decoration:none">${esc(c.name)}</a><div class="sm">${esc([c.type !== "Customer" ? c.type : "", c.source].filter(Boolean).join(" · ") || c.email || c.phone)}</div>${c.tags ? `<div style="margin-top:3px">${tagChips(c.tags)}</div>` : ""}</div></div></td>
             <td class="d nowrap">${esc(c.phone) || "—"}</td><td class="d">${st.plates.map((p) => plateTag(vehicleByKey(p)?.plate || p)).join(" ") || "—"}</td><td class="d nowrap">${st.last ? dmy(st.last) : "—"}</td>
             <td class="num d">${rm(st.spent)}</td><td class="num">${st.owes > 0.009 ? `<span class="strong" style="color:var(--bad)">${rm(st.owes)}</span>` : "—"}</td></tr>`).join("")}
           </tbody></table></div>`
         : emptyBox("users", state.customers.length ? "No customer matches." : "No customers yet. They are added when you make an estimate, or press Add customer.");
     };
     $("#cq").oninput = draw;
+    $("#cf").onclick = (e) => {
+      const b = e.target.closest("[data-f]");
+      if (!b) return;
+      cfil = b.dataset.f;
+      $$("#cf .chip").forEach((x) => x.classList.toggle("on", x === b));
+      draw();
+    };
     $("#cs").onclick = (e) => {
       const b = e.target.closest("[data-s]");
       if (!b) return;
@@ -1459,6 +1740,11 @@
       <label for="c_name" class="req">Name</label><input id="c_name" name="name" required value="${esc(c?.name)}">
       <div class="fgrid"><div><label for="c_phone">Phone (WhatsApp)</label><input id="c_phone" name="phone" type="tel" inputmode="tel" value="${esc(c?.phone)}"></div>
         <div><label for="c_email">Email</label><input id="c_email" name="email" type="email" inputmode="email" value="${esc(c?.email)}"></div></div>
+      <div class="fgrid"><div><label for="c_type">Type</label><select id="c_type" name="type">${opt(CTYPES, c?.type || "Customer")}</select></div>
+        <div><label for="c_source">How they found us</label><select id="c_source" name="source">${opt(SOURCES, c?.source || "", "—")}</select></div>
+        <div class="full"><label for="c_tags">Tags</label><input id="c_tags" name="tags" value="${esc(c?.tags)}" placeholder="e.g. VIP, W213 owner, friend of Pong"></div>
+        <div><label for="c_nf">Next follow-up</label><input id="c_nf" name="nextFollowUp" type="date" value="${esc(c?.nextFollowUp)}"></div>
+        <div><label for="c_fn">Follow-up about</label><input id="c_fn" name="followUpNote" value="${esc(c?.followUpNote)}"></div></div>
       <label for="c_address">Address</label><textarea id="c_address" name="address" rows="2">${esc(c?.address)}</textarea>
       <label for="c_notes">Notes</label><textarea id="c_notes" name="notes" rows="2">${esc(c?.notes)}</textarea>
       <div class="btns"><button class="btn" type="submit">${icon("check")}Save</button></div></form>`);
@@ -1499,8 +1785,12 @@
           <div class="card"><div class="card-h"><h2>Cars</h2></div>
             ${cars.length ? `<div class="vlist">${cars.map((v) => `<a class="vcard" href="#/vehicles/${v.key}" style="box-shadow:none">${vphoto(v)}<div style="min-width:0"><h3>${esc(v.makeModel || "Car")} ${plateTag(v.plate)}</h3><div class="specs">${specs(v)}</div><div class="meta">${v.lastVisit ? `Last visit ${ago(v.lastVisit)}` : ""}</div></div><div></div></a>`).join("")}</div>` : `<p class="muted">No cars yet.</p>`}</div>
           <div class="card flush"><div class="card-h"><h2>Jobs</h2></div>${jobTable(jobsOfCustomer(c))}</div>
+          ${customerActivity(c, st)}
         </div>
         <div>
+          <div class="card"><div class="card-h"><h2>Follow-up</h2><div class="r"><button type="button" class="btn alt sm" id="logC2">Log contact</button></div></div>
+            ${c.nextFollowUp ? `<p style="margin:0"><b>${dmy(c.nextFollowUp)}</b> ${c.nextFollowUp < todayKL() ? pill("overdue", "bad") : `<span class="muted">${ago(c.nextFollowUp)}</span>`}</p><p class="muted" style="margin:4px 0 0">${esc(c.followUpNote || "")}</p>` : `<p class="muted" style="margin:0">No follow-up set.</p>`}
+            <div class="chips" style="margin-top:10px">${pill(c.type, c.type === "Lead" ? "warn" : "info")}${c.source ? pill(c.source) : ""}${tagChips(c.tags)}</div></div>
           <div class="card"><div class="card-h"><h2>Contact</h2><div class="r"><button class="btn ghost sm" id="editCust">${icon("edit")}Edit</button></div></div>
             <dl class="kv"><dt>Phone</dt><dd>${c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : "—"}</dd><dt>Email</dt><dd>${c.email ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : "—"}</dd>
             <dt>Address</dt><dd style="white-space:pre-line">${esc(c.address) || "—"}</dd>${c.notes ? `<dt>Notes</dt><dd style="white-space:pre-line">${esc(c.notes)}</dd>` : ""}</dl></div>
@@ -1510,6 +1800,8 @@
         </div>
       </div>`;
     $("#editCust").onclick = () => customerDialog(c);
+    $("#logC").onclick = () => logDialog(c);
+    $("#logC2").onclick = () => logDialog(c);
   }
 
   // ================= PARTS =================
@@ -1856,6 +2148,9 @@
           <label for="s_roundTo">Round selling price up to</label>
           <select id="s_roundTo" name="roundTo">${[[0, "No rounding"], [0.1, "Nearest 10 sen"], [0.5, "Nearest 50 sen"], [1, "Nearest RM1"], [5, "Nearest RM5"], [10, "Nearest RM10"]].map(([val, l]) => `<option value="${val}" ${Number(s.roundTo) === val ? "selected" : ""}>${l}</option>`).join("")}</select>
           <p class="hint" id="mkEx"></p></div>
+        <div class="card"><h2>Service reminders</h2><div class="fgrid">
+          ${f("serviceIntervalKm", "Service every (km)", "number", 'inputmode="numeric" min="1000" step="500"')}${f("serviceIntervalMonths", "or every (months)", "number", 'inputmode="numeric" min="1"')}</div>
+          <p class="hint">Used when you tick "Set next service reminder" on an invoice.</p></div>
         <div class="card"><h2>DuitNow QR</h2>
           ${s.duitNowQr ? `<img src="${esc(s.duitNowQr)}" alt="DuitNow QR" style="width:140px;height:140px;object-fit:contain;background:#fff;border:1px solid var(--line);border-radius:8px">` : `<p class="muted">Not uploaded yet. A dashed box shows on documents until you add it.</p>`}
           <div class="btns"><label class="btn alt upload">${icon("upload")}Upload QR picture<input type="file" id="qrFile" accept="image/*"></label></div></div>

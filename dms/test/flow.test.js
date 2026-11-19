@@ -647,3 +647,50 @@ test("packages, fault cases, check-in, inspection report, online approval", asyn
   assert.match((await call("GET", `/d/${est.body.job.token}`, { noAuth: true })).text, /Approved by Ali Ahmad/);
   assert.equal((await call("POST", `/d/q${"0".repeat(32)}/approve`, { noAuth: true, body: { name: "X Y" } })).status, 404);
 });
+
+// ================= CRM =================
+test("CRM: customer details, contact log with follow-up, bookings, next service on invoice", async () => {
+  reset();
+  await login();
+  const c = await call("POST", "/api/customers", { body: { name: "Mei Ling", phone: "016-1112222", type: "Lead", source: "Threads", tags: "W213, VIP", nextFollowUp: "2026-12-01", followUpNote: "Call about brake job" } });
+  assert.equal(c.status, 201);
+  assert.equal(c.body.type, "Lead");
+  assert.equal(c.body.source, "Threads");
+  assert.equal(c.body.nextFollowUp, "2026-12-01");
+  const odd = await call("PATCH", `/api/customers/${c.body.id}`, { body: { source: "Pigeon" } });
+  assert.equal(odd.body.source, "");
+
+  // Contact log; it can move the follow-up date or clear it.
+  assert.equal((await call("POST", "/api/interactions", { body: { customerId: c.body.id, type: "Note", note: "" } })).status, 400);
+  const ia = await call("POST", "/api/interactions", { body: { customerId: c.body.id, type: "WhatsApp", note: "Sent price for pads", nextFollowUp: "2026-12-05", followUpNote: "Check if she agrees" } });
+  assert.equal(ia.status, 201);
+  assert.equal(ia.body.interaction.customerName, "Mei Ling");
+  assert.equal(ia.body.customer.nextFollowUp, "2026-12-05");
+  const done = await call("POST", "/api/interactions", { body: { customerId: c.body.id, type: "Call", note: "Booked in", nextFollowUp: "" } });
+  assert.equal(done.body.customer.nextFollowUp, "");
+  assert.equal((await call("GET", "/api/interactions")).body.interactions.length, 2);
+
+  // Bookings
+  assert.equal((await call("POST", "/api/bookings", { body: { customerName: "Mei Ling" } })).status, 400);
+  assert.equal((await call("POST", "/api/bookings", { body: { date: "2026-12-06", time: "9am", customerName: "Mei Ling" } })).status, 400);
+  const bk = await call("POST", "/api/bookings", { body: { date: "2026-12-06", time: "09:30", customerId: c.body.id, customerName: "Mei Ling", plate: "vbe 5", work: "Front brake pads" } });
+  assert.equal(bk.status, 201);
+  assert.equal(bk.body.status, "Booked");
+  assert.equal(bk.body.plate, "VBE 5");
+  const arr = await call("PATCH", `/api/bookings/${bk.body.id}`, { body: { status: "Arrived" } });
+  assert.equal(arr.body.status, "Arrived");
+  assert.equal((await call("PATCH", `/api/bookings/${bk.body.id}`, { body: { status: "Gone" } })).status, 400);
+
+  // Walk-in invoice with "set next service": +12 months and +10,000 km by default.
+  const st = await call("PUT", "/api/settings", { body: { serviceIntervalKm: "15000" } });
+  assert.equal(st.body.serviceIntervalKm, 15000);
+  assert.equal(st.body.serviceIntervalMonths, 12);
+  const inv = await call("POST", "/api/jobs", { body: { ...jobBody(["", ""]), asInvoice: true, nextService: true, repairDate: "2026-11-19" } });
+  assert.equal(inv.status, 201);
+  const v = store.vehicles.find((r) => r.fields["Plate key"] === "WXY1234").fields;
+  assert.equal(v["Next service date"], "2027-11-19");
+  assert.equal(v["Next service km"], 85210 + 15000);
+  const rem = await call("PATCH", "/api/vehicles/WXY1234", { body: { lastReminded: "2026-11-19" } });
+  assert.equal(rem.body.lastReminded, "2026-11-19");
+  assert.equal(P.addMonths("2026-01-31", 1), "2026-02-28");
+});

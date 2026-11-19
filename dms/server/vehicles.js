@@ -17,6 +17,7 @@ const isRec = (id) => /^rec[A-Za-z0-9]{14}$/.test(id || "");
 const isoOrEmpty = (v) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : "");
 
 const VIEWS = ["left", "right", "top", "front", "rear"];
+const SOURCES = ["Walk-in", "Referral", "Returning", "Facebook", "Instagram", "Threads", "TikTok", "Google", "Other"];
 const KINDS = ["scratch", "dent", "chip", "paint", "crack", "rust", "other"];
 const VIEW_SIZE = { left: [220, 100], right: [220, 100], top: [220, 100], front: [120, 100], rear: [120, 100] };
 
@@ -66,6 +67,7 @@ function vehicleOut(r) {
     mileageKm: f["Mileage km"] ?? null,
     nextServiceDate: f["Next service date"] || "",
     nextServiceKm: f["Next service km"] ?? null,
+    lastReminded: f["Last reminded"] || "",
     customerId: f["Customer record"] || "",
     ownerName: f["Owner name"] || "",
     ownerPhone: f["Owner phone"] || "",
@@ -98,6 +100,7 @@ function fromJobs(key, jobs) {
     mileageKm: null,
     nextServiceDate: "",
     nextServiceKm: null,
+    lastReminded: "",
     customerId: latest.customerId || "",
     ownerName: latest.customerName || "",
     ownerPhone: latest.phone || "",
@@ -184,7 +187,7 @@ function vehicleFields(b) {
   num("year", "Year", 1950, 2100, "Year");
   num("mileageKm", "Mileage km", 0, 3000000, "Mileage");
   num("nextServiceKm", "Next service km", 0, 3000000, "Next service km");
-  for (const [k, f] of [["regDate", "Reg date"], ["nextServiceDate", "Next service date"]]) {
+  for (const [k, f] of [["regDate", "Reg date"], ["nextServiceDate", "Next service date"], ["lastReminded", "Last reminded"]]) {
     if (k in b) fields[f] = isoOrEmpty(b[k]) || null;
   }
   if ("customerId" in b) fields["Customer record"] = isRec(b.customerId) ? b.customerId : "";
@@ -192,7 +195,7 @@ function vehicleFields(b) {
 }
 
 // Called when a job is saved: keep the car's record up to date.
-async function syncFromJob(job, customerId) {
+async function syncFromJob(job, customerId, nextService) {
   const key = plateKey(job.vehicle.regNo);
   if (!key) return;
   const rows = await db.list("vehicles");
@@ -206,6 +209,7 @@ async function syncFromJob(job, customerId) {
   if (job.vehicle.chassisNo) fields["Chassis no"] = job.vehicle.chassisNo;
   if (job.vehicle.engineNo) fields["Engine no"] = job.vehicle.engineNo;
   if (job.vehicle.regDate) fields["Reg date"] = job.vehicle.regDate;
+  if (nextService) Object.assign(fields, { "Next service date": nextService.date, "Next service km": nextService.km, "Last reminded": null });
   if (r) {
     if (!(r.fields["Mileage km"] >= job.vehicle.mileageKm)) fields["Mileage km"] = job.vehicle.mileageKm;
     await db.update("vehicles", [{ id: r.id, fields }]);
@@ -349,8 +353,11 @@ function register(router, { wrap, oneFile, fileOf, bodyData, jobOut, customerOut
   // ---------- customers: add / edit ----------
   const customerFields = (b) => {
     const fields = {};
-    const map = { name: ["Name", 120], phone: ["Phone", 30], email: ["Email", 120], address: ["Address", 300], notes: ["Notes", 2000] };
+    const map = { name: ["Name", 120], phone: ["Phone", 30], email: ["Email", 120], address: ["Address", 300], notes: ["Notes", 2000], tags: ["Tags", 200], followUpNote: ["Follow-up note", 200] };
     for (const [k, [f, max]] of Object.entries(map)) if (k in b) fields[f] = text(b[k], max);
+    if ("type" in b) fields.Type = ["Customer", "Lead", "Fleet"].includes(b.type) ? b.type : "Customer";
+    if ("source" in b) fields.Source = SOURCES.includes(b.source) ? b.source : null;
+    if ("nextFollowUp" in b) fields["Next follow-up"] = isoOrEmpty(b.nextFollowUp) || null;
     if ("name" in b && !fields.Name) throw bad("Customer name is needed.");
     if (fields.Email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fields.Email)) throw bad("That email does not look right.");
     return fields;

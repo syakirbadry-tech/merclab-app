@@ -73,8 +73,10 @@ const SETTINGS_FIELDS = {
   markupPercent: "Markup percent",
   roundTo: "Round to",
   estimateValidityDays: "Quote valid days",
+  serviceIntervalKm: "Service interval km",
+  serviceIntervalMonths: "Service interval months",
 };
-const NUMERIC_SETTINGS = ["markupPercent", "roundTo", "estimateValidityDays", "partsWarrantyMonths"];
+const NUMERIC_SETTINGS = ["markupPercent", "roundTo", "estimateValidityDays", "partsWarrantyMonths", "serviceIntervalKm", "serviceIntervalMonths"];
 
 async function loadSettings() {
   const rows = await db.list("settings");
@@ -86,6 +88,8 @@ async function loadSettings() {
   if (!(s.markupPercent >= 0)) s.markupPercent = 30;
   if (!(s.roundTo >= 0)) s.roundTo = 0;
   if (!(s.estimateValidityDays > 0)) s.estimateValidityDays = company.estimateValidityDays || 7;
+  if (!(s.serviceIntervalKm > 0)) s.serviceIntervalKm = 10000;
+  if (!(s.serviceIntervalMonths > 0)) s.serviceIntervalMonths = 12;
   s.sst = !!company.sstRegistrationNo;
   return s;
 }
@@ -126,7 +130,8 @@ router.put("/settings", wrap(async (req, res) => {
         continue;
       }
       const n = Number(req.body[k]);
-      if (!Number.isFinite(n) || n < 0 || n > 1000) throw bad(`${f} must be a number from 0 to 1000.`);
+      const max = k === "serviceIntervalKm" ? 100000 : 1000;
+      if (!Number.isFinite(n) || n < 0 || n > max) throw bad(`${f} must be a number from 0 to ${max}.`);
       fields[f] = n;
     } else fields[f] = text(req.body[k], 1000);
   }
@@ -276,7 +281,12 @@ router.patch("/parts/:id", wrap(async (req, res) => {
 
 // ---------- customers ----------
 
-const customerOut = (r) => ({ id: r.id, name: r.fields.Name || "", phone: r.fields.Phone || "", email: r.fields.Email || "", car: r.fields.Car || "", plate: r.fields.Plate || "", address: r.fields.Address || "", notes: r.fields.Notes || "", createdTime: r.createdTime || "" });
+const sel = (v) => (v && typeof v === "object" ? v.name : v) || "";
+const customerOut = (r) => ({
+  id: r.id, name: r.fields.Name || "", phone: r.fields.Phone || "", email: r.fields.Email || "", car: r.fields.Car || "", plate: r.fields.Plate || "",
+  address: r.fields.Address || "", notes: r.fields.Notes || "", createdTime: r.createdTime || "",
+  type: sel(r.fields.Type) || "Customer", source: sel(r.fields.Source), tags: r.fields.Tags || "", nextFollowUp: r.fields["Next follow-up"] || "", followUpNote: r.fields["Follow-up note"] || "",
+});
 
 router.get("/customers", wrap(async (req, res) => {
   const rows = await db.list("customers");
@@ -430,9 +440,9 @@ const detailsOf = (job, prev = {}) => ({
 });
 
 // The car's record follows the latest job. A failure here must not lose the job.
-async function syncVehicle(job, customerId) {
+async function syncVehicle(job, customerId, next) {
   try {
-    await V.syncFromJob(job, customerId);
+    await V.syncFromJob(job, customerId, next ? { date: P.addMonths(next.date, next.s.serviceIntervalMonths), km: job.vehicle.mileageKm + next.s.serviceIntervalKm } : null);
   } catch (err) {
     console.error("[vehicle]", err.message);
   }
@@ -503,7 +513,7 @@ router.post("/jobs", wrap(async (req, res) => {
     });
   }
   const [row] = await db.create("quotes", [fields]);
-  await syncVehicle(job, customerId);
+  await syncVehicle(job, customerId, asInvoice && req.body?.nextService === true ? { date: fields["Repair date"], s } : null);
   let lowStock = [];
   if (asInvoice) {
     lowStock = await takeStock(job.groups);
@@ -543,7 +553,7 @@ router.post("/jobs/:id/invoice", wrap(async (req, res) => {
   });
   if (cur.stage !== "Collected") fields.Stage = "Ready";
   const custId = await saveCustomer(cur.customerId, job);
-  await syncVehicle(job, custId);
+  await syncVehicle(job, custId, req.body?.nextService === true ? { date: fields["Repair date"], s: await loadSettings() } : null);
   const [row] = await db.update("quotes", [{ id: cur.id, fields }]);
   const lowStock = cur.stockTaken ? [] : await takeStock(job.groups);
   res.json({ job: jobOut(row), lowStock });
@@ -691,5 +701,6 @@ router.post("/payments", oneFile, wrap(async (req, res) => {
 
 V.register(router, { wrap, oneFile, fileOf, bodyData, jobOut, customerOut });
 require("./workshop").register(router, { wrap, oneFile, fileOf, bodyData, jobOut, newToken });
+require("./crm").register(router, { wrap, customerOut });
 
 module.exports = { router, rankMatches, jobOut, paymentOut, partOut, loadSettings, companyFor, parseJob, docNoOf };
