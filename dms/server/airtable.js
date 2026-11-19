@@ -14,6 +14,7 @@ const TABLES = {
   customers: "tblVVfLjjWJAEU2qV",
   quotes: "tblwjVJuJARYbfYhl",
   payments: "tblhz031eVXvVZdcd",
+  vehicles: "tbl7WHw77Y0IKsHHf",
 };
 
 // Attachment fields need their field ID for the upload endpoint.
@@ -21,6 +22,8 @@ const ATTACHMENT_FIELDS = {
   purchaseReceipt: "fldO6AgBLw6GO3WB7",
   paymentProof: "fldHikqbP4WNVKXZu",
   settingsQr: "fldvowTv1iG6o6XQu",
+  vehiclePhoto: "fldrRYcQvqpjaDMNU",
+  conditionPhotos: "fldqm0WfL8ftbOvzD",
 };
 
 async function request(path, options = {}) {
@@ -93,8 +96,12 @@ async function upload(fieldKey, recordId, { filename, contentType, base64 }) {
     err.status = 502;
     throw err;
   }
-  return true;
+  // The answer holds the record's attachments in that field (keyed by field
+  // ID); the new file is the last one.
+  const body = await res.json().catch(() => ({}));
+  const files = body?.fields?.[ATTACHMENT_FIELDS[fieldKey]];
+  return { attachment: Array.isArray(files) && files.length ? files[files.length - 1] : null };
 }
 
 // Exported as one object so tests can swap in an in-memory version.
-module.exports = { TABLES, list, get, create, update, upload };
+module.exports = { TABLES, ATTACHMENT_FIELDS, list, get, create, update, upload };
