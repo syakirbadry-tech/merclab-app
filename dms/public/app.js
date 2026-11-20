@@ -834,7 +834,13 @@
     view.innerHTML = `
       ${pageHead(mode === "invoice" ? `Make invoice from ${esc(job.estimateNo)}` : "New estimate", { back: job ? `#/jobs/${job.id}` : "#/jobs", sub: mode === "invoice" ? "Change the lines to what was actually done." : "Customer, car and the work to do." })}
       <form id="jForm" autocomplete="off" novalidate>
-        <div class="grid g2">
+        ${mode === "new" && !pre ? `<div class="card finder" id="finder"><h2>Find the customer or car</h2>
+          <p class="muted" style="margin:-4px 0 10px">Type a plate, name or phone. Pick the result to fill everything in.</p>
+          <div class="search">${icon("search")}<input id="findQ" type="search" placeholder="e.g. AMG 5515, Syazwan, 012…" aria-label="Find customer or car" autocomplete="off" enterkeyhint="search"></div>
+          <div class="rows find-res" id="findRes" aria-live="polite"></div>
+          <div class="btns"><button type="button" class="btn alt" id="findNew">${icon("plus")}New customer</button></div></div>
+        <div class="card picked" id="picked" hidden></div>` : ""}
+        <div class="grid g2" id="jMain"${mode === "new" && !pre ? " hidden" : ""}>
           <div class="card" style="margin:0"><h2>Customer</h2>
             <label for="cName" class="req">Name</label><input id="cName" name="cName" list="custList" required value="${v(pre?.customerName)}">
             <datalist id="custList">${state.customers.map((c) => `<option value="${esc(c.name)}">${esc(c.phone)}</option>`).join("")}</datalist>
@@ -901,6 +907,88 @@
       $("#tDisc").textContent = "-" + rm(disc);
       $("#tGrand").textContent = rm(r2(p + l + extra - disc));
     };
+
+    // ---- find the customer or car first ----
+    let pickedId = "";
+    const norm = (s) => String(s || "").toLowerCase().replace(/\b(mr|mrs|ms|miss|encik|en|puan|pn|cik|dr|tuan|tn|haji|hj|hajah|hjh|datuk|dato|datin|tan sri|ir|sdn bhd|bhd)\b\.?/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
+    const digits = (s) => String(s || "").replace(/\D/g, "");
+    function findMatches(qRaw) {
+      const q = norm(qRaw), pk = plateKey(qRaw), dq = digits(qRaw);
+      if (!q && !pk) return [];
+      const out = [], seen = new Set();
+      for (const veh of state.vehicles) {
+        if ((pk.length >= 2 && veh.key.includes(pk)) || (q.length >= 3 && norm(veh.makeModel).includes(q)) || (dq.length >= 4 && digits(veh.ownerPhone).includes(dq))) {
+          out.push({ v: veh, c: state.customers.find((x) => x.id === veh.customerId) || null });
+          if (veh.customerId) seen.add(veh.customerId);
+        }
+      }
+      for (const c of state.customers) {
+        if (seen.has(c.id)) continue;
+        const n = norm(c.name);
+        if ((q.length >= 2 && q.split(" ").every((w) => n.includes(w))) || (dq.length >= 4 && digits(c.phone).includes(dq))) out.push({ c, v: null });
+      }
+      return out.slice(0, 8);
+    }
+    const resHtml = (list) => list.map(({ c, v: car }, i) => {
+      const st = c ? customerStats(c) : null;
+      const cars = c ? state.vehicles.filter((x) => x.customerId === c.id) : [];
+      const title = car ? `${plateTag(car.plate)} <b style="display:inline">${esc(car.makeModel || "Car")}</b>` : `<b>${esc(c.name)}</b>`;
+      const sub = [car ? (c?.name || car.ownerName) : c.phone, c && !car ? (cars.length ? cars.map((x) => x.plate).join(", ") : "No car yet") : car?.ownerPhone,
+        st ? `${st.jobs.length} visit${st.jobs.length === 1 ? "" : "s"}${st.last ? " · last " + dmy(st.last) : ""}` : "", st && st.owes > 0.009 ? `owes ${rm(st.owes)}` : ""].filter(Boolean).join(" · ");
+      return `<a href="#" data-pick="${i}"><div class="grow">${title}<span>${esc(sub)}</span></div>${pill("Existing", "ok")}</a>`;
+    }).join("");
+    function pickResult({ c, v: car }) {
+      pickedId = c?.id || car?.customerId || "";
+      form.cName.value = c?.name || car?.ownerName || "";
+      form.cPhone.value = c?.phone || car?.ownerPhone || "";
+      form.cAddress.value = c?.address || "";
+      const theCar = car || (c ? state.vehicles.filter((x) => x.customerId === c.id).sort((x, y) => (y.lastVisit || "").localeCompare(x.lastVisit || ""))[0] : null);
+      if (theCar) { form.regNo.value = ""; form.makeModel.value = ""; form.chassisNo.value = ""; form.engineNo.value = ""; form.regDate.value = ""; fillCar(theCar); }
+      chHint && chHint();
+      const st = c ? customerStats(c) : null;
+      const otherCars = c ? state.vehicles.filter((x) => x.customerId === c.id && x.key !== theCar?.key) : [];
+      $("#picked").innerHTML = `<div class="card-h" style="margin-bottom:6px"><h2>${icon("check")} Existing customer</h2><div class="r"><button type="button" class="btn ghost sm" id="pickChange">Change</button></div></div>
+        <div><b>${esc(form.cName.value)}</b> <span class="muted">${esc(form.cPhone.value)}</span></div>
+        <div class="muted">${theCar ? `${plateTag(theCar.plate)} ${esc(theCar.makeModel || "")}${theCar.mileageKm ? " · last " + Number(theCar.mileageKm).toLocaleString("en-MY") + " km" : ""}` : "No car on file yet: fill in the car below."}</div>
+        ${st ? `<div class="muted">${st.jobs.length} visit${st.jobs.length === 1 ? "" : "s"}${st.last ? " · last " + dmy(st.last) : ""}${st.owes > 0.009 ? ` · <b style="color:var(--now)">owes ${rm(st.owes)}</b>` : ""}</div>` : ""}
+        ${otherCars.length ? `<div class="chips" style="margin-top:8px">${otherCars.map((x) => `<button type="button" class="chip" data-car="${esc(x.key)}">Use ${esc(x.plate)}</button>`).join("")}</div>` : ""}`;
+      $("#finder").hidden = true;
+      $("#picked").hidden = false;
+      $("#jMain").hidden = false;
+      $("#pickChange").onclick = () => { pickedId = ""; $("#picked").hidden = true; $("#finder").hidden = false; $("#findQ").focus(); };
+      $$("#picked [data-car]").forEach((b) => (b.onclick = () => { const x = vehicleByKey(b.dataset.car); form.regNo.value = ""; form.makeModel.value = ""; form.chassisNo.value = ""; form.engineNo.value = ""; form.regDate.value = ""; fillCar(x); chHint && chHint(); toast(`${x.plate} selected`); }));
+      form.mileageKm.focus();
+    }
+    if ($("#findQ")) {
+      let found = [];
+      const draw = () => {
+        const q = $("#findQ").value.trim();
+        found = findMatches(q);
+        $("#findRes").innerHTML = !q ? "" : found.length ? resHtml(found)
+          : `<p class="muted" style="margin:8px 0 0">No customer or car matches "${esc(q)}". Press <b>New customer</b> to add them.</p>`;
+      };
+      $("#findQ").addEventListener("input", draw);
+      $("#findRes").addEventListener("click", (e) => { const r = e.target.closest("[data-pick]"); if (!r) return; e.preventDefault(); pickResult(found[Number(r.dataset.pick)]); });
+      $("#findQ").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); if (found.length === 1) pickResult(found[0]); } });
+      $("#findNew").onclick = () => {
+        const q = $("#findQ").value.trim();
+        $("#finder").hidden = true;
+        $("#jMain").hidden = false;
+        if (q) { if (plateKey(q).length >= 3 && /\d/.test(q) && /[a-z]/i.test(q) && !/\s{2,}/.test(q) && q.length <= 10) form.regNo.value = q.toUpperCase(); else if (/\d{6,}/.test(digits(q)) && digits(q).length === q.replace(/[\s-]/g, "").length) form.cPhone.value = q; else form.cName.value = q; }
+        (form.cName.value ? form.cPhone : form.cName).focus();
+      };
+      setTimeout(() => $("#findQ").focus(), 50);
+    }
+    // Typed a name by hand? Offer the existing customer instead of making a duplicate.
+    form.cName.insertAdjacentHTML("afterend", `<div class="rows find-res" id="nameHint" aria-live="polite"></div>`);
+    const nameHint = () => {
+      const q = form.cName.value.trim();
+      if (pickedId || job || q.length < 3) return ($("#nameHint").innerHTML = "");
+      const list = findMatches(q).filter((x) => x.c);
+      $("#nameHint").innerHTML = list.length ? `<p class="hint" style="margin:6px 0 2px">Already in the DMS? Tap to use:</p>${resHtml(list.slice(0, 3))}` : "";
+      $$("#nameHint [data-pick]").forEach((r) => (r.onclick = (e) => { e.preventDefault(); const it = list[Number(r.dataset.pick)]; if ($("#finder")) pickResult(it); else { pickedId = it.c.id; form.cPhone.value = it.c.phone; form.cAddress.value = it.c.address; form.cName.value = it.c.name; $("#nameHint").innerHTML = ""; } }));
+    };
+    form.cName.addEventListener("input", nameHint);
 
     form.cName.addEventListener("change", () => {
       const c = state.customers.find((x) => x.name.toLowerCase() === form.cName.value.trim().toLowerCase());
@@ -975,7 +1063,7 @@
       const body = {
         asInvoice: as === "invoice" && mode === "new",
         nextService: $("#nextSvc").checked,
-        customerId: job?.customerId || pre?.customerId || (cust ? cust.id : ""),
+        customerId: job?.customerId || pre?.customerId || pickedId || (cust ? cust.id : ""),
         customer: { name, phone: form.cPhone.value, address: form.cAddress.value },
         vehicle: { makeModel: form.makeModel.value, regNo: form.regNo.value, mileageKm: form.mileageKm.value, chassisNo: form.chassisNo.value, engineNo: form.engineNo.value, regDate: form.regDate.value },
         invoiceTo: { name: form.itName.value, address: form.itAddress.value },
