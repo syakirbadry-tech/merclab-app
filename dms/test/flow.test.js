@@ -104,7 +104,6 @@ async function login() {
 
 const Y = () => P.todayKL().slice(0, 4);
 const clone = (o) => JSON.parse(JSON.stringify(o));
-const SST_ON = { ...company, sstRegistrationNo: "W10-1234-56789012" };
 
 // ================= pricing & numbering =================
 
@@ -164,7 +163,7 @@ test("bad lines are refused with a clear message", () => {
   assert.throws(() => M.cleanGroups([{ request: "ONLY A REQUEST", lines: [] }]), /at least one/);
 });
 
-// ================= template (handover sections 4, 6, 10) =================
+// ================= template (handover 4B layout v3, sections 5, 6, 10) =================
 
 function doc(type, extra = {}) {
   const d = clone(reference);
@@ -172,81 +171,107 @@ function doc(type, extra = {}) {
   d.groups = M.cleanGroups(d.groups);
   return Object.assign(d, extra);
 }
+const FULL = { ...company, registrationNo: "000000-X", tel: "+60 12-000 0000", hotline: "012-000 0000", email: "demo@example.com", bank: { name: "Demo Bank", accountName: "TNS Legacy", accountNo: "123456789012" } };
 
-test("estimate renders on one A4 page with the reference totals", () => {
-  const html = T.render(doc("estimate"), company, { screen: false });
+test("estimate (v3): one A4 page, BILL TO, 4 columns, reference totals, no watermark", () => {
+  const html = T.render(doc("estimate"), FULL, { screen: false });
   assert.equal((html.match(/class="page"/g) || []).length, 1);
   assert.match(html, /<h1>ESTIMATE<\/h1>/);
-  assert.match(html, /Customer copy/);
-  assert.match(html, /Grand Total \(RM\)<\/td><td[^>]*>2,383\.45/);
-  assert.match(html, /Total Amount<\/td>/);
-  assert.ok(!/Service Tax/.test(html));
-  assert.ok(!/SST Registration/.test(html));
-  assert.match(html, /valid for 7 days/);
-  assert.match(html, /computer generated estimate/);
-  assert.match(html, /The Merc Lab is a trading name of TNS Legacy/);
-  assert.match(html, /Order Number/);
+  assert.match(html, /BILL TO/);
+  assert.match(html, />DESCRIPTION<\/th>.*>QTY<\/th>.*>UNIT PRICE \(RM\)<\/th>.*>TOTAL \(RM\)<\/th>/s);
+  assert.match(html, /C1 &#160;·&#160; TO PERFORM SERVICE B PLUS/);
+  assert.match(html, /Perform Service B with Plus package <span class="op">00115800<\/span>/);
+  assert.match(html, /<span>Subtotal<\/span><span class="num">2,383\.45<\/span>/);
+  assert.match(html, /<span>Discount<\/span><span class="num">–<\/span>/);
+  assert.match(html, /TOTAL \(RM\)<\/span><span class="num">2,383\.45/);
+  assert.match(html, /VALID UNTIL<\/div><div class="v">26\/11\/2026/);
+  assert.match(html, /MILEAGE<\/div><div class="v">45,210 km/);
+  assert.match(html, /Customer acceptance \(signature &amp; date\)/);
+  assert.match(html, /For questions about this estimate, call 012-000 0000\. The Merc Lab is a trading name of TNS Legacy\./);
+  assert.match(html, /Page 1 of 1/);
+  assert.match(html, /Demo Bank 1234 5678 9012/);
+  assert.ok(!/Customer copy|CUSTOMER COPY|Service Tax|Shipping|Invoice To/i.test(html.replace(/<style>[\s\S]*?<\/style>/, "")));
+  assert.ok(!/A 247|partNo/.test(html), "no part numbers");
 });
 
-test("invoice: title INVOICE, due date, amount due; TAX INVOICE only with SST", () => {
-  const d = doc("invoice", { number: "INV-2026-00001", repairDate: "2026-11-19", dueDate: "2026-11-26", amountDueSen: 238345 });
-  const html = T.render(d, company, { screen: false });
+test("invoice (v3): Total, Deposit, BALANCE DUE, sale type; TAX INVOICE only with SST", () => {
+  const d = doc("invoice", { number: "INV-2026-00001", date: "2026-11-19", repairDate: "2026-11-19", dueDate: "2026-11-26", paidSen: 100000, amountDueSen: 138345 });
+  const html = T.render(d, FULL, { screen: false });
   assert.match(html, /<h1>INVOICE<\/h1>/);
   assert.ok(!/TAX INVOICE/.test(html));
-  assert.ok(!/Customer copy/.test(html));
-  assert.match(html, /Due Date<\/div>/);
-  assert.match(html, /26\/11\/2026/);
-  assert.match(html, /Amount Due/);
-  assert.match(html, /computer generated invoice/);
+  assert.match(html, /SALE TYPE<\/div><div class="v">CREDIT/);
+  assert.match(html, /<span>Total<\/span><span class="num">2,383\.45/);
+  assert.match(html, /<span>Deposit<\/span><span class="num">-1,000\.00/);
+  assert.match(html, /BALANCE DUE \(RM\)<\/span><span class="num">1,383\.45/);
+  assert.match(html, />Customer signature</);
+  assert.ok(!/MODEL<\/div>|MILEAGE<\/div>/.test(html), "model and mileage only on the estimate");
+  const cash = T.render(doc("invoice", { number: "INV-2026-00002", date: "2026-11-19", repairDate: "2026-11-19", dueDate: "2026-11-19" }), FULL, { screen: false });
+  assert.match(cash, /SALE TYPE<\/div><div class="v">CASH/);
 
-  const sst = T.render(doc("invoice", { number: "INV-2026-00001", repairDate: "2026-11-19" }), SST_ON, { screen: false });
+  const sst = T.render(doc("invoice", { number: "INV-2026-00001", repairDate: "2026-11-19" }), { ...FULL, sstRegistrationNo: "W10-1234-56789012" }, { screen: false });
   assert.match(sst, /<h1>TAX INVOICE<\/h1>/);
-  assert.match(sst, /SST Registration No: W10-1234-56789012/);
-  assert.match(sst, /Total Amount Exclusive of Service Tax/);
-  assert.match(sst, /Service Tax @ 8%<\/td>.*?33\.60/s);
-  assert.match(sst, /Total Amount Inclusive of Service Tax/);
+  assert.match(sst, /Service Tax @ 8%<\/span><span class="num">33\.60/);
   assert.match(sst, /2,417\.05/);
 });
 
-test("receipt: PAID watermark, payment received box, invoice no", () => {
-  const d = doc("receipt", { number: "OR-2026-00001", invoiceNo: "INV-2026-00001", payment: { date: "2026-11-20", method: "DuitNow", reference: "MBB1", amount: 1000 }, balanceAfterSen: 138345 });
-  const html = T.render(d, company, { screen: false });
+test("receipt (v3): amount received, paid earlier, balance; summary mode", () => {
+  const d = doc("receipt", { number: "OR-2026-00002", invoiceNo: "INV-2026-00001", payment: { date: "2026-11-20", method: "DuitNow", reference: "MBB1", amount: 1000 }, totalPaidSen: 150000, balanceAfterSen: 88345 });
+  const html = T.render(d, FULL, { screen: false });
   assert.match(html, /<h1>OFFICIAL RECEIPT<\/h1>/);
-  assert.match(html, />PAID</);
-  assert.match(html, /Payment Received/);
-  assert.match(html, /Invoice No\./);
-  assert.match(html, /Payment Date/);
-  assert.match(html, /RM 1,000\.00/);
-  assert.match(html, /RM 1,383\.45/);
+  assert.match(html, /RECEIPT NO\.<\/div><div class="v b">OR-2026-00002/);
+  assert.match(html, /INVOICE NO\.<\/div><div class="v b">INV-2026-00001/);
+  assert.match(html, /PAYMENT DATE<\/div><div class="v">20\/11\/2026/);
+  assert.match(html, /<span>Paid earlier<\/span><span class="num">-500\.00/);
+  assert.match(html, /<span>Amount received<\/span><span class="num">1,000\.00/);
+  assert.match(html, /BALANCE \(RM\)<\/span><span class="num">883\.45/);
   assert.match(html, /Received with thanks/);
-  assert.match(html, /computer generated receipt/);
-  const summary = T.render(clone(d), { ...company, receiptLineItems: "summary" }, { screen: false });
+  assert.match(html, /Received by \(authorised signature\)/);
+  const summary = T.render(clone(d), { ...FULL, receiptLineItems: "summary" }, { screen: false });
   assert.ok(!summary.includes("FUEL ADDITIVE"));
   assert.match(summary, /INVOICE INV-2026-00001/);
 });
 
+test("labour by hours prints hours × rate", () => {
+  const groups = M.cleanGroups([{ request: "SERVICE", lines: [{ type: "labour", description: "PERFORM MAINTENANCE SERVICE", amount: "120", hours: "1.2" }, { type: "part", description: "OIL FILTER", qty: 1, unitPrice: "230" }] }]);
+  const html = T.render(doc("estimate", { groups }), FULL, { screen: false });
+  assert.match(html, /PERFORM MAINTENANCE SERVICE<\/td><td class="n">1\.2<\/td><td class="n">100\.00<\/td><td class="n">120\.00/);
+  assert.match(html, /TOTAL \(RM\)<\/span><span class="num">350\.00/);
+});
+
 test("mileage 0 or empty blocks the document", () => {
-  assert.throws(() => T.render(doc("estimate", { vehicle: { ...reference.vehicle, mileageKm: 0 } }), company), /Mileage/);
-  assert.throws(() => T.render(doc("estimate", { vehicle: { ...reference.vehicle, mileageKm: "" } }), company), /Mileage/);
+  assert.throws(() => T.render(doc("estimate", { vehicle: { ...reference.vehicle, mileageKm: 0 } }), FULL), /Mileage/);
+  assert.throws(() => T.render(doc("estimate", { vehicle: { ...reference.vehicle, mileageKm: "" } }), FULL), /Mileage/);
 });
 
 test("more than one page of lines flows to page 2 with Page x of y", () => {
-  const lines = Array.from({ length: 30 }, (_, i) => ({ type: "part", description: `PART ${i + 1}`, qty: 1, unitPrice: 10 }));
+  const lines = Array.from({ length: 40 }, (_, i) => ({ type: "part", description: `PART ${i + 1}`, qty: 1, unitPrice: 10 }));
   const d = doc("estimate", { groups: M.cleanGroups([{ request: "BIG JOB", lines }]) });
-  const html = T.render(d, company, { screen: false });
-  const pages = (html.match(/class="page"/g) || []).length;
-  assert.equal(pages, 2);
-  assert.match(html, />1 of 2</);
-  assert.match(html, />2 of 2</);
+  const html = T.render(d, FULL, { screen: false });
+  assert.equal((html.match(/class="page"/g) || []).length, 2);
+  assert.match(html, /Page 1 of 2/);
+  assert.match(html, /Page 2 of 2/);
   assert.match(html, /Continued on next page/);
-  assert.equal((html.match(/Grand Total/g) || []).length, 1, "totals only on the last page");
+  assert.equal((html.match(/TOTAL \(RM\)<\/span>/g) || []).length, 1, "totals only on the last page");
   assert.equal((html.match(/<h1>ESTIMATE<\/h1>/g) || []).length, 2, "header repeated");
 });
 
-test("placeholders show when company details are missing", () => {
-  const html = T.render(doc("estimate"), company, { screen: false });
-  assert.match(html, /Hotline \[PHONE NO\.\]/);
-  assert.match(html, /\[X\]-month parts warranty/);
+test("missing details: hidden on the customer copy, chips on the staff view, placeholders refused", () => {
+  const bare = { ...company, legalName: "TNS Legacy" };
+  const html = T.render(doc("estimate"), bare, { screen: false });
+  assert.ok(!/Fill in|\[|warranty|undefined|null/.test(html.replace(/<style>[\s\S]*?<\/style>/, "")), "nothing empty or placeholder on the customer copy");
+  assert.match(html, /Bank details will be provided with your invoice\./);
+  assert.ok(!/For questions about this estimate, call/.test(html), "no hotline, no call line");
+  assert.ok(!/DuitNow/.test(html), "no QR box without an image");
+  const draft = T.render(doc("estimate"), bare, { screen: true, draft: true });
+  assert.match(draft, /Fill in: SSM no\./);
+  assert.match(draft, /Fill in: workshop address/);
+  assert.match(draft, /Fill in: warranty months/);
+  assert.match(draft, /Fill in: bank name and account no\./);
+  assert.match(draft, /@media print\{\.miss,\.fill,\.no-print\{display:none!important\}\}/);
+  assert.throws(() => T.render(doc("estimate"), { ...FULL, address: "[WORKSHOP ADDRESS]" }), /placeholder text \[WORKSHOP ADDRESS\]/);
+  const withQr = T.render(doc("estimate"), { ...FULL, partsWarrantyMonths: 6, duitNowQrImage: "https://example.com/qr.png" }, { screen: false });
+  assert.match(withQr, /6-month parts warranty/);
+  assert.match(withQr, /<img src="https:\/\/example\.com\/qr\.png" alt="DuitNow QR"/);
 });
 
 // ================= AI cleaning =================
@@ -345,7 +370,8 @@ test("receipt → parts → estimate → deposit → invoice → final payment �
   assert.match(estPage.text, /376\.00/);
   assert.match(estPage.text, /85,210/);
   assert.match(estPage.text, /TNS Legacy/);
-  assert.match(estPage.text, /1234567890/);
+  assert.match(estPage.text, /1234 5678 90/);
+  assert.match(estPage.text, /WDD2050421F123456/);
   assert.equal((await call("GET", "/d/qdeadbeef", { noAuth: true })).status, 404);
 
   // 3. Deposit RM100 against the estimate (slip mentions the estimate no).
@@ -382,7 +408,7 @@ test("receipt → parts → estimate → deposit → invoice → final payment �
   const invPage = await call("GET", `/d/${j2.invoiceToken}`, { noAuth: true });
   assert.match(invPage.text, /<h1>INVOICE<\/h1>/);
   assert.match(invPage.text, /406\.00/);
-  assert.match(invPage.text, /RM 306\.00/, "amount due");
+  assert.match(invPage.text, /BALANCE DUE \(RM\)<\/span><span class="num">306\.00/, "amount due");
   assert.match(invPage.text, /27\/11\/2026/);
   // Estimate link still shows the estimate as it was.
   const estAgain = await call("GET", `/d/${job.token}`, { noAuth: true });
@@ -399,11 +425,11 @@ test("receipt → parts → estimate → deposit → invoice → final payment �
   //    receipt still shows the balance right after it.
   const r2 = await call("GET", `/d/${last.body.payment.token}`, { noAuth: true });
   assert.match(r2.text, /OFFICIAL RECEIPT/);
-  assert.match(r2.text, /Invoice No\./);
-  assert.match(r2.text, /RM 306\.00/);
-  assert.match(r2.text, /Balance Outstanding<\/div><div[^>]*>RM 0\.00/);
+  assert.match(r2.text, /INVOICE NO\./);
+  assert.match(r2.text, /Amount received<\/span><span class="num">306\.00/);
+  assert.match(r2.text, /BALANCE \(RM\)<\/span><span class="num">0\.00/);
   const r1 = await call("GET", `/d/${dep.body.payment.token}`, { noAuth: true });
-  assert.match(r1.text, /Balance Outstanding<\/div><div[^>]*>RM 276\.00/);
+  assert.match(r1.text, /BALANCE \(RM\)<\/span><span class="num">276\.00/);
 
   // Paid / invoiced jobs cannot be cancelled.
   assert.equal((await call("POST", `/api/jobs/${job.id}/status`, { body: { status: "Cancelled" } })).status, 400);
@@ -462,9 +488,9 @@ test("settings update; owner details print on documents", async () => {
   assert.equal((await call("PUT", "/api/settings", { body: { markupPercent: "abc" } })).status, 400);
   const j = await call("POST", "/api/jobs", { body: jobBody(["", ""]) });
   const page = await call("GET", `/d/${j.body.job.token}`, { noAuth: true });
-  assert.match(page.text, /Hotline 012-000 0000/);
+  assert.match(page.text, /call 012-000 0000\./);
   assert.match(page.text, /6-month parts warranty/);
-  assert.match(page.text, /SSM Registration No: 202603123456/);
+  assert.match(page.text, /\(202603123456\)/);
 });
 
 test("matching ranks by document no, amount and payer name", () => {
@@ -575,8 +601,8 @@ test("discount comes off before tax and prints on the document", () => {
   assert.equal(t.discount, 8345);
   assert.equal(t.grand, 230000);
   const html = T.render({ ...clone(reference), type: "estimate", groups, discount: 83.45 }, company, { screen: false });
-  assert.match(html, /Less Discount/);
-  assert.match(html, /2,300\.00/);
+  assert.match(html, /<span>Discount<\/span><span class="num">-83\.45/);
+  assert.match(html, /TOTAL \(RM\)<\/span><span class="num">2,300\.00/);
 });
 
 test("packages, fault cases, check-in, inspection report, online approval", async () => {
