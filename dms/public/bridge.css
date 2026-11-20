@@ -271,3 +271,25 @@ html[data-theme="dark"] { --muted: #a3aab3; }
 .topbar .search-btn { color: #fff; }
 @media (max-width: 860px) { body.search-open .me { visibility: hidden; } }
 .bk .t { color: var(--accent); }
+
+/* ---------- 21st.dev patterns, ported to plain CSS ----------
+   KPI tile ("Tweenly Chart KPI"): delta pill + dotted sparkline.
+   Empty state ("Empty State"): icon circle, title, one line of help. */
+.tile { position: relative; overflow: hidden; }
+.tile .foot { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.delta { display: inline-flex; align-items: center; gap: 2px; height: 20px; padding: 0 7px; border-radius: 999px; font: 600 12px/1 var(--font); font-variant-numeric: tabular-nums; }
+.delta.up { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.delta.down { color: var(--now); background: color-mix(in srgb, var(--now) 14%, transparent); }
+.delta.flat { color: var(--muted); background: color-mix(in srgb, var(--muted) 14%, transparent); }
+.tile .spark { display: block; width: 100%; height: 32px; margin-top: 10px; }
+.spark pattern circle { fill: var(--accent); opacity: .45; }
+.spark .area { fill: url(#sparkDots); }
+.spark .ln { fill: none; stroke: var(--accent); stroke-width: 1.6; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.empty { display: grid; justify-items: center; gap: 6px; padding: 40px 20px; text-align: center; color: var(--muted); }
+.empty .ei { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; margin-bottom: 6px; color: var(--accent);
+  background: radial-gradient(circle at 30% 25%, color-mix(in srgb, var(--accent) 16%, transparent), color-mix(in srgb, var(--accent) 6%, transparent)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent); }
+.empty .ei .ic { width: 26px; height: 26px; }
+.empty b { color: var(--ink); font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+.empty .ed { max-width: 22rem; font-size: 13.5px; line-height: 1.5; }
+@media (prefers-reduced-motion: no-preference) { .empty .ei { animation: empty-in .4s var(--ease-ios); } }
+@keyframes empty-in { from { opacity: 0; transform: scale(.92); } }

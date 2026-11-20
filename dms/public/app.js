@@ -223,7 +223,24 @@
     return { el, close, $: (s) => el.querySelector(s) };
   }
 
-  const emptyBox = (ic, msg) => `<div class="empty">${icon(ic)}${msg}</div>`;
+  // Empty state (after the 21st.dev "Empty State" pattern): icon circle, title, one line of help.
+  const emptyBox = (ic, msg) => {
+    const m = String(msg).match(/^(.+?[.!?])\s+(.+)$/);
+    return `<div class="empty"><span class="ei">${icon(ic, "l")}</span><b>${m ? m[1] : msg}</b>${m ? `<span class="ed">${m[2]}</span>` : ""}</div>`;
+  };
+  // KPI extras (after the 21st.dev "Tweenly Chart KPI" stat card): delta pill and a dotted sparkline.
+  const deltaPill = (now, before, label) => {
+    if (!(before > 0)) return "";
+    const pc = Math.round(((now - before) / before) * 100);
+    const cls = pc > 0 ? "up" : pc < 0 ? "down" : "flat";
+    return `<span class="delta ${cls}" title="${label}"><span aria-hidden="true">${pc > 0 ? "↑" : pc < 0 ? "↓" : "→"}</span>${Math.abs(pc)}%<span class="sr"> ${pc >= 0 ? "up" : "down"} ${label}</span></span>`;
+  };
+  function sparkline(values) {
+    const max = Math.max(...values, 1), w = 120, h = 32, n = values.length - 1 || 1;
+    const pts = values.map((v, i) => [Math.round((i / n) * w * 10) / 10, Math.round((h - 2 - (v / max) * (h - 6)) * 10) / 10]);
+    const line = pts.map((p, i) => (i ? "L" : "M") + p.join(" ")).join(" ");
+    return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><defs><pattern id="sparkDots" width="4" height="4" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.9"></circle></pattern></defs><path class="area" d="${line} L${w} ${h} L0 ${h} Z"></path><path class="ln" d="${line}"></path></svg>`;
+  }
 
   // ---------- data ----------
 
@@ -471,6 +488,12 @@
     const inToday = pays.filter((p) => p.paidOn === today).reduce((t, p) => t + p.amount, 0);
     const inMonth = pays.filter((p) => (p.paidOn || "").startsWith(month)).reduce((t, p) => t + p.amount, 0);
     const invMonth = state.jobs.filter((j) => j.invoiceNo && j.status !== "Cancelled" && (j.invoiceDate || "").startsWith(month));
+    const pm = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 2, 1)).toISOString().slice(0, 7);
+    const sameDay = (d) => !!d && d.startsWith(pm) && d.slice(8) <= today.slice(8);
+    const inPrev = pays.filter((p) => sameDay(p.paidOn)).reduce((t, p) => t + p.amount, 0);
+    const invPrev = state.jobs.filter((j) => j.invoiceNo && j.status !== "Cancelled" && sameDay(j.invoiceDate)).reduce((t, j) => t + j.total, 0);
+    const days14 = [...Array(14)].map((_, i) => new Date(Date.parse(today) - (13 - i) * 864e5).toISOString().slice(0, 10));
+    const spark14 = days14.map((d) => pays.filter((p) => p.paidOn === d).reduce((t, p) => t + p.amount, 0));
     const owed = owedInvoices();
     const ws = state.jobs.filter(isWorkshop);
     const ready = ws.filter((j) => j.stage === "Ready").length;
@@ -479,13 +502,13 @@
     const low = state.parts.filter((p) => p.qtyLeft <= 1).slice(0, 6);
     const soon = state.vehicles.filter((v) => v.nextServiceDate && daysBetween(today, v.nextServiceDate) <= 30).sort((a, b) => a.nextServiceDate.localeCompare(b.nextServiceDate)).slice(0, 6);
     const monthName = new Date(today + "T00:00:00Z").toLocaleString("en-MY", { month: "long", timeZone: "UTC" });
-    const tile = (href, ic, lbl, val, foot) => `<a class="tile" href="${href}"><div class="lbl">${icon(ic)}${lbl}</div><div class="val">${val}</div><div class="foot">${foot}</div></a>`;
+    const tile = (href, ic, lbl, val, foot, extra = "") => `<a class="tile" href="${href}"><div class="lbl">${icon(ic)}${lbl}</div><div class="val">${val}</div><div class="foot">${foot}</div>${extra}</a>`;
 
     view.innerHTML = `
       ${pageHead("Dashboard", { sub: new Date(today + "T00:00:00Z").toLocaleDateString("en-MY", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }), acts: `<a class="btn alt" href="#/money?upload=1">${icon("upload")}Payment slip</a><a class="btn" href="#/jobs/new">${icon("plus")}New estimate</a>` })}
       <div class="grid g4 dash-tiles" style="margin-bottom:16px">
-        ${tile("#/money", "money", "Money in today", rm(inToday), `${monthName}: ${rm(inMonth)}`)}
-        ${tile("#/jobs?f=invoices", "receipt", `Invoiced in ${monthName}`, rm(invMonth.reduce((t, j) => t + j.total, 0)), `${invMonth.length} invoice${invMonth.length === 1 ? "" : "s"}`)}
+        ${tile("#/money", "money", "Money in today", rm(inToday), `${monthName}: ${rm(inMonth)} ${deltaPill(inMonth, inPrev, "on the same days last month")}`, sparkline(spark14))}
+        ${tile("#/jobs?f=invoices", "receipt", `Invoiced in ${monthName}`, rm(invMonth.reduce((t, j) => t + j.total, 0)), `${invMonth.length} invoice${invMonth.length === 1 ? "" : "s"} ${deltaPill(invMonth.reduce((t, j) => t + j.total, 0), invPrev, "on the same days last month")}`)}
         ${tile("#/money?tab=owed", "alert", "Owed to you", rm(owed.reduce((t, j) => t + j.balance, 0)), `${owed.length} unpaid invoice${owed.length === 1 ? "" : "s"}`)}
         ${tile("#/jobs?f=workshop", "car", "Cars in workshop", ws.length, `${ready} ready for pickup`)}
       </div>
@@ -1891,7 +1914,7 @@
         ${list.map((c) => `<tr><td class="nowrap strong">${esc(c.no)}<div class="sm">${dmy(c.date)}</div></td><td class="d nowrap">${dmy(c.date)}</td><td>${esc(c.customerName)}${c.refund ? `<div class="sm">Refund ${rm(c.refund)}</div>` : ""}</td>
           <td class="d">${c.jobId ? `<a href="#/jobs/${c.jobId}">${esc(c.invoiceNo)}</a>` : esc(c.invoiceNo)}</td><td class="d">${esc(c.reason)}</td><td class="num strong">${rm(c.amount)}</td>
           <td class="num"><a class="btn ghost sm" href="${esc(docLink(c.token))}" target="_blank" rel="noopener">${icon("open")}PDF</a></td></tr>`).join("")}</tbody></table></div>`
-        : emptyBox("receipt", "No credit notes.")}</div>`;
+        : emptyBox("cn", "No credit notes yet. To correct an invoice or refund a customer, open the invoice and press Credit note.")}</div>`;
   }
 
   // ---------- profit & loss ----------
