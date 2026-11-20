@@ -296,3 +296,15 @@ html[data-theme="dark"] { --muted: #a3aab3; }
 
 /* No floating Create button while filling in a form (it would cover the fields). */
 body:has(#view form) .fab-float { display: none !important; }
+
+/* New estimate: find the customer or car first */
+.finder .search { position: relative; }
+.finder .search input { padding-left: 40px; font-size: 16px; }
+.finder .search .ic { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); }
+.find-res > a { min-height: 56px; }
+.find-res .grow b { display: inline; }
+.find-res .grow span { display: block; font-size: 13px; color: var(--muted); }
+.picked { border-left: 3px solid var(--ok); }
+
+.group .gh { display: flex; align-items: center; gap: 8px; }
+.group .gh input { flex: 1; min-width: 0; }

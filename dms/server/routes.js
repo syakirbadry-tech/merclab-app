@@ -415,11 +415,35 @@ const readable = (groups) => groups.map((g) => [`${g.code} ${g.request}`.trim(),
 
 async function saveCustomer(customerId, job) {
   const cust = { Name: job.customer.name, Phone: job.customer.phone, Car: job.vehicle.makeModel, Plate: job.vehicle.regNo, Address: job.customer.address.join("\n") };
+  if (!isRec(customerId)) customerId = await findExistingCustomer(job);
   if (isRec(customerId)) {
     await db.update("customers", [{ id: customerId, fields: cust }]);
     return customerId;
   }
   return (await db.create("customers", [cust]))[0].id;
+}
+
+// Before creating a customer, look for one already in the DMS: same phone number,
+// the car's plate already linked to a customer, or the same name (ignoring titles).
+async function findExistingCustomer(job) {
+  const digits = (s) => String(s || "").replace(/\D/g, "").replace(/^60/, "0").slice(-9);
+  const norm = (s) => String(s || "").toLowerCase().replace(/\b(mr|mrs|ms|miss|encik|en|puan|pn|cik|dr|tuan|tn|haji|hj|hajah|hjh|datuk|dato|datin)\b\.?/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
+  const phone = digits(job.customer.phone);
+  const pk = String(job.vehicle.regNo || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const customers = await db.list("customers");
+  if (phone.length >= 7) {
+    const c = customers.find((r) => digits(r.fields.Phone) === phone);
+    if (c) return c.id;
+  }
+  if (pk) {
+    const v = (await db.list("vehicles")).find((r) => (r.fields["Plate key"] || "") === pk && isRec(r.fields["Customer record"]));
+    if (v && customers.some((r) => r.id === v.fields["Customer record"])) return v.fields["Customer record"];
+  }
+  // Name only when no phone was given, so two different people with the same name are not merged.
+  if (phone.length >= 7) return "";
+  const n = norm(job.customer.name);
+  const same = customers.filter((r) => n && norm(r.fields.Name) === n);
+  return same.length === 1 ? same[0].id : "";
 }
 
 function jobFields(job, details) {

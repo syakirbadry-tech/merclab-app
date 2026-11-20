@@ -927,3 +927,20 @@ test("labour hours are kept on the line; packages store the chassis models they 
   r = await call("POST", "/api/jobs", { body: { customer: { name: "Test" }, vehicle: { mileageKm: 1000 }, groups: [{ request: "x", lines: [{ type: "labour", description: "Diagnosis", hours: "-1", amount: "1" }] }] } });
   assert.equal(r.status, 400);
 });
+
+test("new estimate reuses the existing customer by phone or plate instead of creating a duplicate", async () => {
+  reset();
+  await login();
+  const base = { vehicle: { mileageKm: 1000, regNo: "AMG 5515" }, groups: [{ request: "Service", lines: [{ type: "labour", description: "Service", amount: 100 }] }] };
+  let r = await call("POST", "/api/jobs", { body: { ...base, customer: { name: "Mr. Syazwan Ahmad", phone: "012-345 6789" } } });
+  assert.equal(r.status, 201);
+  assert.equal(store.customers.length, 1);
+  const id = store.customers[0].id;
+  // Same phone, name typed differently: same customer
+  r = await call("POST", "/api/jobs", { body: { ...base, customer: { name: "Syazwan", phone: "+60 12-345 6789" } } });
+  assert.equal(store.customers.length, 1);
+  assert.equal(r.body.job.customerId, id);
+  // Different phone, different name: a new customer
+  r = await call("POST", "/api/jobs", { body: { ...base, vehicle: { mileageKm: 5, regNo: "WXY 1" }, customer: { name: "Mr. Ali", phone: "019-999 0000" } } });
+  assert.equal(store.customers.length, 2);
+});
