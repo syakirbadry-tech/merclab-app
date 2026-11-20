@@ -98,8 +98,8 @@ h1{text-align:center;font-size:24px;margin:18px 0}table{width:100%;border-collap
 .big{font-size:20px;font-weight:700}.f{border-top:1px solid #8a8a8a;margin-top:28px;padding-top:6px;font-size:12px;color:#333}
 @media print{body{background:#fff}.p{box-shadow:none;margin:0}.bar{display:none}}.bar{text-align:center;margin:16px}.bar button{font:700 16px Arial;padding:12px 26px;border:0;border-radius:10px;background:#111;color:#fff}
 </style></head><body><div class="p">
-<div class="lh"><div><b>${esc(company.brandName || "THE MERC LAB")}</b><div>Hotline ${esc(company.hotline)}</div></div>
-<div class="co"><div style="font-size:15px;font-weight:700;color:#111">${esc(company.legalName)}</div><div>SSM Registration No: ${esc(company.registrationNo)}</div><div>${esc(company.address).replace(/\n/g, ", ")}</div><div>Tel: ${esc(company.tel)} · ${esc(company.email)}</div></div></div>
+<div class="lh"><div><b>${esc(company.brandName || "THE MERC LAB")}</b>${company.hotline ? `<div>Hotline ${esc(company.hotline)}</div>` : ""}</div>
+<div class="co"><div style="font-size:15px;font-weight:700;color:#111">${esc(company.legalName)}</div>${company.registrationNo ? `<div>SSM Registration No: ${esc(company.registrationNo)}</div>` : ""}${company.address ? `<div>${esc(company.address).replace(/\n/g, ", ")}</div>` : ""}${[company.tel, company.email].filter(Boolean).length ? `<div>${[company.tel ? "Tel: " + esc(company.tel) : "", esc(company.email || "")].filter(Boolean).join(" · ")}</div>` : ""}</div></div>
 <h1>CREDIT NOTE</h1>
 <table>${row("Credit Note No.", esc(cn.no))}${row("Date", esc(cn.date.split("-").reverse().join("/")))}${row("Customer", esc(cn.customerName))}${row("For Invoice No.", esc(cn.invoiceNo))}
 ${row("Vehicle", esc([job?.car, job?.plate].filter(Boolean).join(" · ")))}${row("Reason", esc(cn.reason).replace(/\n/g, "<br>"))}

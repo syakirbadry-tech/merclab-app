@@ -5,6 +5,7 @@ const db = require("./airtable");
 const M = require("./money");
 const { render, DocumentError } = require("./template");
 const { jobOut, paymentOut, loadSettings, companyFor } = require("./routes");
+const { readCookie, validToken } = require("./auth");
 const W = require("./workshop");
 const F = require("./finance");
 
@@ -18,6 +19,8 @@ function jobDoc(job, type) {
     type,
     number: isEstimate ? job.estimateNo : job.invoiceNo,
     date: isEstimate ? job.date : job.invoiceDate,
+    validUntil: isEstimate ? job.validUntil : "",
+    saleType: d.saleType || "",
     time: isEstimate ? d.estimateTime : d.invoiceTime,
     accountNo: d.accountNo,
     orderNo: d.orderNo,
@@ -38,6 +41,8 @@ function jobDoc(job, type) {
     estimateNo: job.estimateNo || null,
     invoiceDate: job.invoiceDate,
     amountDueSen: Math.round(job.balance * 100),
+    paidSen: Math.round((job.paid || 0) * 100),
+    creditedSen: Math.round((job.credited || 0) * 100),
   };
 }
 
@@ -81,6 +86,8 @@ async function docRoute(req, res) {
   if (!/^[qirhc][a-f0-9]{32}$/.test(token)) return res.status(404).send("Not found");
   try {
     const company = companyFor(await loadSettings());
+    // Logged-in staff see the draft view (missing details as "Fill in" chips, never printed).
+    const opts = { draft: validToken(readCookie(req)) };
     let doc;
     if (token[0] === "c") {
       const row = await findByToken("credits", "Link token", token);
@@ -99,7 +106,7 @@ async function docRoute(req, res) {
       if (!row) return res.status(404).send("Not found");
       const job = jobOut(row);
       doc = jobDoc(job, token[0] === "q" ? "estimate" : "invoice");
-      const html = render(doc, company);
+      const html = render(doc, company, opts);
       return res.send(token[0] === "q" ? W.addApproval(html, job, token) : html);
     } else {
       const row = await findByToken("payments", "Link token", token);
@@ -109,7 +116,7 @@ async function docRoute(req, res) {
       const all = (await db.list("payments")).map(paymentOut).filter((x) => x.jobId === job.id);
       doc = receiptDoc(p, job, all, company);
     }
-    return res.send(render(doc, company));
+    return res.send(render(doc, company, opts));
   } catch (err) {
     if (err instanceof DocumentError) return res.status(400).send(`<p style="font:16px sans-serif;padding:20px">This document cannot be made: ${err.message.replace(/</g, "&lt;")}</p>`);
     console.error("[doc]", err.message);

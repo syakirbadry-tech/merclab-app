@@ -55,12 +55,15 @@ The AI only fills in the forms. Nothing is saved until the owner presses Save. D
 
 ## Documents (A4)
 
-Built to `docs/handover/HANDOVER-document-templates.md` and the approved layout `docs/handover/reference-estimate.html`.
+Built to the document handover, **layout v3** (section 4B, 20 Nov 2026), which follows the TNS Legacy invoice: centred Merc Lab logo and business line, BILL TO on the left, the document title and numbers on the right, a 4-column table (Description, Qty, Unit price, Total), notes and totals, signature lines and footer. No watermark.
 
 - **One template** (`server/template.js`) for ESTIMATE, INVOICE and OFFICIAL RECEIPT. The client opens a private link and uses **Save as PDF**; the page is set to A4 with no margins.
+- **Totals:** estimate = Subtotal, Discount, TOTAL. Invoice = Subtotal, Discount, Total, Deposit, BALANCE DUE. Receipt = Subtotal, Discount, Total, (Paid earlier), Amount received, BALANCE. Labour priced by hours prints hours × rate (1.2 × 100.00).
+- **Missing details are never printed.** An empty Settings value (SSM no., address, email, bank, warranty, DuitNow QR) leaves its label out of the customer's copy. When you open a document link while logged in to the app, you get the **staff view**: amber "Fill in: …" boxes show what is missing. They never print. A customer document with leftover `[...]` placeholder text is refused.
+- **Print vs online:** the approval panel ("Happy with this estimate?") and the Save as PDF button sit outside the A4 page and are hidden when printing.
 - **Money** is kept in integer sen (`server/money.js`). Reference test case: parts 1,623.70, labour 759.75, grand total 2,383.45. With SST switched on: 33.60 tax and 2,417.05.
 - **SST:** off, because TNS Legacy is not SST-registered. To switch it on, set `sstRegistrationNo` in `config/company.json`. The title then becomes TAX INVOICE and the service tax rows appear. Each line has a `taxable` flag.
-- **Long jobs** continue on page 2: the header is repeated, the Page field reads "1 of 2", and the totals stay on the last page. `npm run check-layout` checks 1–70 lines in real Chromium.
+- **Long jobs** continue on page 2: the header is repeated, the footer reads "Page 1 of 2", and the totals stay on the last page. One page holds about 14 lines on an estimate (16 on an invoice). `npm run check-layout` checks 1–70 lines in real Chromium (also with `LONG_TOP=1` for long names and `DRAFT=1` for the staff view).
 - **Numbers:** gap-free per type per year: `EST-2026-00001`, `INV-2026-00001`, `OR-2026-00001` (and `PUR-` for supplier receipts).
 - **PDF without the app:** `npm run generate -- --type estimate --data test/fixtures/reference-estimate.json --out EST.pdf`. This needs `npm i -D playwright && npx playwright install chromium`. The Arimo font is bundled in `public/fonts`.
 - **Logo** as a standalone file: `public/brand/merc-lab-logo.svg`.
@@ -71,7 +74,6 @@ Switches in `config/company.json`:
 |---|---|
 | `roundTo5Sen` | Round the grand total to 5 sen |
 | `receiptLineItems` | `"full"` (copy the lines) or `"summary"` (one line) |
-| `estimateWatermark` | Show "Customer copy" on estimates |
 
 Personal details are not stored in this public repository; they are entered in Settings.
 
@@ -100,6 +102,6 @@ Hosting: `render.yaml` in the repository root sets up a Render web service from 
 1. Exact registered name on the SSM certificate (with or without "Enterprise").
 2. SSM no., workshop address, hotline, tel, email, WhatsApp. Enter them in Settings.
 3. Bank name, account no., DuitNow QR. Enter them in Settings.
-4. Parts warranty length (months). Shows as `[X]` until it is set.
+4. Parts warranty length (months). The warranty sentence is left out until it is set.
 5. 5-sen rounding: every bill, or cash only? Currently off.
 6. Receipt: full line items or a summary? Currently full.

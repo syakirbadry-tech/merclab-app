@@ -10,7 +10,7 @@ The design handover is in `merclab-handover/`. Its PNG screenshots are not kept 
 ## Hard rules
 1. **No frameworks, no build step, no Tailwind, no React.** Edit `index.html`, `style.css` / `merclab.css`, `app.js` and `condition.js` directly.
 2. **Routes and the server API stay the same** in phases 1–6. Every existing screen, button and field must still exist after a change.
-3. **Do not change the A4 documents** (estimate, invoice, official receipt, printed or PDF). You may restyle only the web wrapper on `/d/:token`.
+3. **Do not change the A4 documents** (estimate, invoice, official receipt, printed or PDF) unless the owner approves a new design. The approved design is layout v3 (20 Nov 2026, `server/template.js`). You may restyle the web wrapper on `/d/:token`.
 4. **Money:** `RM 1,234.50` (space after RM, two decimals, comma thousands). **Dates:** `dd/mm/yyyy`. **Time zone:** Asia/Kuala_Lumpur. **Plates:** `VDM 2841`.
 5. **Accessibility:** tap targets of at least 44px (52px for phone primary actions), 16px text in inputs, WCAG AA contrast, full keyboard use, a visible focus ring, and real `<button>` / `<a href>` elements (never a clickable `<div>`).
 6. **PWA:** respect `env(safe-area-inset-*)` at the top bar, the bottom bar and the action bar.
