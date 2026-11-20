@@ -7,6 +7,18 @@
   <meta name="theme-color" content="#1a1d22">
   <meta name="robots" content="noindex, nofollow">
   <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-startup-image" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (prefers-color-scheme: light)" href="ios-launch/launch-iphone-15-16-plus-promax-light.png">
+  <link rel="apple-touch-startup-image" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (prefers-color-scheme: dark)" href="ios-launch/launch-iphone-15-16-plus-promax-dark.png">
+  <link rel="apple-touch-startup-image" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (prefers-color-scheme: light)" href="ios-launch/launch-iphone-15-16-light.png">
+  <link rel="apple-touch-startup-image" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (prefers-color-scheme: dark)" href="ios-launch/launch-iphone-15-16-dark.png">
+  <link rel="apple-touch-startup-image" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (prefers-color-scheme: light)" href="ios-launch/launch-iphone-12-14-light.png">
+  <link rel="apple-touch-startup-image" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (prefers-color-scheme: dark)" href="ios-launch/launch-iphone-12-14-dark.png">
+  <link rel="apple-touch-startup-image" media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (prefers-color-scheme: light)" href="ios-launch/launch-iphone-x-11pro-light.png">
+  <link rel="apple-touch-startup-image" media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (prefers-color-scheme: dark)" href="ios-launch/launch-iphone-x-11pro-dark.png">
+  <link rel="apple-touch-startup-image" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (prefers-color-scheme: light)" href="ios-launch/launch-iphone-xr-11-light.png">
+  <link rel="apple-touch-startup-image" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (prefers-color-scheme: dark)" href="ios-launch/launch-iphone-xr-11-dark.png">
+  <link rel="apple-touch-startup-image" media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (prefers-color-scheme: light)" href="ios-launch/launch-iphone-se-light.png">
+  <link rel="apple-touch-startup-image" media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (prefers-color-scheme: dark)" href="ios-launch/launch-iphone-se-dark.png">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
   <link rel="icon" type="image/png" href="icons/icon-192.png">
@@ -17,9 +29,35 @@
   <title>Merc Lab DMS</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="merclab.css">
+  <link rel="stylesheet" href="splash.css">
+  <link rel="stylesheet" href="login.css">
+  <link rel="stylesheet" href="feedback.css">
   <link rel="stylesheet" href="bridge.css">
 </head>
 <body class="ml">
+  <div class="ml-splash" id="ml-splash" role="status" aria-live="polite" aria-label="The Merc Lab is starting">
+    <div class="ml-splash__grid" aria-hidden="true"></div>
+    <div class="ml-splash__scan" aria-hidden="true"></div>
+    <div class="ml-splash__glow" aria-hidden="true"></div>
+    <div class="ml-splash__bloom" aria-hidden="true"></div>
+    <div class="ml-splash__stage"><div class="ml-splash__beat">
+      <svg class="ml-splash__logo" viewBox="0 0 300 104" role="img" aria-label="The Merc Lab, Independent Mercedes-Benz Specialist">
+        <defs><clipPath id="ml-splash-merc"><rect x="-2" y="14" width="112" height="44"></rect></clipPath></defs>
+        <g font-family="Arimo, Arial, Helvetica, sans-serif" font-weight="700">
+          <text class="s-the ink" x="0" y="11" font-size="12" letter-spacing="6">THE</text>
+          <g clip-path="url(#ml-splash-merc)"><text class="s-merc ink" x="0" y="50" font-size="36" letter-spacing="-0.36">MERC</text></g>
+          <rect class="s-box ink" x="112" y="17" width="79" height="38"></rect>
+          <text class="s-lab" x="119" y="50" font-size="36" letter-spacing="-0.36">LAB</text>
+          <path class="s-trace" d="M0 64H136L143 59L150 69L157 58L164 70L171 64H294" pathLength="1"></path>
+          <text class="s-tag ink" x="0" y="86" font-size="12" letter-spacing="0.72">INDEPENDENT MERCEDES-BENZ SPECIALIST</text>
+        </g>
+      </svg>
+      <span class="ml-splash__ring" aria-hidden="true"></span>
+      <span class="ml-splash__ring r2" aria-hidden="true"></span>
+      <span class="ml-splash__dot" aria-hidden="true"></span>
+    </div></div>
+  </div>
+  <script src="splash.js"></script>
   <div id="shell" hidden>
     <aside class="side" id="side" aria-label="Main menu"></aside>
     <div class="scrim" id="scrim"></div>
@@ -38,10 +76,34 @@
     </div>
     <nav class="bottom" id="bottom" aria-label="Quick menu"></nav>
   </div>
-  <div id="login" hidden></div>
+  <main class="ml login" id="login" hidden>
+    <svg class="login__trace" viewBox="0 0 1200 120" preserveAspectRatio="none" aria-hidden="true">
+      <path class="ln" pathLength="1" vector-effect="non-scaling-stroke" d="M0 60H180L192 52L204 72L216 34L228 82L240 60H1200"></path>
+      <path class="pulse" pathLength="1" vector-effect="non-scaling-stroke" d="M0 60H180L192 52L204 72L216 34L228 82L240 60H1200"></path>
+    </svg>
+    <section class="login__card" aria-labelledby="login-title">
+      <img class="login__logo ls" style="--i: 0" src="/brand/merc-lab-logo.svg" alt="The Merc Lab, Independent Mercedes-Benz Specialist" width="168" height="58">
+      <h1 class="login__title ls" id="login-title" style="--i: 1">Welcome back</h1>
+      <p class="login__sub ls" style="--i: 2">Sign in to the workshop system.</p>
+      <form class="login__form ls" id="login-form" style="--i: 3" novalidate>
+        <label for="login-pw">Password</label>
+        <div class="login__pw">
+          <input class="input" id="login-pw" name="password" type="password" autocomplete="current-password" required aria-describedby="login-msg">
+          <button class="login__eye" id="login-eye" type="button" aria-label="Show password" aria-pressed="false">
+            <svg class="ic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+          </button>
+        </div>
+        <p class="login__msg" id="login-msg" role="alert" aria-live="polite"></p>
+        <button class="btn lg block" id="login-go" type="submit">Sign in</button>
+      </form>
+    </section>
+    <p class="login__foot">Independent Mercedes-Benz Specialist · DMS 1.1</p>
+  </main>
   <div id="toast" role="status"></div>
 
   <script src="condition.js"></script>
+  <script src="feedback.js"></script>
   <script src="app.js"></script>
+  <script src="login.js"></script>
 </body>
 </html>

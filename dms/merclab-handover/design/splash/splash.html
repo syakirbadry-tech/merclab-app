@@ -1,0 +1,24 @@
+<!-- THE MERC LAB · app start animation. Paste as the FIRST child of <body> in index.html,
+     before the app's own markup, so it paints on the very first frame. -->
+<div class="ml-splash" id="ml-splash" role="status" aria-live="polite" aria-label="The Merc Lab is starting">
+  <div class="ml-splash__grid" aria-hidden="true"></div>
+  <div class="ml-splash__scan" aria-hidden="true"></div>
+  <div class="ml-splash__glow" aria-hidden="true"></div>
+  <div class="ml-splash__bloom" aria-hidden="true"></div>
+  <div class="ml-splash__stage"><div class="ml-splash__beat">
+    <svg class="ml-splash__logo" viewBox="0 0 300 104" role="img" aria-label="The Merc Lab, Independent Mercedes-Benz Specialist">
+      <defs><clipPath id="ml-splash-merc"><rect x="-2" y="14" width="112" height="44"></rect></clipPath></defs>
+      <g font-family="Arimo, Arial, Helvetica, sans-serif" font-weight="700">
+        <text class="s-the ink" x="0" y="11" font-size="12" letter-spacing="6">THE</text>
+        <g clip-path="url(#ml-splash-merc)"><text class="s-merc ink" x="0" y="50" font-size="36" letter-spacing="-0.36">MERC</text></g>
+        <rect class="s-box ink" x="112" y="17" width="79" height="38"></rect>
+        <text class="s-lab" x="119" y="50" font-size="36" letter-spacing="-0.36">LAB</text>
+        <path class="s-trace" d="M0 64H136L143 59L150 69L157 58L164 70L171 64H294" pathLength="1"></path>
+        <text class="s-tag ink" x="0" y="86" font-size="12" letter-spacing="0.72">INDEPENDENT MERCEDES-BENZ SPECIALIST</text>
+      </g>
+    </svg>
+    <span class="ml-splash__ring" aria-hidden="true"></span>
+    <span class="ml-splash__ring r2" aria-hidden="true"></span>
+    <span class="ml-splash__dot" aria-hidden="true"></span>
+  </div></div>
+</div>

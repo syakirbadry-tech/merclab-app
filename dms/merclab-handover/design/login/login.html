@@ -1,0 +1,25 @@
+<!-- THE MERC LAB · login page. Render this as the first screen when signed out.
+     splash.js plays on top of it; login.js starts the entrance on the hand-over. -->
+<main class="ml login" id="login">
+  <svg class="login__trace" viewBox="0 0 1200 120" preserveAspectRatio="none" aria-hidden="true">
+    <path class="ln" pathLength="1" vector-effect="non-scaling-stroke" d="M0 60H180L192 52L204 72L216 34L228 82L240 60H1200"></path>
+    <path class="pulse" pathLength="1" vector-effect="non-scaling-stroke" d="M0 60H180L192 52L204 72L216 34L228 82L240 60H1200"></path>
+  </svg>
+  <section class="login__card" aria-labelledby="login-title">
+    <img class="login__logo ls" style="--i: 0" src="/brand/merc-lab-logo.svg" alt="The Merc Lab, Independent Mercedes-Benz Specialist" width="168" height="58">
+    <h1 class="login__title ls" id="login-title" style="--i: 1">Welcome back</h1>
+    <p class="login__sub ls" style="--i: 2">Sign in to the workshop system.</p>
+    <form class="login__form ls" id="login-form" style="--i: 3" novalidate>
+      <label for="login-pw">Password</label>
+      <div class="login__pw">
+        <input class="input" id="login-pw" name="password" type="password" autocomplete="current-password" required aria-describedby="login-msg">
+        <button class="login__eye" id="login-eye" type="button" aria-label="Show password" aria-pressed="false">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+        </button>
+      </div>
+      <p class="login__msg" id="login-msg" role="alert" aria-live="polite"></p>
+      <button class="btn lg block" id="login-go" type="submit">Sign in</button>
+    </form>
+  </section>
+  <p class="login__foot">Independent Mercedes-Benz Specialist · DMS 1.1</p>
+</main>
