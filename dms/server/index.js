@@ -45,7 +45,15 @@ function createApp() {
   app.get("/d/:token", docRoute);
   app.post("/d/:token/approve", (req, res, next) => (auth.tooManyFails("ap:" + (req.ip || "x")) ? res.status(429).json({ error: "Too many tries. Wait 15 minutes." }) : next()), approveRoute);
 
-  app.use(express.static(path.join(__dirname, "..", "public"), { etag: true, maxAge: 0 }));
+  // The app's own files are always re-checked, so an installed iPhone app picks up
+  // every update on the next open instead of keeping an old copy.
+  app.use(express.static(path.join(__dirname, "..", "public"), {
+    etag: true,
+    maxAge: 0,
+    setHeaders: (res, file) => {
+      if (/\.(html|js|css|json)$/.test(file)) res.setHeader("Cache-Control", "no-cache, must-revalidate");
+    },
+  }));
   return app;
 }
 
