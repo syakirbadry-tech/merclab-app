@@ -308,3 +308,29 @@ body:has(#view form) .fab-float { display: none !important; }
 
 .group .gh { display: flex; align-items: center; gap: 8px; }
 .group .gh input { flex: 1; min-width: 0; }
+
+/* Estimate line items: merclab.css lays out .item as a one-row grid for a
+   different markup; the app's line card stacks (type + code + delete, then
+   description, then amounts). */
+.item { display: block; background: var(--card2); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-top: 10px; }
+.item .row { display: flex; gap: 8px; align-items: center; flex-wrap: nowrap; }
+.item .row > input { flex: 1; min-width: 0; }
+.item .row .pill { flex: none; }
+.item .row .x { flex: none; width: 44px; height: 44px; display: grid; place-items: center; background: none; border: 0; color: var(--muted); border-radius: 10px; }
+.item .row .x:active { background: var(--select); }
+.item > label { margin-top: 10px; }
+.item > input[name=description] { width: 100%; }
+.item-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 10px; }
+.item-grid label { margin-top: 10px; }
+@media (min-width: 861px) { .item-grid { grid-template-columns: repeat(2, minmax(0, 220px)); } }
+/* Totals bar: solid, and above the phone tab bar instead of over the lines. */
+.totbar { background: var(--card); -webkit-backdrop-filter: none; backdrop-filter: none; }
+@media (max-width: 860px) {
+  .totbar { position: sticky; bottom: calc(68px + env(safe-area-inset-bottom)); z-index: 15; flex-wrap: wrap; row-gap: 8px; box-shadow: 0 -6px 18px rgba(0, 0, 0, .12); border-radius: 12px 12px 0 0; }
+  .totbar label { display: flex; align-items: center; gap: 10px; width: 100%; margin: 0; font-size: 14px; }
+}
+.item .row > input { flex: 1 1 auto; max-width: none !important; }
+.group .gh input[name=request] { flex: 1 1 auto !important; width: auto !important; max-width: none !important; min-width: 0; }
+@media (max-width: 860px) {
+  .totbar { position: static; border-radius: 12px; box-shadow: none; }
+}

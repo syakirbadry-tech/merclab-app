@@ -743,7 +743,7 @@
 
   function groupHtml(g, i) {
     return `<div class="group">
-      <div class="gh"><b>C${i + 1}</b><input name="request" placeholder="Customer request, e.g. TO PERFORM SERVICE B" aria-label="Customer request" value="${esc(g.request || "")}" style="text-transform:uppercase"><button type="button" class="x gx" title="Remove this request" aria-label="Remove this request">${icon("x")}</button></div>
+      <div class="gh"><b>C${i + 1}</b><input name="request" placeholder="Customer request" aria-label="Customer request" value="${esc(g.request || "")}" style="text-transform:uppercase"><button type="button" class="x gx" title="Remove this request" aria-label="Remove this request">${icon("x")}</button></div>
       <div class="lines">${(g.lines || []).map(lineHtml).join("")}</div>
       <label>Add a part from stock</label>
       <input class="pick" list="partOptions" placeholder="Type part name…" autocomplete="off">
@@ -836,7 +836,7 @@
       <form id="jForm" autocomplete="off" novalidate>
         ${mode === "new" && !pre ? `<div class="card finder" id="finder"><h2>Find the customer or car</h2>
           <p class="muted" style="margin:-4px 0 10px">Type a plate, name or phone. Pick the result to fill everything in.</p>
-          <div class="search">${icon("search")}<input id="findQ" type="search" placeholder="e.g. AMG 5515, Syazwan, 012…" aria-label="Find customer or car" autocomplete="off" enterkeyhint="search"></div>
+          <div class="search">${icon("search")}<input id="findQ" type="search" placeholder="Plate, name or phone" aria-label="Find customer or car" autocomplete="off" enterkeyhint="search"></div>
           <div class="rows find-res" id="findRes" aria-live="polite"></div>
           <div class="btns"><button type="button" class="btn alt" id="findNew">${icon("plus")}New customer</button></div></div>
         <div class="card picked" id="picked" hidden></div>` : ""}
@@ -852,7 +852,7 @@
               <div><label for="regNo">Plate</label><input id="regNo" name="regNo" list="plateList" style="text-transform:uppercase" value="${v(pre?.plate)}"></div>
               <div><label for="mileageKm" class="req">Mileage (km)</label><input id="mileageKm" name="mileageKm" type="number" inputmode="numeric" min="1" required value="${v(pre?.mileageKm)}"></div>
               <div class="full"><label for="makeModel">Make &amp; model</label><input id="makeModel" name="makeModel" placeholder="e.g. Mercedes-Benz C200 (W205)" value="${v(pre?.car)}"></div>
-              <div><label for="chassisNo">Chassis no</label><input id="chassisNo" name="chassisNo" style="text-transform:uppercase" autocapitalize="characters" maxlength="17" value="${v(d.vehicle?.chassisNo)}" aria-describedby="chHint"><div class="hint" id="chHint" aria-live="polite"></div></div>
+              <div><label for="chassisNo">Chassis no</label><input id="chassisNo" name="chassisNo" style="text-transform:uppercase" autocapitalize="characters" maxlength="17" value="${v(d.vehicle?.chassisNo)}"></div>
               <div><label for="engineNo">Engine no</label><input id="engineNo" name="engineNo" style="text-transform:uppercase" value="${v(d.vehicle?.engineNo)}"></div>
               <div><label for="regDate">Reg date</label><input id="regDate" name="regDate" type="date" value="${v(d.vehicle?.regDate)}"></div>
             </div>
@@ -1023,6 +1023,7 @@
     const renumber = bindGroups(box, totals);
     const pick = $("#pkgPick");
     const chHint = () => {
+      if (!$("#chHint")) return; // the help line under Chassis no was removed (Chairman's request); the package check still runs
       const raw = form.chassisNo.value.trim();
       const ch = decodeChassis(raw);
       const fit = ch ? state.packages.filter((x) => x.active && (x.fits || []).length && pkgFits(x, ch)).length : 0;
