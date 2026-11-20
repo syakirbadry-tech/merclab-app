@@ -286,12 +286,23 @@
       <div class="side-foot"><a href="#/settings" data-nav="settings">${icon("settings")}<span>Settings</span></a>
         <button type="button" id="logoutBtn">${icon("logout")}<span>Log out</span></button></div>`;
     $("#bottom").className = "bar";
-    $("#bottom").innerHTML = `<a href="#/dashboard" data-nav="dashboard">${icon("home")}Home</a><a href="#/jobs" data-nav="jobs">${icon("jobs")}Jobs</a>
-      <button type="button" class="fab" id="createBtn" aria-label="Create">${icon("plus")}</button>
-      <a href="#/money" data-nav="money">${icon("money")}Money</a><button type="button" id="moreBtn">${icon("more")}More</button>`;
+    // Tab bar: navigation only (HIG tab-bars). Create is a floating action above it.
+    $("#bottom").innerHTML = `<a href="#/dashboard" data-nav="dashboard">${icon("home")}Home</a><a href="#/jobs" data-nav="jobs">${icon("jobs")}Jobs</a><a href="#/vehicles" data-nav="vehicles">${icon("car")}Cars</a>
+      <a href="#/money" data-nav="money">${icon("money")}Money</a><button type="button" id="moreBtn" aria-controls="side">${icon("more")}More</button>`;
+    if (!$("#createBtn")) $("#shell").insertAdjacentHTML("beforeend", `<button type="button" class="fab-float" id="createBtn" aria-label="Create: new estimate, payment, booking">${icon("plus")}<span>Create</span></button>`);
     $("#menuBtn").innerHTML = icon("menu");
     $("#gIcon").outerHTML = icon("search");
-    if (!$(".gsearch .kbd")) $(".gsearch").insertAdjacentHTML("beforeend", `<span class="kbd" aria-hidden="true">Ctrl K</span>`);
+    if (!$(".gsearch .kbd")) $(".gsearch").insertAdjacentHTML("beforeend", `<span class="kbd" aria-hidden="true">Ctrl K</span><button type="button" class="gcancel" id="gCancel">Cancel</button>`);
+    if (!$("#searchBtn")) $(".gsearch").insertAdjacentHTML("beforebegin", `<button type="button" class="btn ghost icon search-btn" id="searchBtn" aria-label="Search">${icon("search")}</button>`);
+    const searching = (on) => { document.body.classList.toggle("search-open", on); if (on) $("#gq").focus(); else { $("#gq").value = ""; $("#gres").hidden = true; } };
+    $("#searchBtn").onclick = () => searching(true);
+    $("#gCancel").onclick = () => searching(false);
+    window.addEventListener("hashchange", () => document.body.classList.remove("search-open"));
+    // Sheets: swipe down to dismiss (HIG sheets).
+    let drag = null;
+    document.addEventListener("touchstart", (e) => { const box = e.target.closest(".modal .box"); if (box && box.scrollTop <= 0) drag = { box, y: e.touches[0].clientY, dy: 0 }; }, { passive: true });
+    document.addEventListener("touchmove", (e) => { if (!drag) return; drag.dy = Math.max(0, e.touches[0].clientY - drag.y); drag.box.style.transform = drag.dy ? `translateY(${drag.dy}px)` : ""; }, { passive: true });
+    document.addEventListener("touchend", () => { if (!drag) return; const { box, dy } = drag; drag = null; if (dy > 110) box.closest(".modal").querySelector(".mh .x")?.click(); else { box.style.transition = "transform .25s var(--ease-ios)"; box.style.transform = ""; setTimeout(() => (box.style.transition = ""), 260); } });
     const open = (on) => {
       document.body.classList.toggle("nav-open", on);
       $("#menuBtn").setAttribute("aria-expanded", on ? "true" : "false");
