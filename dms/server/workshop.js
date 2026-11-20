@@ -32,6 +32,7 @@ function packageOut(r) {
     lines: parseJson(f["Lines JSON"], []),
     active: !!f.Active,
     setsService: !!f["Sets next service"],
+    fits: fitsList(f["Fits models"]),
     notes: f.Notes || "",
   };
 }
@@ -51,7 +52,20 @@ function packageFields(b, partial) {
   if ("active" in b) fields.Active = b.active === true;
   if ("setsService" in b) fields["Sets next service"] = b.setsService === true;
   if ("notes" in b) fields.Notes = text(b.notes, 1000);
+  if ("fits" in b) {
+    const raw = Array.isArray(b.fits) ? b.fits.join(",") : String(b.fits || "");
+    const list = fitsList(raw);
+    const badCode = raw.split(/[,;\n]+/).map((c) => c.trim()).filter(Boolean).find((c) => !list.includes(c.replace(/[^0-9]/g, "")));
+    if (badCode) throw bad(`"${badCode}" is not a model code. Use 3 digits for a model (177 = W177) or 7 digits for one variant (1770542 = A45 S).`);
+    fields["Fits models"] = list.join(", ");
+  }
   return fields;
+}
+
+// Models a package fits, from the chassis number: characters 4-6 are the model (177 = W177),
+// 7-10 the variant (0542 = A45 S). "177" fits every W177, "1770542" only that variant.
+function fitsList(v) {
+  return [...new Set(String(v || "").split(/[,;\n]+/).map((c) => c.replace(/[^0-9]/g, "")).filter((c) => c.length === 3 || c.length === 7))].slice(0, 30);
 }
 
 // ---------- fault cases ----------

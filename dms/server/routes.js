@@ -79,9 +79,10 @@ const SETTINGS_FIELDS = {
   openingCash: "Opening cash",
   openingDate: "Opening date",
   ownerCapital: "Owner capital",
+  labourRate: "Labour rate per hour",
 };
-const NUMERIC_SETTINGS = ["markupPercent", "roundTo", "estimateValidityDays", "partsWarrantyMonths", "serviceIntervalKm", "serviceIntervalMonths", "openingCash", "ownerCapital"];
-const MONEY_SETTINGS = ["openingCash", "ownerCapital"];
+const NUMERIC_SETTINGS = ["markupPercent", "roundTo", "estimateValidityDays", "partsWarrantyMonths", "serviceIntervalKm", "serviceIntervalMonths", "openingCash", "ownerCapital", "labourRate"];
+const MONEY_SETTINGS = ["openingCash", "ownerCapital", "labourRate"];
 
 async function loadSettings() {
   const rows = await db.list("settings");

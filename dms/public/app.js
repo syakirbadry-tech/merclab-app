@@ -705,13 +705,26 @@
   // ---------- job form (new estimate, or estimate → invoice) ----------
 
   const LINE_LABEL = { part: "Part", labour: "Labour", sundry: "Sundry", sublet: "Sublet" };
+  const labourRate = () => Number(state.settings?.labourRate) || 100;
+  // Mercedes chassis no (VIN), e.g. W1K1770542N161234: chars 4-6 model (177 = W177),
+  // 7-10 variant (0542 = A45 S), last 6 serial. The rest does not matter here.
+  const decodeChassis = (v) => {
+    const s = String(v || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (s.length !== 17 || !/^\d{3}$/.test(s.slice(3, 6)) || !/^\d{4}$/.test(s.slice(6, 10))) return null;
+    return { model: s.slice(3, 6), variant: s.slice(6, 10), serial: s.slice(11) };
+  };
+  const fitsText = (codes) => codes.map((c) => (c.length === 7 ? `${c.slice(0, 3)} · ${c.slice(3)}` : c)).join(", ");
+  const pkgFits = (pkg, ch) => !(pkg.fits || []).length || (!!ch && pkg.fits.some((c) => (c.length === 3 ? c === ch.model : c === ch.model + ch.variant)));
 
   function lineHtml(l) {
     const t = l.type;
     const amountField = t === "part"
       ? `<div class="item-grid"><div><label>Qty</label><input name="qty" type="number" inputmode="decimal" step="any" min="0" value="${esc(l.qty ?? 1)}"></div>
          <div><label>Unit price (RM)</label><input name="unitPrice" type="number" inputmode="decimal" step="0.01" min="0" value="${esc(l.unitPrice ?? "")}"></div></div>`
-      : `<label>Amount (RM)</label><input name="amount" type="number" inputmode="decimal" step="0.01" min="0" value="${esc(l.amount ?? "")}" style="max-width:220px">`;
+      : t === "labour"
+        ? `<div class="item-grid"><div><label>Hours</label><input name="hours" type="number" inputmode="decimal" step="0.25" min="0" value="${esc(l.hours ?? "")}" placeholder="e.g. 1.5"></div>
+           <div><label>Amount (RM)</label><input name="amount" type="number" inputmode="decimal" step="0.01" min="0" value="${esc(l.amount ?? "")}"></div></div><p class="hint" style="margin-top:4px">Hours × RM ${labourRate()}/hour fills the amount. You can still change it.</p>`
+        : `<label>Amount (RM)</label><input name="amount" type="number" inputmode="decimal" step="0.01" min="0" value="${esc(l.amount ?? "")}" style="max-width:220px">`;
     return `<div class="item" data-type="${t}" data-part="${esc(l.partId || "")}" data-cat="${esc(l.category || "")}" data-tax="${l.taxable ? 1 : 0}">
       <div class="row"><span class="pill info" style="flex:none">${LINE_LABEL[t]}</span>
         ${t === "labour" ? `<input name="opCode" placeholder="Op code" aria-label="Op code" value="${esc(l.opCode || "")}" style="max-width:130px">` : ""}
@@ -764,18 +777,29 @@
       e.target.value = "";
       onChange();
     });
-    box.addEventListener("input", onChange);
+    box.addEventListener("input", (e) => {
+      if (e.target.name === "hours") {
+        const h = Number(e.target.value);
+        const amt = $("[name=amount]", e.target.closest(".item"));
+        if (e.target.value !== "" && h >= 0) amt.value = r2(h * labourRate()).toFixed(2);
+      }
+      onChange();
+    });
     return renumber;
   }
   const readLines = (g) => $$(".item", g).map((el) => ({
     type: el.dataset.type, partId: el.dataset.part, category: el.dataset.cat, taxable: el.dataset.tax === "1",
     partNo: $("[name=partNo]", el)?.value, opCode: $("[name=opCode]", el)?.value, description: $("[name=description]", el).value,
     qty: $("[name=qty]", el)?.value, unitPrice: $("[name=unitPrice]", el)?.value, amount: $("[name=amount]", el)?.value,
+    hours: $("[name=hours]", el)?.value,
   }));
   // Package lines with today's stock prices for linked parts.
   const packageLines = (pkg) => pkg.lines.map((l) => {
     const p = l.type === "part" && l.partId && state.parts.find((x) => x.id === l.partId);
-    return p ? { ...l, unitPrice: p.sellingPrice } : { ...l };
+    if (p) return { ...l, unitPrice: p.sellingPrice };
+    // Labour priced by hours follows today's labour rate.
+    if (l.type === "labour" && Number(l.hours) > 0) return { ...l, amount: r2(Number(l.hours) * labourRate()) };
+    return { ...l };
   });
   const lineTotal = (lines) => lines.reduce((t, l) => t + (l.type === "part" ? (Number(l.qty) || 0) * (Number(l.unitPrice) || 0) : Number(l.amount) || 0), 0);
 
@@ -816,7 +840,7 @@
               <div><label for="regNo">Plate</label><input id="regNo" name="regNo" list="plateList" style="text-transform:uppercase" value="${v(pre?.plate)}"></div>
               <div><label for="mileageKm" class="req">Mileage (km)</label><input id="mileageKm" name="mileageKm" type="number" inputmode="numeric" min="1" required value="${v(pre?.mileageKm)}"></div>
               <div class="full"><label for="makeModel">Make &amp; model</label><input id="makeModel" name="makeModel" placeholder="e.g. Mercedes-Benz C200 (W205)" value="${v(pre?.car)}"></div>
-              <div><label for="chassisNo">Chassis no</label><input id="chassisNo" name="chassisNo" style="text-transform:uppercase" value="${v(d.vehicle?.chassisNo)}"></div>
+              <div><label for="chassisNo">Chassis no</label><input id="chassisNo" name="chassisNo" style="text-transform:uppercase" autocapitalize="characters" maxlength="17" value="${v(d.vehicle?.chassisNo)}" aria-describedby="chHint"><div class="hint" id="chHint" aria-live="polite"></div></div>
               <div><label for="engineNo">Engine no</label><input id="engineNo" name="engineNo" style="text-transform:uppercase" value="${v(d.vehicle?.engineNo)}"></div>
               <div><label for="regDate">Reg date</label><input id="regDate" name="regDate" type="date" value="${v(d.vehicle?.regDate)}"></div>
             </div>
@@ -904,10 +928,21 @@
     });
     const renumber = bindGroups(box, totals);
     const pick = $("#pkgPick");
+    const chHint = () => {
+      const raw = form.chassisNo.value.trim();
+      const ch = decodeChassis(raw);
+      const fit = ch ? state.packages.filter((x) => x.active && (x.fits || []).length && pkgFits(x, ch)).length : 0;
+      $("#chHint").textContent = !raw ? "Needed to check that packages fit this car." : ch ? `Model ${ch.model} · variant ${ch.variant} · serial ${ch.serial}${fit ? ` · ${fit} package(s) made for this model` : ""}` : "A chassis number has 17 characters, e.g. W1K1770542N161234.";
+    };
+    form.chassisNo.addEventListener("input", chHint);
+    chHint();
     if (pick) pick.onchange = () => {
       const pkg = state.packages.find((x) => x.id === pick.value);
       pick.value = "";
       if (!pkg) return;
+      const ch = decodeChassis(form.chassisNo.value);
+      if ((pkg.fits || []).length && !ch && !confirm(`${pkg.name} is for model ${fitsText(pkg.fits)}.\n\nType the chassis number first so the DMS can check it fits this car.\n\nAdd it anyway?`)) return;
+      if (ch && !pkgFits(pkg, ch) && !confirm(`${pkg.name} is for model ${fitsText(pkg.fits)}, but this car's chassis number says model ${ch.model} · ${ch.variant}.\n\nThe parts may not fit. Add it anyway?`)) return;
       const gs = $$(".group", box);
       if (gs.length === 1 && !$("[name=request]", gs[0]).value.trim() && !$$(".item", gs[0]).length) gs[0].outerHTML = "";
       box.insertAdjacentHTML("beforeend", groupHtml({ request: pkg.request, lines: packageLines(pkg) }, 0));
@@ -1329,13 +1364,13 @@
     crumbs([["Packages"]]);
     view.innerHTML = `${pageHead("Packages", { sub: "Ready-made jobs. One tap adds them to an estimate.", acts: `<a class="btn" href="#/packages/new">${icon("plus")}New package</a>` })}
       <div class="card flush">${state.packages.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Package</th><th class="d">Customer request</th><th class="num d">Lines</th><th class="num">Price now</th><th>Status</th></tr></thead><tbody>
-        ${state.packages.map((p) => `<tr class="tap" data-href="#/packages/${p.id}"><td><a class="strong" style="color:inherit;text-decoration:none" href="#/packages/${p.id}">${esc(p.name)}</a>${p.setsService ? `<div class="sm">Sets next service</div>` : ""}</td>
+        ${state.packages.map((p) => `<tr class="tap" data-href="#/packages/${p.id}"><td><a class="strong" style="color:inherit;text-decoration:none" href="#/packages/${p.id}">${esc(p.name)}</a><div class="sm">${(p.fits || []).length ? `Fits ${esc(fitsText(p.fits))}` : "Any model"}${p.setsService ? " · sets next service" : ""}</div></td>
           <td class="d">${esc(p.request)}</td><td class="num d">${p.lines.length}</td><td class="num strong">${rm(lineTotal(packageLines(p)))}</td><td>${p.active ? pill("Active", "ok") : pill("Hidden")}</td></tr>`).join("")}</tbody></table></div>`
         : emptyBox("box", "No packages yet. Make one for each job you do often: Service A, Service B, front brake pads, gearbox oil change…")}</div>`;
   }
 
   function packageForm(id) {
-    const p = id === "new" ? { name: "", request: "", lines: [], active: true, setsService: false, notes: "" } : state.packages.find((x) => x.id === id);
+    const p = id === "new" ? { name: "", request: "", lines: [], active: true, setsService: false, notes: "", fits: [] } : state.packages.find((x) => x.id === id);
     if (!p) return (location.hash = "#/packages");
     crumbs([["Packages", "#/packages"], [p.name || "New package"]]);
     const chk = (name, on, label) => `<label style="display:flex;gap:8px;align-items:center;font-weight:500"><input type="checkbox" name="${name}" ${on ? "checked" : ""} style="width:20px;min-height:20px">${label}</label>`;
@@ -1343,6 +1378,8 @@
       <form id="pkf" novalidate><div class="card"><div class="fgrid">
         <div><label for="pk_name" class="req">Package name</label><input id="pk_name" name="pname" value="${esc(p.name)}" placeholder="e.g. Service B (petrol)"></div>
         <div><label for="pk_notes">Notes (only you see this)</label><input id="pk_notes" name="notes" value="${esc(p.notes)}"></div>
+        <div class="full"><label for="pk_fits">Fits models (from the chassis number)</label><input id="pk_fits" name="fits" inputmode="numeric" value="${esc((p.fits || []).join(", "))}" placeholder="e.g. 177 for every W177, or 1770542 for the A45 S only" aria-describedby="pk_fits_h">
+          <p class="hint" id="pk_fits_h">From W1K<b>177</b><b>0542</b>N161234: 177 is the model, 0542 the variant. Separate several with commas. Leave empty if it fits every Mercedes.</p></div>
         <div class="full">${chk("setsService", p.setsService, "This is a service: set the car's next service reminder when invoiced")}</div>
         <div class="full">${chk("active", p.active, "Show in the estimate's package list")}</div>
       </div></div>
@@ -1357,7 +1394,7 @@
     $("#pkf").onsubmit = async (e) => {
       e.preventDefault();
       const el = e.target.elements;
-      const body = { name: el.pname.value, notes: el.notes.value, setsService: el.setsService.checked, active: el.active.checked, request: $("[name=request]", box).value, lines: readLines(box) };
+      const body = { name: el.pname.value, notes: el.notes.value, fits: el.fits.value, setsService: el.setsService.checked, active: el.active.checked, request: $("[name=request]", box).value, lines: readLines(box) };
       busy(e.submitter, true, "Saving…");
       try {
         if (id === "new") await api("/packages", { method: "POST", body });
@@ -3201,7 +3238,7 @@
         </div><p class="hint">Empty boxes print as [PLACEHOLDER] on documents, so you can see what is missing.</p></div>
       </div><div>
         <div class="card"><h2>Parts pricing</h2>
-          ${f("markupPercent", "Markup on parts (%)", "number", 'inputmode="decimal" step="any" min="0"')}
+          ${f("markupPercent", "Markup on parts (%)", "number", 'inputmode="decimal" step="any" min="0"')}${f("labourRate", "Labour rate per hour (RM)", "number", 'inputmode="decimal" step="any" min="0" placeholder="100"')}
           <label for="s_roundTo">Round selling price up to</label>
           <select id="s_roundTo" name="roundTo">${[[0, "No rounding"], [0.1, "Nearest 10 sen"], [0.5, "Nearest 50 sen"], [1, "Nearest RM1"], [5, "Nearest RM5"], [10, "Nearest RM10"]].map(([val, l]) => `<option value="${val}" ${Number(s.roundTo) === val ? "selected" : ""}>${l}</option>`).join("")}</select>
           <p class="hint" id="mkEx"></p></div>

@@ -57,7 +57,14 @@ function cleanGroups(groups) {
         const sen = toSen(l.amount);
         if (sen === null || sen < 0) throw bad(`Amount for "${description}" is missing.`);
         line.amount = sen / 100;
-        if (type === "labour") line.opCode = cleanText(l.opCode, 20);
+        if (type === "labour") {
+          line.opCode = cleanText(l.opCode, 20);
+          const h = Number(l.hours);
+          if (l.hours !== undefined && l.hours !== null && l.hours !== "") {
+            if (!(h >= 0 && h <= 200)) throw bad(`Hours for "${description}" must be between 0 and 200.`);
+            line.hours = Math.round(h * 100) / 100;
+          }
+        }
         else line.category = cleanText(l.category, 20).toUpperCase() || (type === "sundry" ? "SUNDRY" : "SUBLET");
       }
       lines.push(line);

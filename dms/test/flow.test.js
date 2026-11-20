@@ -906,3 +906,24 @@ test("Assistant: off without a key, kill switch, answers read-only from the cont
   assert.ok(sent.includes("INV-2026-00036") && sent.includes("the CFO") && sent.includes("cannot save, change, send, pay or delete"));
   for (const t of Object.keys(store)) if (t !== "settings") assert.equal(store[t].length, 0, `${t} unchanged`);
 });
+
+test("labour hours are kept on the line; packages store the chassis models they fit; labour rate setting", async () => {
+  reset();
+  await login();
+  let r = await call("PUT", "/api/settings", { body: { labourRate: "100" } });
+  assert.equal(r.status, 200);
+  assert.equal(store.settings[0].fields["Labour rate per hour"], 100);
+  r = await call("POST", "/api/packages", { body: { name: "A45 S service", request: "Service A", fits: "177, W177 0542, 1770542", lines: [{ type: "labour", description: "Service labour", hours: 1.5, amount: 150 }] } });
+  assert.equal(r.status, 201);
+  assert.deepEqual(r.body.fits, ["177", "1770542"]);
+  assert.equal(store.packages[0].fields["Fits models"], "177, 1770542");
+  assert.equal(JSON.parse(store.packages[0].fields["Lines JSON"])[0].hours, 1.5);
+  r = await call("POST", "/api/packages", { body: { name: "Bad", request: "x", fits: "12345", lines: [{ type: "labour", description: "x", amount: 1 }] } });
+  assert.equal(r.status, 400);
+  r = await call("POST", "/api/jobs", { body: { customer: { name: "Test" }, vehicle: { mileageKm: 1000, chassisNo: "W1K1770542N161234" }, groups: [{ request: "x", lines: [{ type: "labour", description: "Diagnosis", hours: "2", amount: "200" }] }] } });
+  assert.equal(r.status, 201);
+  assert.equal(r.body.job.groups[0].lines[0].hours, 2);
+  assert.equal(r.body.job.total, 200);
+  r = await call("POST", "/api/jobs", { body: { customer: { name: "Test" }, vehicle: { mileageKm: 1000 }, groups: [{ request: "x", lines: [{ type: "labour", description: "Diagnosis", hours: "-1", amount: "1" }] }] } });
+  assert.equal(r.status, 400);
+});
