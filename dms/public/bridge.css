@@ -165,3 +165,109 @@ html { -webkit-tap-highlight-color: transparent; scroll-padding-top: calc(var(--
   .modal .box, .modal, .side { animation: none !important; transition: none !important; }
   .btn:active, .chip:active, .seg button:active, .mini:active, .bar a:active, .bar button:active { transform: none; }
 }
+
+/* ---------- Apple HIG review (apple-design skill) ----------
+   liquid-glass.md: glass only on the functional layer (bars, sheets, drawer,
+   floating button), never on content. tab-bars.md: tabs navigate, the Create
+   action floats above them. search-fields.md: phone search is a button that
+   expands into the field. dark-mode.md: follow the system appearance. */
+.card, .tile, .list, .lane, .group, .dropzone, .money3 {
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+  background: var(--card); border-color: var(--line); box-shadow: 0 1px 2px rgba(20, 32, 48, .05), 0 6px 18px rgba(20, 32, 48, .05);
+}
+:root, [data-theme="light"] { --card: #ffffff; --card2: #f7f9fb; }
+.card.quiet, .lane { background: var(--card2); }
+.jc { background: var(--card); }
+.tile.hero { background: linear-gradient(135deg, rgba(0, 120, 214, .12) 0%, var(--card) 70%); }
+
+/* Floating Create button: functional layer, phone only. */
+.fab-float { display: none; }
+.search-btn, .gcancel { display: none; }
+@media (max-width: 860px) {
+  .fab-float { display: inline-flex; align-items: center; gap: 8px; position: fixed; right: 16px; bottom: calc(76px + env(safe-area-inset-bottom)); z-index: 21; min-height: 52px; padding: 0 20px 0 16px; border: 1px solid rgba(255, 255, 255, .22); border-radius: 26px;
+    background: linear-gradient(180deg, #1b78cc 0%, #0a5aa6 100%); color: #fff; font: 600 15px/1 var(--font); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35), 0 8px 24px rgba(10, 90, 166, .35); transition: transform .12s var(--ease-ios); }
+  .fab-float .ic { width: 22px; height: 22px; stroke-width: 2.2; }
+  .fab-float:active { transform: scale(.95); }
+  body.nav-open .fab-float, body.search-open .fab-float, .modal ~ .fab-float { display: none; }
+  main#view { padding-bottom: calc(150px + env(safe-area-inset-bottom)); }
+  #bottom.bar { grid-template-columns: repeat(5, minmax(0, 1fr)); align-items: center; }
+
+  /* Search as a top-bar button that expands into the field, with Cancel. */
+  .search-btn { display: inline-grid; place-items: center; color: #fff; margin-left: auto; flex: none; width: 44px; min-height: 44px; }
+  .gsearch { display: none; }
+  body.search-open .gsearch { display: flex; align-items: center; gap: 8px; position: absolute; inset: env(safe-area-inset-top) 12px auto 12px; height: var(--top-h); width: auto; margin: 0; z-index: 2; }
+  body.search-open .gsearch input { flex: 1; }
+  body.search-open .gsearch > .ic { left: 12px; }
+  body.search-open .gcancel { display: inline-flex; align-items: center; min-height: 44px; padding: 0 4px; background: none; border: 0; color: #fff; font: 600 16px/1 var(--font); }
+  body.search-open .crumbs, body.search-open .menu-btn, body.search-open .search-btn { visibility: hidden; }
+  .gres { left: 0; right: 0; top: calc(100% - 4px); }
+  .crumbs { flex: 1; }
+
+  /* Reading size closer to the iOS 17 pt default. */
+  body.ml { font-size: 16px; }
+  .rows .grow b, .li .a b, .todo b, .tbl:not(.keep) td:first-child { font-size: 16px; }
+}
+
+/* ---------- Dark appearance, following the system (no app switch) ---------- */
+[data-theme="dark"] { --card: #1c2127; --card2: #20262d; --sheet: #1b1f24; }
+[data-theme="dark"] body.ml { color: var(--ink); }
+[data-theme="dark"] .side { background: rgba(18, 21, 26, .92); }
+[data-theme="dark"] .brand img { filter: invert(1); }
+[data-theme="dark"] .jc { background: var(--card2); }
+[data-theme="dark"] .tbl th { background: rgba(255, 255, 255, .03); }
+[data-theme="dark"] .chip { background: rgba(255, 255, 255, .06); border-color: var(--line2); color: var(--ink2); }
+[data-theme="dark"] .chip.on { background: rgba(76, 155, 232, .22); border-color: rgba(76, 155, 232, .55); color: var(--ink); }
+[data-theme="dark"] .seg { background: rgba(255, 255, 255, .06); }
+[data-theme="dark"] .seg button.on, [data-theme="dark"] .seg a.on { background: var(--card2); color: var(--ink); }
+[data-theme="dark"] .btn.alt, [data-theme="dark"] .btn.ghost:hover, [data-theme="dark"] .back, [data-theme="dark"] .mini { background: rgba(255, 255, 255, .07); color: var(--ink); border-color: var(--line2); }
+[data-theme="dark"] .btn.danger { background: rgba(255, 255, 255, .05); color: var(--now); }
+[data-theme="dark"] input, [data-theme="dark"] select, [data-theme="dark"] textarea { background: rgba(255, 255, 255, .06); color: var(--ink); border-color: var(--line2); }
+[data-theme="dark"] .notice { color: var(--ink); }
+[data-theme="dark"] #bottom.bar .on { color: var(--accent); }
+[data-theme="dark"] .tbl tbody tr.tap:hover td { background: var(--select-hover); }
+
+/* Dark tokens again with higher specificity: the glass block in merclab.css
+   re-declares the light ink colours on :root, which would win in dark mode. */
+html[data-theme="dark"] {
+  --bg: #0d0f11; --surface: #16191d; --surface2: #1c2024; --surface3: #23282d;
+  --ink: #eef0f2; --ink2: #c3c8ce; --muted: #9aa1aa; --faint: #6b727b;
+  --line: #2a2f35; --line2: #3a4047; --on-ink: #111316;
+  --brand: #eef0f2; --brand-hover: #ffffff;
+  --accent: #6fb1f0; --accent-soft: #16263a; --focus: #4c9be8;
+  --select: #1a2c42; --select-line: #4c9be8; --select-hover: #17222f; --bar: #050607;
+  --ok: #7dd3a4;  --ok-soft: #13271d;  --ok-line: #2b5a40;
+  --soon: #f0bf6a; --soon-soft: #2a2010; --soon-line: #5c4518;
+  --now: #f2958c; --now-soft: #2e1614; --now-line: #64302b;
+  --info: #6fb1f0; --info-soft: #16263a; --info-line: #2f4f78;
+  --neutral: #b4bac1; --neutral-soft: #23282d;
+  --wa: #1f9d57; --wa-hover: #22b062; --ai: #172234; --ai-line: #34507e;
+  --car-body: #262b31; --car-line: #9aa1aa; --car-glass: #3a4552; --car-roof: #2d3238;
+  --shadow-1: 0 1px 2px rgba(0,0,0,.4); --shadow-2: 0 8px 24px rgba(0,0,0,.45); --shadow-3: 0 12px 40px rgba(0,0,0,.6);
+}
+html[data-theme="dark"] { --muted: #a3aab3; --card: #1c2127; --card2: #20262d; color-scheme: dark; }
+label.btn { color: #fff; }
+label.btn.alt { color: var(--ink); }
+html[data-theme="dark"] { --bad: var(--now); --bad-soft: var(--now-soft); --warn: var(--soon); --warn-soft: var(--soon-soft); --brand-soft: var(--accent-soft); --side: #12151a; }
+html[data-theme="dark"] .nav .count, html[data-theme="dark"] .nav a.on .count { color: #0d0f11; }
+
+/* Then the glass dark values (they win over the 1b dark values above). */
+html[data-theme="dark"] {
+  --bg: #0f1216;
+  --bg-grad: radial-gradient(1100px 620px at 88% -8%, rgba(0, 120, 214, .22), transparent 62%),
+             radial-gradient(900px 640px at -12% 38%, rgba(90, 105, 125, .25), transparent 62%),
+             linear-gradient(180deg, #12161b 0%, #0c0f13 100%);
+  --surface: rgba(32, 37, 44, .62);
+  --surface2: rgba(40, 46, 54, .5);
+  --surface3: rgba(255, 255, 255, .06);
+  --line: rgba(255, 255, 255, .08);
+  --line2: rgba(255, 255, 255, .16);
+  --glass-edge: rgba(255, 255, 255, .10);
+  --glass-shadow: 0 1px 0 rgba(255, 255, 255, .06) inset, 0 10px 30px rgba(0, 0, 0, .45);
+  --brand: #2f8be0; --brand-hover: #4b9be6;
+  --select: rgba(76, 155, 232, .20); --select-hover: rgba(76, 155, 232, .10);
+  --bar: rgba(10, 12, 15, .82);
+}
+html[data-theme="dark"] { --muted: #a3aab3; }
+.topbar .search-btn { color: #fff; }
+@media (max-width: 860px) { body.search-open .me { visibility: hidden; } }
+.bk .t { color: var(--accent); }
