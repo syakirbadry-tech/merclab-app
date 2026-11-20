@@ -944,3 +944,11 @@ test("new estimate reuses the existing customer by phone or plate instead of cre
   r = await call("POST", "/api/jobs", { body: { ...base, vehicle: { mileageKm: 5, regNo: "WXY 1" }, customer: { name: "Mr. Ali", phone: "019-999 0000" } } });
   assert.equal(store.customers.length, 2);
 });
+
+test("app files are served with no-cache so phones pick up updates", async () => {
+  for (const f of ["/", "/app.js", "/bridge.css"]) {
+    const r = await fetch(`http://127.0.0.1:${server.address().port}${f}`);
+    assert.equal(r.status, 200, f);
+    assert.match(r.headers.get("cache-control") || "", /no-cache/, f);
+  }
+});
