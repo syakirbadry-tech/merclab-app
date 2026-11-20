@@ -123,7 +123,11 @@
 
   // ---------- helpers ----------
 
-  function toast(msg) {
+  function toast(msg, kind) {
+    if (window.MLFeedback) {
+      const k = kind || (/\b(saved|recorded|added|sent|created|done|copied|updated|approved|cancelled)\b/i.test(msg) ? "ok" : "info");
+      return window.MLFeedback.toast(esc(msg), { kind: k });
+    }
     const t = $("#toast");
     t.textContent = msg;
     t.classList.add("show");
@@ -150,6 +154,8 @@
 
   function busy(btn, on, label) {
     if (!btn) return;
+    if (window.MLFeedback && on) { btn._fb = window.MLFeedback.busy(btn, label || "Please wait…"); return; }
+    if (btn._fb && !on) { btn._fb.cancel(); btn._fb = null; return; }
     if (on) {
       btn.dataset.label = btn.innerHTML;
       btn.disabled = true;
@@ -692,13 +698,13 @@
         pageJob(j.id);
         setActive("jobs");
       } catch (err) {
-        toast(err.message);
+        toast(err.message, "err");
       }
     };
     const c = $("#jCancel");
     if (c) c.onclick = async () => {
       if (!confirm(`Cancel ${j.estimateNo}? The number stays in the records.`)) return;
-      try { Object.assign(j, await api(`/jobs/${j.id}/status`, { method: "POST", body: { status: "Cancelled" } })); toast("Estimate cancelled"); pageJob(j.id); } catch (err) { toast(err.message); }
+      try { Object.assign(j, await api(`/jobs/${j.id}/status`, { method: "POST", body: { status: "Cancelled" } })); toast("Estimate cancelled"); pageJob(j.id); } catch (err) { toast(err.message, "err"); }
     };
   }
 
@@ -997,7 +1003,7 @@
         if (out.lowStock?.length) setTimeout(() => toast(`Stock went below 0 for: ${out.lowStock.join(", ")}`), 1800);
         location.hash = `#/jobs/${out.job.id}`;
       } catch (err) {
-        toast(err.message);
+        toast(err.message, "err");
         busy(btn, false);
       }
     };
@@ -1089,7 +1095,7 @@
         toast("Check-in saved");
         pageJob(j.id);
       } catch (err) {
-        toast(err.message);
+        toast(err.message, "err");
         busy(e.currentTarget, false);
       }
     };
@@ -1129,7 +1135,7 @@
         toast("Fault case saved");
         route();
       } catch (err) {
-        toast(err.message);
+        toast(err.message, "err");
         busy(e.submitter, false);
       }
     };
@@ -1378,8 +1384,7 @@
       <form id="pkf" novalidate><div class="card"><div class="fgrid">
         <div><label for="pk_name" class="req">Package name</label><input id="pk_name" name="pname" value="${esc(p.name)}" placeholder="e.g. Service B (petrol)"></div>
         <div><label for="pk_notes">Notes (only you see this)</label><input id="pk_notes" name="notes" value="${esc(p.notes)}"></div>
-        <div class="full"><label for="pk_fits">Fits models (from the chassis number)</label><input id="pk_fits" name="fits" inputmode="numeric" value="${esc((p.fits || []).join(", "))}" placeholder="e.g. 177 for every W177, or 1770542 for the A45 S only" aria-describedby="pk_fits_h">
-          <p class="hint" id="pk_fits_h">From W1K<b>177</b><b>0542</b>N161234: 177 is the model, 0542 the variant. Separate several with commas. Leave empty if it fits every Mercedes.</p></div>
+        <div class="full"><label for="pk_fits">Fits models (from the chassis number)</label><input id="pk_fits" name="fits" inputmode="numeric" value="${esc((p.fits || []).join(", "))}" placeholder="e.g. 177 for every W177, or 1770542 for the A45 S only"></div>
         <div class="full">${chk("setsService", p.setsService, "This is a service: set the car's next service reminder when invoiced")}</div>
         <div class="full">${chk("active", p.active, "Show in the estimate's package list")}</div>
       </div></div>
@@ -1403,7 +1408,7 @@
         toast("Package saved");
         location.hash = "#/packages";
       } catch (err) {
-        toast(err.message);
+        toast(err.message, "err");
         busy(e.submitter, false);
       }
     };
@@ -1459,7 +1464,7 @@
         $(".pc", el).textContent = it.photoIds.length;
         toast("Photo added. Remember to save.");
       } catch (err) {
-        toast(err.message);
+        toast(err.message, "err");
       }
     });
     $("#allOk").onclick = () => {
@@ -1479,7 +1484,7 @@
         toast("Inspection saved");
         location.hash = `#/jobs/${j.id}`;
       } catch (err) {
-        toast(err.message);
+        toast(err.message, "err");
         busy(e.submitter, false);
       }
     };
@@ -1560,7 +1565,7 @@
         toast("Saved");
         (after || route)();
       } catch (err) {
-        toast(err.message);
+        toast(err.message, "err");
         busy(e.currentTarget, false);
       }
     };
@@ -1715,7 +1720,7 @@
     f.onsubmit = async (e) => {
       e.preventDefault();
       busy(e.submitter, true, "Saving…");
-      try { await save(); m.close(); toast("Booking saved"); route(); } catch (err) { toast(err.message); busy(e.submitter, false); }
+      try { await save(); m.close(); toast("Booking saved"); route(); } catch (err) { toast(err.message, "err"); busy(e.submitter, false); }
     };
     const start = m.$("#bkStart");
     if (start) start.onclick = async () => {
@@ -1724,7 +1729,7 @@
         m.close();
         const v = vehicleByKey(plateKey(out.plate));
         location.hash = `#/jobs/new?booking=${out.id}${v ? `&plate=${v.key}` : ""}${out.customerId ? `&customer=${out.customerId}` : ""}`;
-      } catch (err) { toast(err.message); }
+      } catch (err) { toast(err.message, "err"); }
     };
   }
 
@@ -1851,7 +1856,7 @@
         toast("Expense saved");
         route();
       } catch (err) {
-        toast(err.message);
+        toast(err.message, "err");
         busy(e.submitter, false);
       }
     };
@@ -1894,7 +1899,7 @@
         const { suggestion } = await api("/expenses/extract", { method: "POST", form: fd });
         expenseDialog({ ...suggestion, method: "Bank transfer" }, file, true);
       } catch (err) {
-        toast(err.message);
+        toast(err.message, "err");
         expenseDialog(null, file);
       }
     };
@@ -1937,7 +1942,7 @@
         d2.el.addEventListener("click", (ev) => ev.target === d2.el && route());
         route();
       } catch (err) {
-        toast(err.message);
+        toast(err.message, "err");
         busy(e.submitter, false);
       }
     };
@@ -2294,7 +2299,7 @@
         toast("Supplier saved");
         route();
       } catch (err) {
-        toast(err.message);
+        toast(err.message, "err");
         busy(e.submitter, false);
       }
     };
@@ -2320,12 +2325,12 @@
     $("#spAdd").onclick = () => supplierDialog(null);
     $$("[data-sp]").forEach((el) => (el.onclick = () => supplierDialog(state.suppliers.find((s) => s.id === el.dataset.sp))));
     $$("[data-addsp]").forEach((b) => (b.onclick = async () => {
-      try { await api("/suppliers", { method: "POST", body: { name: b.dataset.addsp } }); await refresh("suppliers"); route(); } catch (err) { toast(err.message); }
+      try { await api("/suppliers", { method: "POST", body: { name: b.dataset.addsp } }); await refresh("suppliers"); route(); } catch (err) { toast(err.message, "err"); }
     }));
     $$("[data-pay]").forEach((b) => (b.onclick = async () => {
       const d = prompt("Paid on (YYYY-MM-DD):", todayKL());
       if (d === null) return;
-      try { await api(`/purchases/${b.dataset.pay}`, { method: "PATCH", body: { status: "Paid", paidOn: d } }); await refresh("purchases"); toast("Marked paid"); route(); } catch (err) { toast(err.message); }
+      try { await api(`/purchases/${b.dataset.pay}`, { method: "PATCH", body: { status: "Paid", paidOn: d } }); await refresh("purchases"); toast("Marked paid"); route(); } catch (err) { toast(err.message, "err"); }
     }));
   }
 
@@ -2364,7 +2369,7 @@
         toast("Saved");
         route();
       } catch (err) {
-        toast(err.message);
+        toast(err.message, "err");
         busy(e.submitter, false);
       }
     };
@@ -2389,7 +2394,7 @@
       $$("#poT [data-po]").forEach((el) => (el.onclick = (e) => !e.target.closest("button,a") && orderDialog(state.partorders.find((o) => o.id === el.dataset.po))));
       $$("#poT [data-st]").forEach((b) => (b.onclick = async () => {
         const [id, st] = b.dataset.st.split(":");
-        try { await api(`/partorders/${id}`, { method: "PATCH", body: { status: st } }); await refresh("partorders"); toast(`Marked ${st.toLowerCase()}`); draw(); } catch (err) { toast(err.message); }
+        try { await api(`/partorders/${id}`, { method: "PATCH", body: { status: st } }); await refresh("partorders"); toast(`Marked ${st.toLowerCase()}`); draw(); } catch (err) { toast(err.message, "err"); }
       }));
     };
     $("#pof2").onclick = (e) => { const b = e.target.closest("[data-f]"); if (!b) return; f = b.dataset.f; $$("#pof2 .chip").forEach((x) => x.classList.toggle("on", x === b)); draw(); };
@@ -2420,7 +2425,7 @@
         toast(out.changed ? `${out.changed} part(s) changed` : "No differences");
         location.hash = "#/parts";
       } catch (err) {
-        toast(err.message);
+        toast(err.message, "err");
         busy(e.submitter, false);
       }
     };
@@ -2469,10 +2474,10 @@
         : `<div class="card">${emptyBox("receipt", wa.enabled ? "Nothing yet. Forward a supplier bill to the DMS WhatsApp number." : "Nothing yet.")}</div>`}</div>`;
     $$("[data-save]").forEach((b) => (b.onclick = () => saveFromInbox(state.inbox.find((i) => i.id === b.dataset.save))));
     $$("[data-ign]").forEach((b) => (b.onclick = async () => {
-      try { await api(`/inbox/${b.dataset.ign}`, { method: "PATCH", body: { status: "Ignored" } }); await refresh("inbox"); route(); } catch (err) { toast(err.message); }
+      try { await api(`/inbox/${b.dataset.ign}`, { method: "PATCH", body: { status: "Ignored" } }); await refresh("inbox"); route(); } catch (err) { toast(err.message, "err"); }
     }));
     $$("[data-kind]").forEach((s) => (s.onchange = async () => {
-      try { await api(`/inbox/${s.dataset.kind}`, { method: "PATCH", body: { kind: s.value } }); await refresh("inbox"); toast("Changed"); } catch (err) { toast(err.message); }
+      try { await api(`/inbox/${s.dataset.kind}`, { method: "PATCH", body: { kind: s.value } }); await refresh("inbox"); toast("Changed"); } catch (err) { toast(err.message, "err"); }
     }));
   }
 
@@ -2568,7 +2573,7 @@
         toast(`${v.plate} added`);
         location.hash = `#/vehicles/${v.key}`;
       } catch (err) {
-        toast(err.message);
+        toast(err.message, "err");
         busy(e.submitter, false);
       }
     };
@@ -2623,7 +2628,7 @@
         toast("Photo saved");
         pageVehicle(key, tab);
       } catch (err) {
-        toast(err.message);
+        toast(err.message, "err");
       }
     };
     const box = $("#vtab");
@@ -2651,7 +2656,7 @@
         toast("Car details saved");
         pageVehicle(v.key, "details");
       } catch (err) {
-        toast(err.message);
+        toast(err.message, "err");
         busy(e.submitter, false);
       }
     };
@@ -2748,18 +2753,18 @@
             toast("Mark saved");
           }
         } catch (err) {
-          toast(err.message);
+          toast(err.message, "err");
           busy(e.currentTarget, false);
         }
       };
       const fix = d.$("#mFix");
       if (fix) fix.onclick = async () => {
-        try { after(await api(`/vehicles/${v.key}/marks/${m.id}`, { method: "PATCH", body: { fixed: !m.fixed } })); toast(m.fixed ? "Marked as not fixed" : "Marked as fixed"); } catch (err) { toast(err.message); }
+        try { after(await api(`/vehicles/${v.key}/marks/${m.id}`, { method: "PATCH", body: { fixed: !m.fixed } })); toast(m.fixed ? "Marked as not fixed" : "Marked as fixed"); } catch (err) { toast(err.message, "err"); }
       };
       const del = d.$("#mDel");
       if (del) del.onclick = async () => {
         if (!confirm("Remove this mark? Use this only for a mark added by mistake. For a repaired spot, use Mark fixed.")) return;
-        try { after(await api(`/vehicles/${v.key}/marks/${m.id}`, { method: "DELETE" })); toast("Mark removed"); } catch (err) { toast(err.message); }
+        try { after(await api(`/vehicles/${v.key}/marks/${m.id}`, { method: "DELETE" })); toast("Mark removed"); } catch (err) { toast(err.message, "err"); }
       };
     }
     draw();
@@ -2837,7 +2842,7 @@
         if (c) route();
         else location.hash = `#/customers/${out.id}`;
       } catch (err) {
-        toast(err.message);
+        toast(err.message, "err");
         busy(e.submitter, false);
       }
     };
@@ -2952,7 +2957,7 @@
         drawParts();
         toast("Part updated");
       } catch (err) {
-        toast(err.message);
+        toast(err.message, "err");
         busy(e.submitter, false);
       }
     };
@@ -3063,7 +3068,7 @@
         if (!out.fileSaved) setTimeout(() => toast("Parts saved, but the receipt file did not upload."), 1800);
         pageParts();
       } catch (err) {
-        toast(err.message);
+        toast(err.message, "err");
         busy(e.submitter, false);
       }
     };
@@ -3192,7 +3197,7 @@
         if (!out.fileSaved) toast("Payment saved, but the slip file did not upload.");
         location.hash = `#/money/receipt/${out.payment.id}`;
       } catch (err) {
-        toast(err.message);
+        toast(err.message, "err");
         busy(e.submitter, false);
       }
     };
@@ -3269,7 +3274,7 @@
         state.settings = await api("/settings", { method: "PUT", body });
         toast("Settings saved");
       } catch (err) {
-        toast(err.message);
+        toast(err.message, "err");
       } finally {
         busy(e.submitter, false);
       }
@@ -3303,7 +3308,7 @@
         toast("QR saved");
         pageSettings();
       } catch (err) {
-        toast(err.message);
+        toast(err.message, "err");
       }
     };
   }
@@ -3314,24 +3319,22 @@
     $("#shell").hidden = true;
     const box = $("#login");
     box.hidden = false;
-    box.innerHTML = `<div class="login"><div class="box">
-      <svg width="40" height="40" viewBox="0 0 120 120" aria-hidden="true"><polygon points="60,10 104,35 104,85 60,110 16,85 16,35" fill="#5b9bf5"/><polygon points="60,10 104,35 60,60 16,35" fill="#3f77d1"/></svg>
-      <h1>The Merc Lab DMS</h1><p class="muted" style="margin:0 0 16px">Log in to continue.</p>
-      <form id="loginForm"><label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password" required>
-      <div class="btns"><button class="btn block" type="submit">Log in</button></div></form></div></div>`;
-    $("#pw").focus();
-    $("#loginForm").onsubmit = async (e) => {
-      e.preventDefault();
-      busy(e.submitter, true);
-      try {
-        await api("/login", { method: "POST", body: { password: $("#pw").value } });
-        await start();
-      } catch (err) {
-        toast(err.message);
-        busy(e.submitter, false);
-      }
-    };
+    const go = $("#login-go");
+    go.classList.remove("is-loading");
+    go.textContent = "Sign in";
+    $("#login-pw").value = "";
+    window.MLSplash && window.MLSplash.ready();
   }
+  // login.js calls this. true = signed in (the app opens), false = wrong password.
+  window.signIn = async (password) => {
+    try {
+      await api("/login", { method: "POST", body: { password } });
+    } catch {
+      return false;
+    }
+    await start();
+    return true;
+  };
 
   let shellBuilt = false;
   async function start() {
@@ -3345,9 +3348,11 @@
       await loadAll();
     } catch (err) {
       view.innerHTML = `<div class="notice bad">${icon("alert")}<div>${esc(err.message)}</div></div>`;
+      window.MLSplash && window.MLSplash.ready();
       return;
     }
     route();
+    window.MLSplash && window.MLSplash.ready();   // the start animation hands over to the dashboard
   }
 
   start();

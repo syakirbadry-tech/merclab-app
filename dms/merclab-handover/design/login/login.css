@@ -1,0 +1,64 @@
+/* =====================================================================
+   THE MERC LAB · login page v1.1 (password only, as today)
+   Uses merclab.css tokens and components (.input, .btn, .err, .hint).
+   The entrance plays when .login gets .is-in (splash.js hand-over).
+   ===================================================================== */
+.login { position: relative; min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; overflow: hidden;
+  padding: calc(24px + env(safe-area-inset-top)) 20px calc(24px + env(safe-area-inset-bottom)); background: var(--bg-grad); }
+.login, .login * { box-sizing: border-box; }
+
+/* the heartbeat line carries on across the background */
+.login__trace { position: absolute; left: 0; right: 0; top: 34%; width: 100%; height: 120px; pointer-events: none; overflow: visible; }
+.login__trace .ln { fill: none; stroke: rgba(20, 32, 48, .10); stroke-width: 1.5; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 1; }
+.login__trace .pulse { fill: none; stroke: #0078d6; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: .05 1; stroke-dashoffset: .05; opacity: 0; filter: drop-shadow(0 0 4px rgba(0, 120, 214, .6)); }
+.login.is-in .login__trace .ln { animation: li-draw 1.2s var(--li-delay, 0s) cubic-bezier(.65, 0, .35, 1) forwards; }
+.login.is-in .login__trace .pulse { animation: li-pulse 1.6s calc(var(--li-delay, 0s) + .5s) cubic-bezier(.45, 0, .55, 1) forwards; }
+@keyframes li-draw { to { stroke-dashoffset: 0; } }
+@keyframes li-pulse { 0% { stroke-dashoffset: .05; opacity: 0; } 10% { opacity: 1; } 85% { opacity: 1; } 100% { stroke-dashoffset: -1; opacity: 0; } }
+
+/* glass card */
+.login__card { position: relative; width: min(400px, 100%); display: grid; gap: 18px; padding: 32px 28px 28px;
+  background: var(--surface); border: 1px solid var(--glass-edge, rgba(255, 255, 255, .78)); border-radius: 20px;
+  -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); box-shadow: var(--glass-shadow), 0 24px 60px rgba(30, 45, 70, .12); }
+.login__logo { width: 168px; height: auto; display: block; }
+.login__title { margin: 6px 0 0; font: 400 30px/1.15 var(--font-title, Georgia, serif); letter-spacing: -.01em; color: var(--ink); }
+.login__sub { margin: -10px 0 0; color: var(--muted); font-size: 15px; }
+.login__form { display: grid; gap: 8px; margin-top: 4px; }
+.login__pw { position: relative; }
+.login__pw .input { padding-right: 52px; }
+.login__eye { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); width: 44px; height: 44px; display: grid; place-items: center;
+  border: 0; background: none; color: var(--muted); border-radius: 8px; cursor: pointer; }
+.login__eye:hover { color: var(--ink); }
+.login__eye .ic { width: 20px; height: 20px; }
+.login__msg { min-height: 20px; margin: 0; display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.login__msg.err { color: var(--now); font-weight: 600; }
+.login__msg.caps { color: var(--soon); font-weight: 600; }
+.login__form .btn { margin-top: 8px; }
+.login__foot { position: absolute; left: 0; right: 0; bottom: calc(18px + env(safe-area-inset-bottom)); margin: 0; text-align: center;
+  font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; color: var(--muted); }
+.btn.is-loading { pointer-events: none; }
+.btn .spin { width: 18px; height: 18px; border: 2px solid rgba(255, 255, 255, .45); border-top-color: #fff; border-radius: 50%; animation: li-spin .8s linear infinite; }
+@keyframes li-spin { to { transform: rotate(360deg); } }
+
+/* entrance: the card settles out of the blue bloom (glass "focusing"), then its contents step in */
+.login .ls { opacity: 0; }
+.login.is-in .login__card { animation: li-card .7s var(--li-delay, 0s) cubic-bezier(.16, 1, .3, 1) both; }
+.login.is-in .ls { animation: li-item .55s calc(var(--li-delay, 0s) + .18s + var(--i, 0) * 70ms) cubic-bezier(.16, 1, .3, 1) forwards; }
+.login.is-in .login__foot { animation: li-item .6s calc(var(--li-delay, 0s) + .6s) ease-out both; }
+@keyframes li-card { from { opacity: 0; transform: translateY(18px) scale(.97); filter: blur(10px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes li-item { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.login .shake { animation: li-shake .36s cubic-bezier(.36, .07, .19, .97); }
+@keyframes li-shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+
+[data-theme="dark"] .login__trace .ln { stroke: rgba(255, 255, 255, .10); }
+
+@media (prefers-reduced-motion: reduce) {
+  .login.is-in .login__card, .login.is-in .ls, .login.is-in .login__foot { animation: li-fade .2s linear both !important; }
+  .login.is-in .login__trace .ln { animation: none; stroke-dashoffset: 0; }
+  .login__trace .pulse { display: none; }
+  .login .shake { animation: none; }
+}
+@keyframes li-fade { from { opacity: 0; } to { opacity: 1; } }
+/* safety net: if the hand-over never comes, show the form anyway after 3 s */
+.login:not(.is-in) .ls, .login:not(.is-in) .login__card { animation: li-fade .3s 3s forwards; }
+.login:not(.is-in) .login__trace .ln { stroke-dashoffset: 0; }

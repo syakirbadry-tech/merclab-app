@@ -1,0 +1,125 @@
+/* =====================================================================
+   THE MERC LAB · app start animation ("Heartbeat scan")  v1.0
+   Plays once per cold start, right after the plain iOS launch screen.
+   ~1.7 s, tap or key to skip. Needs merclab.css tokens (falls back if absent).
+   ===================================================================== */
+.ml-splash {
+  --sp-ink: var(--ink, #16191d);
+  --sp-on-ink: var(--on-ink, #ffffff);
+  --sp-blue: #0078d6;
+  --sp-ease-out: cubic-bezier(.16, 1, .3, 1);      /* arrive: decelerate */
+  --sp-ease-draw: cubic-bezier(.65, 0, .35, 1);    /* trace: steady sweep */
+  --sp-scale: 1;                                    /* logo size: 1 = 300 px wide */
+  position: fixed; inset: 0; z-index: 1000;
+  display: grid; place-items: center;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  background: var(--bg-grad, linear-gradient(180deg, #eef1f5, #e5e9ef));
+  cursor: pointer;
+  transition: opacity .28s ease-in;                 /* exit is faster than entry */
+}
+@media (min-width: 861px) { .ml-splash { --sp-scale: 1.25; } }
+
+/* soft XENTRY-blue glow that breathes once, on the heartbeat spike */
+.ml-splash__glow {
+  position: absolute; width: 520px; height: 520px; left: 50%; top: 50%;
+  translate: -50% -50%; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(closest-side, rgba(0, 120, 214, .20), rgba(0, 120, 214, 0) 70%);
+  opacity: 0; scale: .8;
+  animation: sp-glow 1.6s .2s var(--sp-ease-out) forwards;
+}
+@keyframes sp-glow { 0% { opacity: 0; scale: .8; } 45% { opacity: .55; scale: .95; } 62% { opacity: 1; scale: 1.04; } 100% { opacity: .5; scale: 1; } }
+
+/* stage: the logo at 300 x 104, scaled as one piece so the scan dot stays on the line */
+.ml-splash__stage { position: relative; width: 300px; height: 104px; scale: var(--sp-scale); transition: transform .28s ease-in; }
+.ml-splash__logo { position: absolute; inset: 0; width: 300px; height: 104px; overflow: visible; }
+.ml-splash__logo .ink { fill: var(--sp-ink); }
+.ml-splash__logo text, .ml-splash__logo rect, .ml-splash__logo path { transform-box: fill-box; }
+
+/* 1. THE (0.15 s) */
+.ml-splash .s-the { opacity: 0; animation: sp-fade-up .5s .15s var(--sp-ease-out) forwards; }
+/* 2. MERC rises out of its own baseline, like a part sliding into place (0.2 s) */
+.ml-splash .s-merc { transform: translateY(42px); animation: sp-rise .7s .2s var(--sp-ease-out) forwards; }
+/* 3. the LAB block slides open left to right (0.45 s) */
+.ml-splash .s-box { transform-origin: left center; transform: scaleX(0); animation: sp-wipe .5s .45s var(--sp-ease-out) forwards; }
+/* 4. LAB appears inside the block (0.75 s) */
+.ml-splash .s-lab { fill: var(--sp-on-ink); opacity: 0; animation: sp-fade-up .4s .75s var(--sp-ease-out) forwards; }
+/* 5. the heartbeat trace draws across, led by the scan dot (0.7 s → 1.35 s) */
+.ml-splash .s-trace { fill: none; stroke: var(--sp-ink); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round;
+  stroke-dasharray: 1; stroke-dashoffset: 1; animation: sp-draw .65s .7s var(--sp-ease-draw) forwards; }
+/* 6. tagline settles in last (1.15 s) */
+.ml-splash .s-tag { opacity: 0; animation: sp-fade-up .5s 1.15s var(--sp-ease-out) forwards; }
+
+/* scan dot: rides the exact trace path */
+.ml-splash__dot {
+  position: absolute; left: 0; top: 0; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%;
+  background: var(--sp-blue); box-shadow: 0 0 0 3px rgba(0, 120, 214, .18), 0 0 14px 2px rgba(0, 120, 214, .55);
+  offset-path: path("M0 64H136L143 59L150 69L157 58L164 70L171 64H294"); offset-rotate: 0deg; offset-distance: 0%;
+  opacity: 0; animation: sp-scan .65s .7s var(--sp-ease-draw) forwards;
+}
+@keyframes sp-scan { 0% { offset-distance: 0%; opacity: 0; } 8% { opacity: 1; } 100% { offset-distance: 100%; opacity: 1; } }
+
+@keyframes sp-fade-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes sp-rise { to { transform: none; } }
+@keyframes sp-wipe { to { transform: none; } }
+@keyframes sp-draw { to { stroke-dashoffset: 0; } }
+
+/* ---------- graphic motion (v1.1) ---------- */
+/* engineering grid that draws in behind the logo, fading at the edges */
+.ml-splash__grid { position: absolute; inset: 0; pointer-events: none; opacity: 0;
+  background-image: linear-gradient(rgba(20, 32, 48, .055) 1px, transparent 1px), linear-gradient(90deg, rgba(20, 32, 48, .055) 1px, transparent 1px);
+  background-size: 28px 28px; background-position: center;
+  -webkit-mask-image: radial-gradient(closest-side, #000 35%, transparent 100%); mask-image: radial-gradient(closest-side, #000 35%, transparent 100%);
+  -webkit-mask-size: 900px 900px; mask-size: 900px 900px; -webkit-mask-position: center; mask-position: center; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  scale: 1.06; animation: sp-grid 1.1s .05s var(--sp-ease-out) forwards; }
+@keyframes sp-grid { to { opacity: 1; scale: 1; } }
+/* one soft blue scan line passes over the screen, like a diagnostic sweep */
+.ml-splash__scan { position: absolute; left: 0; right: 0; top: 0; height: 160px; pointer-events: none; opacity: 0;
+  background: linear-gradient(180deg, rgba(0, 120, 214, 0), rgba(0, 120, 214, .10) 50%, rgba(0, 120, 214, 0));
+  animation: sp-scanline 1.25s .1s cubic-bezier(.45, 0, .55, 1) forwards; }
+@keyframes sp-scanline { 0% { transform: translateY(-160px); opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { transform: translateY(100vh); opacity: 0; } }
+/* the heartbeat: a small thump when the dot crosses the spike */
+.ml-splash__beat { position: absolute; inset: 0; transform-origin: 52% 56%; animation: sp-thump .32s 1.03s cubic-bezier(.3, 0, .2, 1); }
+@keyframes sp-thump { 0% { transform: none; } 35% { transform: scale(1.035); } 100% { transform: none; } }
+/* two pulse rings ripple out from the spike */
+.ml-splash__ring { position: absolute; left: 157px; top: 58px; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%;
+  border: 1.5px solid rgba(0, 120, 214, .55); opacity: 0; transform: scale(0); pointer-events: none;
+  animation: sp-ring .9s 1.03s cubic-bezier(.2, .6, .3, 1) forwards; }
+.ml-splash__ring.r2 { animation-delay: 1.2s; border-color: rgba(0, 120, 214, .35); }
+@keyframes sp-ring { 0% { opacity: .9; transform: scale(.4); } 100% { opacity: 0; transform: scale(11); } }
+/* the resting dot breathes softly while it waits for the hand-over */
+.ml-splash__dot::after { content: ""; position: absolute; inset: -6px; border-radius: 50%; background: rgba(0, 120, 214, .25); opacity: 0;
+  animation: sp-breathe 1.2s 1.4s ease-in-out infinite; }
+@keyframes sp-breathe { 0%, 100% { opacity: 0; transform: scale(.6); } 50% { opacity: 1; transform: scale(1.4); } }
+
+/* ---------- hand-over: zoom into the scan dot ---------- */
+.ml-splash__bloom { position: absolute; width: 60px; height: 60px; margin: -30px 0 0 -30px; border-radius: 50%; pointer-events: none;
+  left: calc(50% + 144px * var(--sp-scale)); top: calc(50% + 12px * var(--sp-scale));
+  background: radial-gradient(closest-side, rgba(0, 120, 214, .38), rgba(0, 120, 214, .12) 55%, rgba(0, 120, 214, 0)); opacity: 0; transform: scale(.2); }
+.ml-splash.is-zoom { pointer-events: none; animation: sp-out .32s .48s ease-in forwards; }
+.ml-splash.is-zoom .ml-splash__stage { transform-origin: 98% 61.5%; animation: sp-zoom .7s cubic-bezier(.7, 0, .84, 0) forwards; }
+.ml-splash.is-zoom .ml-splash__bloom { animation: sp-bloom .8s cubic-bezier(.5, 0, .3, 1) forwards; }
+.ml-splash.is-zoom .ml-splash__grid { animation: sp-grid-out .6s ease-in forwards; opacity: 1; }
+@keyframes sp-zoom { 0% { transform: none; filter: blur(0); } 60% { opacity: 1; } 100% { transform: scale(18); filter: blur(6px); opacity: 0; } }
+@keyframes sp-bloom { 0% { opacity: 0; transform: scale(.2); } 45% { opacity: 1; } 100% { opacity: 0; transform: scale(40); } }
+@keyframes sp-grid-out { to { opacity: 0; scale: 1.25; } }
+@keyframes sp-out { to { opacity: 0; visibility: hidden; } }
+
+/* still loading after the intro: the dot keeps sweeping the line, like a live trace */
+.ml-splash.is-waiting .ml-splash__dot { animation: sp-sweep 1.3s var(--sp-ease-draw) infinite; }
+@keyframes sp-sweep { 0% { offset-distance: 0%; opacity: 0; } 10% { opacity: 1; } 85% { opacity: 1; } 100% { offset-distance: 100%; opacity: 0; } }
+
+/* exit: lift a little and dissolve into the dashboard */
+.ml-splash.is-done { opacity: 0; pointer-events: none; }
+.ml-splash.is-done .ml-splash__stage { transform: translateY(-8px) scale(.97); }
+
+/* dark theme: the label inverts */
+[data-theme="dark"] .ml-splash__glow { background: radial-gradient(closest-side, rgba(76, 155, 232, .26), rgba(76, 155, 232, 0) 70%); }
+
+/* reduced motion: no movement, the finished logo simply fades in */
+@media (prefers-reduced-motion: reduce) {
+  .ml-splash *, .ml-splash { animation: none !important; transition: opacity .2s linear !important; }
+  .ml-splash .s-the, .ml-splash .s-lab, .ml-splash .s-tag { opacity: 1; }
+  .ml-splash .s-merc, .ml-splash .s-box { transform: none; }
+  .ml-splash .s-trace { stroke-dashoffset: 0; }
+  .ml-splash__dot, .ml-splash__glow, .ml-splash__grid, .ml-splash__scan, .ml-splash__ring, .ml-splash__bloom { display: none; }
+}
