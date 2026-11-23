@@ -46,8 +46,12 @@ function bodyData(req) {
 
 const wrap = (fn) => (req, res) =>
   fn(req, res).catch((err) => {
-    console.error("[api]", err.message);
-    res.status(err.status && err.status < 600 ? err.status : 500).json({ error: err.message || "Something went wrong." });
+    const status = err.status && err.status >= 400 && err.status < 600 ? err.status : 500;
+    console.error("[api]", status, err.message);
+    res.locals.errorMessage = err.message;
+    // A planned error (with a status) has a message written for the user; an
+    // unexpected one (a code bug) gets a plain message, the details go to the log.
+    res.status(status).json({ error: err.status ? err.message : "Something went wrong on our side. Please try again." });
   });
 
 const bad = (msg) => Object.assign(new Error(msg), { status: 400 });
@@ -84,7 +88,21 @@ const SETTINGS_FIELDS = {
 const NUMERIC_SETTINGS = ["markupPercent", "roundTo", "estimateValidityDays", "partsWarrantyMonths", "serviceIntervalKm", "serviceIntervalMonths", "openingCash", "ownerCapital", "labourRate"];
 const MONEY_SETTINGS = ["openingCash", "ownerCapital", "labourRate"];
 
+// Settings are read on almost every screen and every document link, so they
+// are kept for a short time (SETTINGS_CACHE_MS, default 60 s). Saving
+// settings in the app clears the copy at once.
+let settingsCache = null;
+function clearSettingsCache() {
+  settingsCache = null;
+}
 async function loadSettings() {
+  const ttl = process.env.SETTINGS_CACHE_MS !== undefined ? Number(process.env.SETTINGS_CACHE_MS) : 60000;
+  if (ttl > 0 && settingsCache && Date.now() - settingsCache.at < ttl) return { ...settingsCache.value };
+  const value = await readSettings();
+  settingsCache = { at: Date.now(), value };
+  return { ...value };
+}
+async function readSettings() {
   const rows = await db.list("settings");
   const row = rows.find((r) => r.fields.Key === "main") || rows[0];
   const s = { id: row ? row.id : null };
@@ -148,6 +166,7 @@ router.put("/settings", wrap(async (req, res) => {
   const s = await loadSettings();
   if (s.id) await db.update("settings", [{ id: s.id, fields }]);
   else await db.create("settings", [{ Key: "main", ...fields }]);
+  clearSettingsCache();
   res.json(await loadSettings());
 }));
 
@@ -157,6 +176,7 @@ router.post("/settings/qr", oneFile, wrap(async (req, res) => {
   const s = await loadSettings();
   if (!s.id) throw bad("Save the settings once first.");
   await db.upload("settingsQr", s.id, { filename: file.filename, contentType: file.mimeType, base64: file.base64 });
+  clearSettingsCache();
   res.json(await loadSettings());
 }));
 
@@ -763,5 +783,6 @@ WA.register(router, { wrap });
 require("./importer").register(router, { wrap });
 require("./finance").register(router, { wrap, oneFile, fileOf, bodyData, jobOut, newToken });
 require("./assistant").register(router, { wrap });
+require("./ops").register(router, { wrap });
 
-module.exports = { router, rankMatches, jobOut, paymentOut, partOut, loadSettings, companyFor, parseJob, docNoOf };
+module.exports = { router, rankMatches, jobOut, paymentOut, partOut, loadSettings, clearSettingsCache, companyFor, parseJob, docNoOf };

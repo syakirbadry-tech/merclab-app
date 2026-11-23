@@ -89,7 +89,16 @@ Airtable base **Merc Lab DMS** (`appfipyDV5e2cZtyB`): Settings, Purchases, Parts
 | `AIRTABLE_PAT` | Airtable token with read/write access to the Merc Lab DMS base |
 | `GEMINI_API_KEY` | Google Gemini key for reading receipts and slips |
 | `APP_PASSWORD` | the owner's login password |
-| `SESSION_SECRET` | any long random text |
+| `SESSION_SECRET` | any long random text. Changing it logs out every device |
+| `ALERT_WEBHOOK_URL` | optional: Slack, Discord or ntfy.sh webhook; a server error posts one line there (at most every 15 min) |
+
+### Safety on the live site
+- **Login:** everything under `/api` needs the owner login (30-day cookie, HttpOnly, Secure). 8 wrong passwords per 15 min per address are blocked.
+- **Customer links** (`/d/...`) use a random 128-bit token; 60 opens per 5 min per address. Wrong approve links count as failed tries.
+- **Rate limits:** API 600 requests / 5 min per address; AI reading 60 / hour.
+- **Errors:** users get a plain message or a friendly page; details go to the Render log and the error list on Settings → System & backup.
+- **Health:** `/health` (server up) and `/health?deep=1` (database too, cached 60 s), for an uptime monitor.
+- **Rollback:** code with Render → Deploys → Rollback (or revert the PR); data from Settings → Download full backup, plus Airtable's own record history and snapshots.
 
 ```bash
 npm ci && npm test && npm start

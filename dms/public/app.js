@@ -3379,6 +3379,10 @@
         <div class="card"><h2>Import old records</h2><p class="muted" style="margin-top:-6px">Upload the import file (.json) made from your Excel. Anything already in the DMS is skipped, so it is safe to run again.</p>
           <div class="btns"><label class="btn alt upload">${icon("upload")}Choose import file<input type="file" id="impFile" accept=".json,application/json"></label></div><div id="impOut"></div></div>
         <div class="card"><h2>WhatsApp inbox</h2>${state.whatsapp?.enabled ? `<p style="margin:0">${pill("Connected", "ok")} Accepting bills from ${esc((state.whatsapp.allowed || []).join(", "))}.</p>` : `<p class="muted" style="margin:0">Not connected. <a href="#/inbox">See how to connect</a>.</p>`}</div>
+        <div class="card"><h2>System &amp; backup</h2>
+          <div id="sysOut"><p class="muted" style="margin:0">Checking…</p></div>
+          <div class="btns"><a class="btn alt" href="/api/backup" download>${icon("download")}Download full backup</a></div>
+          <p class="hint">One file with every record. It holds customer details, so keep it private (e.g. your own Google Drive). Make one each month.</p></div>
         <div class="card"><h2>Opening balances</h2><div class="fgrid">
           ${f("openingCash", "Cash + bank on the opening date (RM)", "number", 'step="0.01" inputmode="decimal"')}${f("openingDate", "Opening date", "date")}
           <div class="full">${f("ownerCapital", "Owner capital put in (RM)", "number", 'step="0.01" inputmode="decimal"').replace(/^<div>|<\/div>$/g, "")}</div></div>
@@ -3408,6 +3412,14 @@
         busy(e.submitter, false);
       }
     };
+    api("/system").then((x) => {
+      const box = $("#sysOut");
+      if (!box) return;
+      const recent = (x.errors || []).filter((e) => e.status >= 500).slice(0, 5);
+      box.innerHTML = `<p style="margin:0 0 8px">${x.database === "ok" ? pill("Database OK", "ok") : pill("Database not answering", "bad")} ${pill(`Version ${x.version}`, "info")} ${x.alerts ? pill("Alerts on", "ok") : pill("Alerts off", "warn")}</p>
+        <p class="muted" style="margin:0">Running since ${esc(dmy(x.startedAt.slice(0, 10)))}. ${recent.length ? `Last problems:` : "No server problems since then."}</p>
+        ${recent.length ? `<ul style="margin:6px 0 0;padding-left:18px">${recent.map((e) => `<li>${esc(dmy(e.at.slice(0, 10)))} ${esc(e.at.slice(11, 16))} · ${esc(e.method)} ${esc(e.path)} · ${esc(e.message)}</li>`).join("")}</ul>` : ""}`;
+    }).catch(() => { const box = $("#sysOut"); if (box) box.innerHTML = `<p class="muted" style="margin:0">Could not check the system.</p>`; });
     $("#impFile").onchange = async (e) => {
       const file = e.target.files[0];
       e.target.value = "";
