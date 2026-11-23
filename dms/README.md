@@ -107,6 +107,19 @@ npm ci && npm test && npm start
 
 Hosting: `render.yaml` in the repository root sets up a Render web service from the `dms/` folder.
 
+### Backup to this computer
+`npm run backup` saves every table as JSON plus every attached file (supplier receipts, payment slips, photos, Merc HUB files) to `E:\The Merc Lab Backups\<yyyy-mm-dd>\` (Kuala Lumpur date):
+
+- `tables/<table>.json`: the records, as Airtable returns them.
+- `files/<table>/<record id>/<file id>-<name>`: the attached files. `files.json` lists each file with its record and field.
+- `backup-info.json`: counts and any errors. `backup-log.txt` in the top folder gets one line per run.
+
+After a run with no errors, it deletes dated backup folders older than 30 days. It touches only folders named like `2026-11-23` directly inside the backup folder. If anything fails, old backups are kept and the run ends with exit code 1. A second run on the same day replaces that day's folder.
+
+Setup, once: copy `.env.example` to `.env` in `dms/` and fill in `AIRTABLE_PAT` (a read-only token is enough) and `AIRTABLE_BASE_ID`. `.env` is git-ignored. `BACKUP_DIR` saves somewhere else; it must be outside the repo. Nightly run: Windows Task Scheduler starts `scripts\backup-task.cmd`.
+
+The backup holds customer data. Keep it on this computer (and a second drive) only, never in the repo.
+
 ## Open questions (from the handover; placeholders until answered)
 
 1. Exact registered name on the SSM certificate (with or without "Enterprise").
