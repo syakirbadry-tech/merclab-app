@@ -131,11 +131,11 @@ function register(router, { wrap, oneFile, fileOf, bodyData, jobOut, newToken })
     if (!file) throw bad("Please choose the receipt photo or PDF.");
     let s;
     try {
-      s = await ai.readPurchase(file);
+      s = await ai.readExpense(file);
     } catch (err) {
-      return res.status(err.status === 503 ? 503 : 502).json({ error: err.message });
+      return res.status([503, 504].includes(err.status) ? err.status : 502).json({ error: err.message });
     }
-    res.json({ suggestion: { paidTo: s.supplier || "", date: s.date || "", amount: s.total ?? null, description: s.items?.[0]?.name ? (s.items.length > 1 ? `${s.items[0].name} and ${s.items.length - 1} more` : s.items[0].name) : s.supplier || "" } });
+    res.json({ suggestion: { ...s, description: s.description || s.paidTo } });
   }));
   router.post("/expenses", oneFile, wrap(async (req, res) => {
     const d = bodyData(req);
