@@ -188,7 +188,10 @@ async function runImport(data) {
       if (Number.isFinite(Number(data.settings.openingCash))) fields["Opening cash"] = n2(data.settings.openingCash);
       if (Number(data.settings.ownerCapital) > 0) fields["Owner capital"] = n2(data.settings.ownerCapital);
     }
-    if (row && Object.keys(fields).length) await db.update("settings", [{ id: row.id, fields }]);
+    if (row && Object.keys(fields).length) {
+      await db.update("settings", [{ id: row.id, fields }]);
+      require("./routes").clearSettingsCache();
+    }
   }
   return out;
 }

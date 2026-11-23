@@ -98,9 +98,11 @@ fetch("/api/jobs/${job.id}/mileage",{method:"POST",credentials:"same-origin",hea
 .catch(function(x){b.disabled=false;b.textContent="Save and open the document";document.getElementById("e").textContent=x.message})};</script></div></body></html>`;
 }
 
+// The busiest lookup: Airtable finds the one record (no full-table load).
+// The token was checked against /^[qirhc][a-f0-9]{32}$/ before this.
 async function findByToken(table, field, token) {
-  const rows = await db.list(table);
-  return rows.find((r) => r.fields[field] === token) || null;
+  const row = await db.findOne(table, field, token);
+  return row && row.fields[field] === token ? row : null;
 }
 
 async function docRoute(req, res) {
@@ -148,7 +150,8 @@ async function docRoute(req, res) {
   } catch (err) {
     if (err instanceof DocumentError) return res.status(200).send(problemPage(err, req._docJob, req._docStaff, req._docCompany));
     console.error("[doc]", err.message);
-    res.status(500).send("This page cannot be shown right now. Please try again later.");
+    res.locals.errorMessage = err.message;
+    res.status(500).send(require("./ops").page("Please try again in a minute", "This document cannot be shown right now. Please try again shortly, or contact the workshop."));
   }
 }
 

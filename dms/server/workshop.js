@@ -6,6 +6,7 @@ const db = require("./airtable");
 const M = require("./money");
 const P = require("./pricing");
 const { esc } = require("./template");
+const { noteFail } = require("./auth");
 
 const text = (v, max = 200) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 const bad = (msg, status = 400) => Object.assign(new Error(msg), { status });
@@ -214,8 +215,12 @@ async function approveRoute(req, res, { jobOut }) {
   const token = req.params.token;
   if (!/^q[a-f0-9]{32}$/.test(token)) return res.status(404).json({ error: "Not found" });
   try {
-    const row = (await db.list("quotes")).find((r) => r.fields["Link token"] === token);
-    if (!row) return res.status(404).json({ error: "Not found" });
+    const found = await db.findOne("quotes", "Link token", token);
+    const row = found && found.fields["Link token"] === token ? found : null;
+    if (!row) {
+      noteFail("ap:" + (req.ip || "x"));
+      return res.status(404).json({ error: "Not found" });
+    }
     const j = jobOut(row);
     if (j.status === "Cancelled") return res.status(400).json({ error: "This estimate was cancelled. Please contact the workshop." });
     if (j.invoiceNo || j.approvedAt) return res.json({ ok: true, already: true });

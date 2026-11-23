@@ -72,6 +72,23 @@ async function list(table, { fields } = {}) {
   return out;
 }
 
+// Look one record up by an exact field value, letting Airtable do the search
+// instead of loading the whole table. Used for the busiest lookups (customer
+// document links). The value must already be checked by the caller (letters,
+// digits only), so it cannot change the formula.
+async function findOne(table, field, value) {
+  if (!/^[A-Za-z0-9 ]+$/.test(field) || !/^[A-Za-z0-9_-]+$/.test(String(value))) return null;
+  const qs = new URLSearchParams({ filterByFormula: `{${field}}='${value}'`, maxRecords: "1", pageSize: "1" });
+  const data = await request(`${TABLES[table]}?${qs}`);
+  return data.records?.[0] || null;
+}
+
+// Cheapest possible call, to check the database answers.
+async function ping() {
+  await request(`${TABLES.settings}?maxRecords=1&pageSize=1`);
+  return true;
+}
+
 async function get(table, id) {
   return request(`${TABLES[table]}/${id}`);
 }
@@ -117,4 +134,4 @@ async function upload(fieldKey, recordId, { filename, contentType, base64 }) {
 }
 
 // Exported as one object so tests can swap in an in-memory version.
-module.exports = { TABLES, ATTACHMENT_FIELDS, list, get, create, update, upload };
+module.exports = { TABLES, ATTACHMENT_FIELDS, list, findOne, ping, get, create, update, upload };

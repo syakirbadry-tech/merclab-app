@@ -20,3 +20,6 @@ services:
         sync: false
       - key: SESSION_SECRET
         generateValue: true
+      # Optional: a Slack/Discord/ntfy.sh webhook. A server error posts one line there.
+      - key: ALERT_WEBHOOK_URL
+        sync: false

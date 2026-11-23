@@ -28,6 +28,12 @@ function reset() {
   store.settings.push({ id: newId(), fields: { Key: "main", "Legal name": "TNS Legacy", "Markup percent": 30, "Round to": 1, "Quote valid days": 7, "Bank account no": "1234567890", "Bank name": "Maybank", "Bank account name": "TNS Legacy" } });
 }
 db.list = async (t) => store[t].map((r) => ({ id: r.id, fields: { ...r.fields } }));
+db.findOne = async (t, field, value) => {
+  const r = store[t].find((x) => x.fields[field] === value);
+  return r ? { id: r.id, fields: { ...r.fields } } : null;
+};
+db.ping = async () => true;
+process.env.SETTINGS_CACHE_MS = "0";
 db.get = async (t, id) => {
   const r = store[t].find((x) => x.id === id);
   if (!r) throw Object.assign(new Error("NOT_FOUND"), { status: 404 });
@@ -998,4 +1004,86 @@ test("app files are served with no-cache so phones pick up updates", async () =>
     assert.equal(r.status, 200, f);
     assert.match(r.headers.get("cache-control") || "", /no-cache/, f);
   }
+});
+
+test("safety: unknown links, bad input and code errors get friendly answers, never code details", async () => {
+  reset();
+  const ops = require("../server/ops");
+  ops._reset();
+  let r = await call("GET", "/nope", { noAuth: true });
+  assert.equal(r.status, 404);
+  assert.match(r.text, /Page not found/);
+  assert.equal(r.status, 404);
+  r = await call("GET", "/api/nope", { noAuth: true });
+  assert.equal(r.status, 401, "API needs login before anything else");
+  await login();
+  r = await call("GET", "/api/nope");
+  assert.equal(r.status, 404);
+  assert.equal(r.body.error, "Not found.");
+  // Broken JSON body
+  const res = await fetch(base + "/api/jobs", { method: "POST", headers: { cookie, "Content-Type": "application/json" }, body: "{bad" });
+  assert.equal(res.status, 400);
+  assert.match((await res.json()).error, /not readable/);
+  // A code bug: plain message to the user, details in the error log
+  const realList = db.list;
+  db.list = async () => { throw new Error("secret internal detail"); };
+  r = await call("GET", "/api/jobs");
+  db.list = realList;
+  assert.equal(r.status, 500);
+  assert.doesNotMatch(r.text, /secret internal detail/);
+  r = await call("GET", "/api/system");
+  assert.equal(r.status, 200);
+  assert.equal(r.body.database, "ok");
+  assert.ok(r.body.errors.some((e) => e.status === 500 && /secret internal detail/.test(e.message)));
+  // Frames from other sites are refused
+  const h = await fetch(base + "/");
+  assert.equal(h.headers.get("x-frame-options"), "DENY");
+  // Deep health check
+  r = await call("GET", "/health?deep=1", { noAuth: true });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.database, "ok");
+  assert.equal(r.body.serverErrorsLastHour, 1);
+});
+
+test("safety: rate limits on document links, wrong approve links and the API", async () => {
+  reset();
+  const ops = require("../server/ops");
+  ops._reset();
+  process.env.RATE_DOC_MAX = "3";
+  const fake = "/d/q" + "0".repeat(32);
+  for (let i = 0; i < 3; i++) assert.equal((await call("GET", fake, { noAuth: true })).status, 404);
+  let r = await call("GET", fake, { noAuth: true });
+  assert.equal(r.status, 429);
+  assert.match(r.text, /Please wait a moment/);
+  delete process.env.RATE_DOC_MAX;
+  ops._reset();
+  // Guessing approve links: blocked after 8 wrong tries
+  require("../server/auth")._fails.clear();
+  for (let i = 0; i < 8; i++) assert.equal((await call("POST", "/d/q" + String(i).padStart(32, "0") + "/approve", { body: { name: "Guess" }, noAuth: true })).status, 404);
+  r = await call("POST", "/d/q" + "9".repeat(32) + "/approve", { body: { name: "Guess" }, noAuth: true });
+  assert.equal(r.status, 429);
+  require("../server/auth")._fails.clear();
+  // Logged-in API limit
+  await login();
+  process.env.RATE_API_MAX = "2";
+  assert.equal((await call("GET", "/api/settings")).status, 200);
+  assert.equal((await call("GET", "/api/settings")).status, 200);
+  assert.equal((await call("GET", "/api/settings")).status, 429);
+  delete process.env.RATE_API_MAX;
+  ops._reset();
+  // Logs never keep a usable document link
+  assert.equal(ops.mask("/d/q" + "a".repeat(32) + "?x=1"), "/d/q…");
+});
+
+test("safety: full backup has every table and needs login", async () => {
+  reset();
+  require("../server/ops")._reset();
+  cookie = "";
+  let r = await call("GET", "/api/backup", { noAuth: true });
+  assert.equal(r.status, 401);
+  await login();
+  r = await call("GET", "/api/backup");
+  assert.equal(r.status, 200);
+  assert.deepEqual(Object.keys(r.body.tables).sort(), Object.keys(db.TABLES).sort());
+  assert.equal(r.body.tables.settings[0].fields.Key, "main");
 });
