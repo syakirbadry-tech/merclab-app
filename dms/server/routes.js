@@ -776,7 +776,7 @@ router.post("/payments", oneFile, wrap(async (req, res) => {
   res.status(201).json({ payment: paymentOut(row), job: { ...j, paid: state.paid, balance: state.balance, status: state.status }, fileSaved });
 }));
 
-V.register(router, { wrap, oneFile, fileOf, bodyData, jobOut, customerOut });
+V.register(router, { wrap, oneFile, fileOf, bodyData, jobOut, customerOut, loadSettings });
 require("./workshop").register(router, { wrap, oneFile, fileOf, bodyData, jobOut, newToken });
 require("./crm").register(router, { wrap, customerOut });
 WA.register(router, { wrap });
@@ -784,5 +784,6 @@ require("./importer").register(router, { wrap });
 require("./finance").register(router, { wrap, oneFile, fileOf, bodyData, jobOut, newToken });
 require("./assistant").register(router, { wrap });
 require("./ops").register(router, { wrap });
+require("./insights").register(router, { wrap, jobOut, partOut, loadSettings, mergeVehicles: V.mergeVehicles });
 
 module.exports = { router, rankMatches, jobOut, paymentOut, partOut, loadSettings, clearSettingsCache, companyFor, parseJob, docNoOf };

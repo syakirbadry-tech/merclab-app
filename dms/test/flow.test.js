@@ -1087,3 +1087,109 @@ test("safety: full backup has every table and needs login", async () => {
   assert.deepEqual(Object.keys(r.body.tables).sort(), Object.keys(db.TABLES).sort());
   assert.equal(r.body.tables.settings[0].fields.Key, "main");
 });
+
+// ================= parts analysis & service tracker =================
+
+const I = require("../server/insights");
+// Demo invoice in the Quotes table (made-up data only).
+function demoInvoice(no, date, { plate = "VDM 2841", car = "Mercedes-Benz C200 (W205)", km = 50000, request = "WORK AS INVOICED", lines = [] } = {}) {
+  store.quotes.push({ id: newId(), fields: { "Doc type": "Invoice", "Quote no": "Q" + no, "Invoice no": String(no), Date: date, "Invoice date": date, "Customer name": "Demo Customer", Phone: "0123456789", Car: car, Plate: plate, "Mileage km": km, Status: "Paid", Total: 100, Balance: 0, "Items JSON": JSON.stringify([{ code: "C1", request, lines }]) } });
+}
+const oil = (qty = 7) => ({ type: "part", description: "ENGINE OIL MB229.5 5W-40", qty, unitPrice: 80, amount: qty * 80, partNo: "DEMO-OIL-5W40" });
+const filter = () => ({ type: "part", description: "OIL FILTER", qty: 1, unitPrice: 60, amount: 60, partNo: "A 000 000 00 01" });
+
+test("insights: service jobs, part kinds and model from the car or chassis", () => {
+  assert.equal(I.isServiceJob({ groups: [{ request: "WORK AS INVOICED", lines: [filter()] }] }), true);
+  assert.equal(I.isServiceJob({ groups: [{ request: "WORK", lines: [{ type: "labour", description: "TO PERFORM MAINTENANCE SERVICE A", amount: 100 }] }] }), true);
+  assert.equal(I.isServiceJob({ groups: [{ request: "WORK", lines: [{ type: "sundry", description: "TUKAR MINYAK", amount: 200 }] }] }), true);
+  assert.equal(I.isServiceJob({ groups: [{ request: "AIRCOND SERVICE", lines: [{ type: "labour", description: "AIRCOND SERVICE", amount: 150 }] }] }), false);
+  assert.equal(I.isServiceJob({ groups: [{ request: "GEARBOX", lines: [{ type: "part", description: "TRANSMISSION FLUID", qty: 6, unitPrice: 95 }] }] }), false);
+  assert.equal(I.kindOf("ENGINE OIL MB229.5"), "Service");
+  assert.equal(I.kindOf("BRAKE PAD, FRONT"), "Wear");
+  assert.equal(I.kindOf("CAMSHAFT ADJUSTER SOLENOID"), "Repair");
+  assert.deepEqual(I.modelOf("Mercedes-Benz A-Class (W177)", ""), { code: "W177", name: "A-Class" });
+  assert.deepEqual(I.modelOf("", "WDD2050000A000001"), { code: "W205", name: "C-Class" });
+  assert.deepEqual(I.modelOf("GLC", "W1N2530000A000001"), { code: "X253", name: "GLC" });
+  assert.equal(I.modelOf("Proton Saga", "PM1XXDS0000000000"), null);
+  assert.ok(I.knownFor("W205").length > 0);
+});
+
+test("insights: service due 12 months after the last service, with status and came-back rate", () => {
+  const today = "2026-11-23";
+  const job = (no, date, km, lines = [oil(), filter()]) => ({ id: "rec" + String(no).padStart(14, "0"), invoiceNo: String(no), invoiceDate: date, status: "Paid", mileageKm: km, groups: [{ request: "WORK", lines }] });
+  // Serviced 2025-01-10 and back on 2026-01-05 (on time); due 2027-01-05.
+  let s = I.serviceOf([job(1, "2025-01-10", 40000), job(2, "2026-01-05", 52000), job(3, "2026-06-01", 56000, [{ type: "part", description: "BRAKE PAD", qty: 1, unitPrice: 300 }])], {}, { today, months: 12, km: 10000 });
+  assert.equal(s.lastServiceDate, "2026-01-05");
+  assert.equal(s.serviceDueDate, "2027-01-05");
+  assert.equal(s.serviceDueKm, 62000);
+  assert.equal(s.serviceStatus, "soon");
+  assert.deepEqual(s.serviceReturns, { due: 1, back: 1 });
+  assert.equal(s.serviceHistory.length, 2);
+  assert.equal(s.serviceHistory[0].docNo, "2");
+  // Last service 2025-11-30: due 2026-11-30, inside 30 days.
+  assert.equal(I.serviceOf([job(4, "2025-11-30", 1)], {}, { today }).serviceStatus, "due");
+  // Overdue, then more than 6 months late (counts as did not come back).
+  assert.equal(I.serviceOf([job(5, "2025-10-01", 1)], {}, { today }).serviceStatus, "overdue");
+  s = I.serviceOf([job(6, "2024-12-01", 1)], {}, { today });
+  assert.equal(s.serviceStatus, "lapsed");
+  assert.deepEqual(s.serviceReturns, { due: 1, back: 0 });
+  // A date set by hand after the last service wins; an older one does not.
+  assert.equal(I.serviceOf([job(7, "2026-01-05", 1)], { nextServiceDate: "2026-07-05" }, { today }).serviceDueDate, "2026-07-05");
+  assert.equal(I.serviceOf([job(7, "2026-01-05", 1)], { nextServiceDate: "2025-07-05" }, { today }).serviceDueSet, "auto");
+  // No service invoice: no due date. Cancelled and estimates do not count.
+  assert.equal(I.serviceOf([{ ...job(8, "2026-01-05", 1), status: "Cancelled" }, { ...job(9, "2026-02-05", 1), invoiceNo: "" }], {}, { today }).serviceStatus, "none");
+});
+
+test("insights: fast movers, buy-for-stock list, idle stock and needs by model", async () => {
+  reset();
+  const today = P.todayKL();
+  const ago = (d) => P.addDays(today, -d);
+  // Oil + filter on 6 jobs over ~5 months (fast), a solenoid once (repair, not stocked).
+  for (let i = 0; i < 6; i++) demoInvoice(100 + i, ago(10 + i * 25), { plate: `VDM ${2840 + i}`, lines: [oil(), filter()] });
+  demoInvoice(110, ago(40), { plate: "WXY 1", car: "A200", lines: [{ type: "part", description: "CAMSHAFT ADJUSTER SOLENOID", qty: 1, unitPrice: 450, amount: 450, partNo: "A 000 000 00 02" }] });
+  store.vehicles.push({ id: newId(), fields: { Plate: "WXY 1", "Plate key": "WXY1", "Chassis no": "WDD1770000A000001" } });
+  // Shelf: 3 filters (same part no, written with spaces), 1 idle air spring bought 200 days ago.
+  store.parts.push({ id: newId(), fields: { Part: "Oil filter", "Part no": "A0000000001", "Qty left": 3, "Unit cost": 40, "Bought on": ago(30), Supplier: "Demo Parts" } });
+  store.parts.push({ id: newId(), fields: { Part: "Air spring", "Part no": "A 000 000 00 99", "Qty left": 1, "Unit cost": 900, "Bought on": ago(200) } });
+  // An estimate (not invoiced) never counts.
+  store.quotes.push({ id: newId(), fields: { "Quote no": "Q999", Date: ago(5), Plate: "VDM 1", Status: "Draft", "Items JSON": JSON.stringify([{ code: "C1", request: "X", lines: [filter()] }]) } });
+
+  cookie = "";
+  assert.equal((await call("GET", "/api/insights/parts", { noAuth: true })).status, 401);
+  await login();
+  const r = await call("GET", "/api/insights/parts?months=6");
+  assert.equal(r.status, 200);
+  const d = r.body;
+  assert.equal(d.months, 6);
+  assert.equal(d.invoices, 7);
+  const f = d.items.find((i) => i.name === "OIL FILTER");
+  assert.equal(f.jobs, 6);
+  assert.equal(f.kind, "Service");
+  assert.equal(f.speed, "Fast");
+  assert.equal(f.inStock, 3);
+  // 6 jobs in ~4.4 months of records = 1.35 a month × 1.5 months → 3; 3 on the shelf → nothing to buy.
+  assert.ok(!d.toBuy.some((i) => i.name === "OIL FILTER"));
+  const o = d.toBuy.find((i) => i.name.startsWith("ENGINE OIL"));
+  assert.ok(o.buy >= 7, "at least one job's worth of oil");
+  const sol = d.items.find((i) => i.name === "CAMSHAFT ADJUSTER SOLENOID");
+  assert.equal(sol.kind, "Repair");
+  assert.equal(sol.buy, 0, "a one-off repair part is not stocked");
+  assert.deepEqual(sol.models, [{ code: "W177", jobs: 1 }]);
+  assert.equal(d.idle.length, 1);
+  assert.equal(d.idle[0].value, 900);
+  assert.equal(d.summary.idleValue, 900);
+  const w205 = d.byModel.find((m) => m.code === "W205");
+  assert.equal(w205.jobs, 6);
+  assert.equal(w205.service[0].name.startsWith("ENGINE OIL") || w205.service[0].name === "OIL FILTER", true);
+  assert.ok(d.byModel.find((m) => m.code === "W177").known.length > 0);
+
+  // Cars carry their service record: last service and next due 12 months on.
+  const v = await call("GET", "/api/vehicles/VDM2840");
+  assert.equal(v.status, 200);
+  assert.equal(v.body.lastServiceDate, ago(10));
+  assert.equal(v.body.serviceDueDate, P.addMonths(ago(10), 12));
+  assert.equal(v.body.serviceDueKm, 60000);
+  assert.equal(v.body.serviceStatus, "ok");
+  const w = await call("GET", "/api/vehicles/WXY1");
+  assert.equal(w.body.serviceStatus, "none");
+});

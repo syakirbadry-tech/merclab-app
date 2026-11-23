@@ -9,6 +9,7 @@
 const crypto = require("crypto");
 const db = require("./airtable");
 const P = require("./pricing");
+const I = require("./insights");
 
 const plateKey = (p) => String(p || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 16);
 const text = (v, max = 200) => (typeof v === "string" ? v.trim().slice(0, max) : "");
@@ -112,8 +113,10 @@ function fromJobs(key, jobs) {
 
 const jobDate = (j) => j.invoiceDate || j.date || "";
 
-// Records + cars seen on jobs, with last visit, visit count and top mileage.
-function mergeVehicles(rows, jobs) {
+// Records + cars seen on jobs, with last visit, visit count, top mileage and
+// the service record (last service, next due). svc = { months, km } from Settings.
+function mergeVehicles(rows, jobs, svc = {}) {
+  const today = svc.today || P.todayKL();
   const byKey = new Map();
   for (const r of rows) {
     const v = vehicleOut(r);
@@ -141,6 +144,7 @@ function mergeVehicles(rows, jobs) {
       visits: list.length,
       openMarks: v.marks.filter((m) => !m.fixed).length,
       stage: last && last.stage && last.stage !== "Collected" ? last.stage : "",
+      ...I.serviceOf(list, v, { today, months: svc.months || 12, km: svc.km || 10000 }),
     };
   });
 }
@@ -238,19 +242,24 @@ function cleanMark(b, prev = {}) {
   };
 }
 
-function register(router, { wrap, oneFile, fileOf, bodyData, jobOut, customerOut }) {
+function register(router, { wrap, oneFile, fileOf, bodyData, jobOut, customerOut, loadSettings }) {
   const allJobs = async () => (await db.list("quotes")).map(jobOut);
+  const svcOpts = async () => {
+    const s = loadSettings ? await loadSettings() : {};
+    return { months: s.serviceIntervalMonths, km: s.serviceIntervalKm };
+  };
+  const merged = async (rows, jobs) => mergeVehicles(rows, jobs, await svcOpts());
 
   router.get("/vehicles", wrap(async (req, res) => {
     const [rows, jobs] = await Promise.all([db.list("vehicles"), allJobs()]);
-    const vehicles = mergeVehicles(rows, jobs).sort((a, b) => (b.lastVisit || "").localeCompare(a.lastVisit || "") || a.key.localeCompare(b.key));
+    const vehicles = (await merged(rows, jobs)).sort((a, b) => (b.lastVisit || "").localeCompare(a.lastVisit || "") || a.key.localeCompare(b.key));
     res.json({ vehicles });
   }));
 
   router.get("/vehicles/:key", wrap(async (req, res) => {
     const key = plateKey(req.params.key);
     const [rows, jobs] = await Promise.all([db.list("vehicles"), allJobs()]);
-    const v = mergeVehicles(rows, jobs).find((x) => x.key === key);
+    const v = (await merged(rows, jobs)).find((x) => x.key === key);
     if (!v) throw bad("This car is not in the system.", 404);
     res.json(v);
   }));
@@ -261,10 +270,10 @@ function register(router, { wrap, oneFile, fileOf, bodyData, jobOut, customerOut
     const key = plateKey(b.plate);
     if (key.length < 2) throw bad("Car plate is needed.");
     const [rows, jobs] = await Promise.all([db.list("vehicles"), allJobs()]);
-    if (mergeVehicles(rows, jobs).some((x) => x.key === key)) throw bad(`${text(b.plate, 20).toUpperCase()} is already in the system.`, 409);
+    if ((await merged(rows, jobs)).some((x) => x.key === key)) throw bad(`${text(b.plate, 20).toUpperCase()} is already in the system.`, 409);
     const fields = { Plate: text(b.plate, 20).toUpperCase(), "Plate key": key, ...vehicleFields(b) };
     const [row] = await db.create("vehicles", [fields]);
-    res.status(201).json(mergeVehicles([row], [])[0]);
+    res.status(201).json((await merged([row], []))[0]);
   }));
 
   router.patch("/vehicles/:key", wrap(async (req, res) => {
@@ -274,7 +283,7 @@ function register(router, { wrap, oneFile, fileOf, bodyData, jobOut, customerOut
     const fields = vehicleFields(req.body || {});
     if (Object.keys(fields).length) await db.update("vehicles", [{ id: row.id, fields }]);
     const rows = await db.list("vehicles");
-    res.json(mergeVehicles(rows, jobs).find((x) => x.key === key));
+    res.json((await merged(rows, jobs)).find((x) => x.key === key));
   }));
 
   router.post("/vehicles/:key/photo", oneFile, wrap(async (req, res) => {
@@ -285,7 +294,7 @@ function register(router, { wrap, oneFile, fileOf, bodyData, jobOut, customerOut
     const row = await ensureRecord(key, jobs);
     await db.upload("vehiclePhoto", row.id, { filename: `${key}.jpg`, contentType: file.mimeType, base64: file.base64 });
     const rows = await db.list("vehicles");
-    res.json(mergeVehicles(rows, jobs).find((x) => x.key === key));
+    res.json((await merged(rows, jobs)).find((x) => x.key === key));
   }));
 
   // Add a condition mark (optional photo).
@@ -316,7 +325,7 @@ function register(router, { wrap, oneFile, fileOf, bodyData, jobOut, customerOut
     list.push(mark);
     await db.update("vehicles", [{ id: row.id, fields: { "Condition JSON": JSON.stringify(list) } }]);
     const rows = await db.list("vehicles");
-    res.status(201).json({ vehicle: mergeVehicles(rows, jobs).find((x) => x.key === key), photoSaved });
+    res.status(201).json({ vehicle: (await merged(rows, jobs)).find((x) => x.key === key), photoSaved });
   }));
 
   router.patch("/vehicles/:key/marks/:id", wrap(async (req, res) => {
@@ -335,7 +344,7 @@ function register(router, { wrap, oneFile, fileOf, bodyData, jobOut, customerOut
     list[i] = next;
     await db.update("vehicles", [{ id: row.id, fields: { "Condition JSON": JSON.stringify(list) } }]);
     const rows = await db.list("vehicles");
-    res.json(mergeVehicles(rows, jobs).find((x) => x.key === key));
+    res.json((await merged(rows, jobs)).find((x) => x.key === key));
   }));
 
   router.delete("/vehicles/:key/marks/:id", wrap(async (req, res) => {
@@ -347,7 +356,7 @@ function register(router, { wrap, oneFile, fileOf, bodyData, jobOut, customerOut
     if (next.length === list.length) throw bad("That mark is not on this car.", 404);
     await db.update("vehicles", [{ id: row.id, fields: { "Condition JSON": JSON.stringify(next) } }]);
     const rows = await db.list("vehicles");
-    res.json(mergeVehicles(rows, jobs).find((x) => x.key === key));
+    res.json((await merged(rows, jobs)).find((x) => x.key === key));
   }));
 
   // ---------- customers: add / edit ----------
