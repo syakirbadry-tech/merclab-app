@@ -68,6 +68,33 @@ const PAYMENT_SCHEMA = {
 
 const METHODS = ["Bank transfer", "DuitNow", "Cash", "Card", "Cheque", "E-wallet", "Other"];
 
+// Money the workshop PAID OUT (expenses): a bill, a receipt, or a transfer
+// slip to a person such as a contract technician.
+const EXPENSE_CATS = ["Rent", "Utilities", "Wages", "Workshop supplies", "Sublet (outside work)", "Parts for jobs (no stock)", "Tools & equipment (asset)", "Transport", "Marketing", "Phone & internet", "Bank fees", "Insurance & licences", "Owner drawings", "Other"];
+const EXPENSE_PROMPT = `You are reading proof of money PAID OUT by a small Malaysian car workshop: a bill, a receipt or cash bill, or a bank transfer / DuitNow / e-wallet slip to a person or company (for example a contract technician, a landlord, a utility). Extract only what is shown. Use null for anything not clearly visible. Never invent values.
+
+- paidTo: who RECEIVED the money. On a transfer slip this is the recipient / beneficiary / "to" name, NOT the bank and NOT the sender. On a bill or receipt it is the shop or company at the top.
+- amount: the total paid, as a number without "RM".
+- date: the payment or receipt date as YYYY-MM-DD (Malaysian dates are day first: 19/11/26 = 2026-11-19).
+- description: a short note of what it was for, from the payment reference / recipient reference / items (e.g. "Aircond repair VDM2841", "TNB electricity"). Null if nothing is written.
+- method: exactly one of "Bank transfer", "DuitNow", "Cash", "Card", "Cheque", "E-wallet", "Other".
+- category: your best guess of exactly one of: ${EXPENSE_CATS.map((c) => `"${c}"`).join(", ")}. Payment to a technician or mechanic for work on a car is "Sublet (outside work)". Null if unsure.`;
+
+const EXPENSE_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    paidTo: { type: "STRING", nullable: true },
+    amount: { type: "NUMBER", nullable: true },
+    date: { type: "STRING", nullable: true },
+    description: { type: "STRING", nullable: true },
+    method: { type: "STRING", nullable: true },
+    category: { type: "STRING", nullable: true },
+  },
+};
+
+// The AI normally answers in 5-20 seconds. Never leave the owner waiting forever.
+const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS) || 45000;
+
 async function callGemini({ prompt, schema, base64, mimeType }) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) {
@@ -75,14 +102,23 @@ async function callGemini({ prompt, schema, base64, mimeType }) {
     err.status = 503;
     throw err;
   }
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${key}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ inline_data: { mime_type: mimeType, data: base64 } }, { text: prompt }] }],
-      generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature: 0 },
-    }),
-  });
+  let res;
+  try {
+    res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${key}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ inline_data: { mime_type: mimeType, data: base64 } }, { text: prompt }] }],
+        generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature: 0 },
+      }),
+      signal: AbortSignal.timeout(AI_TIMEOUT_MS),
+    });
+  } catch (e) {
+    const slow = e?.name === "TimeoutError" || e?.name === "AbortError";
+    const err = new Error(slow ? "The AI took too long to read this file. Fill in the form by hand." : "Could not reach the AI reader. Fill in the form by hand.");
+    err.status = slow ? 504 : 502;
+    throw err;
+  }
   const body = await res.json().catch(() => ({}));
   const text = body?.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!res.ok || !text) {
@@ -164,4 +200,21 @@ async function readPayment(file) {
   return cleanPayment(await module.exports.callGemini({ prompt: PAYMENT_PROMPT, schema: PAYMENT_SCHEMA, ...file }));
 }
 
-module.exports = { MODEL, callGemini, readPurchase, readPayment, cleanPurchase, cleanPayment, cleanDate, METHODS, PURCHASE_SCHEMA, PAYMENT_SCHEMA };
+function cleanExpense(raw, today) {
+  const r = raw && typeof raw === "object" ? raw : {};
+  const amount = num(r.amount);
+  return {
+    paidTo: str(r.paidTo, 120) || "",
+    amount: amount !== null && amount > 0 ? round2(amount) : null,
+    date: cleanDate(r.date, today) || "",
+    description: str(r.description, 200) || "",
+    method: METHODS.includes(r.method) ? r.method : "Bank transfer",
+    category: EXPENSE_CATS.includes(r.category) ? r.category : "",
+  };
+}
+
+async function readExpense(file) {
+  return cleanExpense(await module.exports.callGemini({ prompt: EXPENSE_PROMPT, schema: EXPENSE_SCHEMA, ...file }));
+}
+
+module.exports = { MODEL, callGemini, readPurchase, readPayment, readExpense, cleanPurchase, cleanPayment, cleanExpense, cleanDate, METHODS, EXPENSE_CATS, PURCHASE_SCHEMA, PAYMENT_SCHEMA, EXPENSE_SCHEMA };

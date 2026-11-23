@@ -1193,3 +1193,49 @@ test("insights: fast movers, buy-for-stock list, idle stock and needs by model",
   const w = await call("GET", "/api/vehicles/WXY1");
   assert.equal(w.body.serviceStatus, "none");
 });
+
+// ================= expenses: reading a paid-out slip =================
+
+test("expenses: AI reads a transfer slip to a technician (recipient, amount, category)", async () => {
+  reset();
+  await login();
+  aiError = null;
+  aiReply = { paidTo: "Demo Technician", amount: "RM 350.00", date: "2026-11-20", description: "Aircond repair VDM2841", method: "Bank transfer", category: "Sublet (outside work)" };
+  const r = await call("POST", "/api/expenses/extract", { file: { type: "image/jpeg", name: "slip.jpg" } });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.suggestion, { paidTo: "Demo Technician", amount: 350, date: "2026-11-20", description: "Aircond repair VDM2841", method: "Bank transfer", category: "Sublet (outside work)" });
+  // Unknown category and a future date are dropped, never trusted.
+  aiReply = { paidTo: "Demo", amount: 10, date: "2999-01-01", category: "Fun money", method: "Gold bars" };
+  const s = (await call("POST", "/api/expenses/extract", { file: { type: "image/jpeg" } })).body.suggestion;
+  assert.equal(s.category, "");
+  assert.equal(s.date, "");
+  assert.equal(s.method, "Bank transfer");
+  assert.equal(s.description, "Demo");
+  // A slow AI gives a clear message (504), not an endless wait.
+  aiError = Object.assign(new Error("The AI took too long to read this file. Fill in the form by hand."), { status: 504 });
+  const slow = await call("POST", "/api/expenses/extract", { file: { type: "image/jpeg" } });
+  assert.equal(slow.status, 504);
+  assert.match(slow.body.error, /too long/);
+  aiError = null;
+});
+
+test("AI reader gives up after the time limit instead of hanging", async () => {
+  const path = require.resolve("../server/ai");
+  const saved = require.cache[path];
+  const realFetch = global.fetch;
+  process.env.AI_TIMEOUT_MS = "50";
+  process.env.GEMINI_API_KEY = "test-key";
+  delete require.cache[path];
+  try {
+    const fresh = require("../server/ai");
+    global.fetch = (url, opts) => new Promise((_, reject) => opts.signal.addEventListener("abort", () => reject(opts.signal.reason)));
+    const t0 = Date.now();
+    await assert.rejects(fresh.callGemini({ prompt: "x", schema: {}, base64: "", mimeType: "image/jpeg" }), (e) => e.status === 504 && /too long/.test(e.message));
+    assert.ok(Date.now() - t0 < 2000);
+  } finally {
+    global.fetch = realFetch;
+    delete process.env.AI_TIMEOUT_MS;
+    delete process.env.GEMINI_API_KEY;
+    require.cache[path] = saved;
+  }
+});

@@ -135,14 +135,26 @@
     toast._t = setTimeout(() => t.classList.remove("show"), 3400);
   }
 
-  async function api(path, { method = "GET", body, form } = {}) {
+  async function api(path, { method = "GET", body, form, timeout, signal } = {}) {
     const opts = { method, credentials: "same-origin", headers: {} };
     if (form) opts.body = form;
     else if (body !== undefined) {
       opts.body = JSON.stringify(body);
       opts.headers["Content-Type"] = "application/json";
     }
-    const res = await fetch("/api" + path, opts);
+    const ctl = new AbortController();
+    const timer = timeout ? setTimeout(() => ctl.abort(), timeout) : null;
+    if (signal) signal.addEventListener("abort", () => ctl.abort());
+    opts.signal = ctl.signal;
+    let res;
+    try {
+      res = await fetch("/api" + path, opts);
+    } catch (err) {
+      if (ctl.signal.aborted) throw Object.assign(new Error(signal?.aborted ? "Stopped." : "This took too long."), { aborted: true });
+      throw new Error("Could not reach the system. Check your internet, then try again.");
+    } finally {
+      clearTimeout(timer);
+    }
     const data = await res.json().catch(() => ({}));
     if (res.status === 401 && path !== "/login") {
       showLogin();
@@ -2068,6 +2080,7 @@
         busy(e.submitter, false);
       }
     };
+    return m;
   }
 
   function pageExpenses(q) {
@@ -2100,15 +2113,29 @@
       const file = e.target.files[0];
       e.target.value = "";
       if (!file) return;
-      toast("Reading the receipt…");
+      if (file.size > 10 * 1024 * 1024) {
+        toast("That file is over 10 MB. Take a screenshot of the slip, or a smaller photo.", "err");
+        return;
+      }
+      // Stays on screen while the AI reads (a toast vanished, so it looked like nothing happened).
+      const stop = new AbortController();
+      const wait = modal("Reading the receipt", `<div class="notice"><span class="spin"></span><div>The AI is reading it. This takes about 10–20 seconds.</div></div>
+        <div class="btns"><button type="button" class="btn alt block" id="exByHand">${icon("edit")}Fill in by hand instead</button></div>`);
+      let byHand = false;
+      wait.$("#exByHand").onclick = () => { byHand = true; stop.abort(); };
+      const closed = () => !document.body.contains(wait.el); // owner closed the box: cancel
       const fd = new FormData();
       fd.append("file", file);
       try {
-        const { suggestion } = await api("/expenses/extract", { method: "POST", form: fd });
-        expenseDialog({ ...suggestion, method: "Bank transfer" }, file, true);
+        const { suggestion } = await api("/expenses/extract", { method: "POST", form: fd, timeout: 60000, signal: stop.signal });
+        if (closed()) return;
+        wait.close();
+        expenseDialog(suggestion, file, true);
       } catch (err) {
-        toast(err.message, "err");
-        expenseDialog(null, file);
+        if (closed() && !byHand) return;
+        wait.close();
+        const m = expenseDialog(null, file);
+        if (!byHand) m.$(".mb").insertAdjacentHTML("afterbegin", `<div class="notice bad">${icon("alert")}<div>${esc(err.aborted ? "The AI took too long." : err.message.replace(/\s*Fill in the form by hand\.?$/, ""))} Type the details below. The receipt file is still attached.</div></div>`);
       }
     };
     draw();
@@ -3271,7 +3298,7 @@
     const fd = new FormData();
     fd.append("file", file);
     try {
-      const { suggestion } = await api("/purchases/extract", { method: "POST", form: fd });
+      const { suggestion } = await api("/purchases/extract", { method: "POST", form: fd, timeout: 60000 });
       purchaseForm(suggestion, file, true);
     } catch (err) {
       purchaseForm({ supplier: "", date: "", receiptNo: "", total: null, items: [{ name: "", qty: 1, unitCost: null }] }, file);
@@ -3440,7 +3467,7 @@
     const fd = new FormData();
     fd.append("file", file);
     try {
-      const { suggestion, matches } = await api("/payments/extract", { method: "POST", form: fd });
+      const { suggestion, matches } = await api("/payments/extract", { method: "POST", form: fd, timeout: 60000 });
       paymentForm(suggestion, file, matches, true);
     } catch (err) {
       paymentForm({ method: "Bank transfer" }, file, null);
