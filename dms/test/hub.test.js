@@ -105,3 +105,25 @@ test("export has our cases only, with no plate, job or customer", () => {
   assert.ok(!JSON.stringify(out).includes("Demo thread"));
   assert.ok(!JSON.stringify(out).includes("VDM2841"));
 });
+
+test("topic number is searchable and used in the export", () => {
+  const list = [{ ...DEMO[0], topicNo: "MLH-0012" }, DEMO[1]];
+  assert.deepEqual(H.search(list, { q: "mlh-0012" }).map((x) => x.f.id), ["recA"]);
+  const out = H.exportCases(list, "2026-11-24");
+  assert.equal(out.cases[0].case_number, "MLH-0012");
+  assert.equal(out.cases[1].case_number, "ML-2026-0002");
+});
+
+test("structured tests and remedies, with a fallback for older text entries", () => {
+  const s = { testSteps: [{ check: "Fuel pressure", spec: "4.5 bar", measured: "0.6 bar", then: "→ Remedy A" }], remedies: [{ label: "A", title: "Update", steps: ["Do it"], parts: [], no_parts: "none" }] };
+  assert.deepEqual(H.testsOf(s), { structured: true, list: s.testSteps });
+  assert.equal(H.remediesOf(s).structured, true);
+  const old = { tests: "1. Read faults\n2. Pressure test", fix: "Replaced pump\nBled system", parts: "water pump, thermostat; coolant (G48, 5 L)" };
+  assert.deepEqual(H.testsOf(old).list.map((t) => t.check), ["Read faults", "Pressure test"]);
+  const r = H.remediesOf(old);
+  assert.equal(r.structured, false);
+  assert.deepEqual(r.list[0].steps, ["Replaced pump", "Bled system"]);
+  assert.deepEqual(r.list[0].parts.map((p) => p.name), ["water pump", "thermostat", "coolant (G48, 5 L)"]);
+  assert.deepEqual(H.remediesOf({}).list, []);
+  assert.ok(H.FUNCTION_GROUPS.includes("Engine · fuel system"));
+});

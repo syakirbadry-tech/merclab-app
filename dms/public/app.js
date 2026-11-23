@@ -1306,12 +1306,20 @@
     let codes = codeTokens(d.codes);
     const ta = (k, label, ph, rows = 3, hint = "") => `<div class="full"><label for="f_${k}">${label}</label><textarea class="grow" id="f_${k}" name="${k}" rows="${rows}" placeholder="${ph}">${esc(d[k] || "")}</textarea>${hint}</div>`;
     const fmt = `<div class="fmt-hint"><span><code>1.</code> numbered steps</span><span><code>-</code> bullets</span><span><code>##</code> heading</span><span>Values like <code>13.5 V</code> or <code>10 Nm</code> are highlighted</span></div>`;
-    const title = f ? (src === "Our case" ? "Edit fault case" : "Edit HUB reference") : preset ? "New HUB entry" : "Record fault case";
+    const title = f ? (f.topicNo ? `Edit ${f.topicNo}` : src === "Our case" ? "Edit fault case" : "Edit HUB reference") : preset ? "New HUB entry" : "Record fault case";
+    // structured steps: older text entries are turned into rows here
+    let tests = HUB.testsOf(d).list.map((t) => ({ ...t }));
+    const rems = HUB.remediesOf(d).list.map((r) => ({ ...r, steps: [...r.steps], parts: r.parts.map((x) => ({ ...x })) }));
+    if (!tests.length) tests = [{ check: "", spec: "", measured: "", then: "" }];
+    if (!rems.length) rems.push({ label: "A", title: "", when: "", steps: [], parts: [], no_parts: "" });
+    const groups = [...new Set([...HUB.FUNCTION_GROUPS, ...state.faults.map((x) => x.functionGroup).filter(Boolean)])];
     const m = modal(title, `<form id="ff" class="hub" novalidate><div class="stack">
       <section class="card fgroup"><div class="fgroup-h"><h3>Source and topic</h3></div>
         <div class="seg-src" role="group" aria-label="Source" id="f_src">${HUB_SOURCES.map((s) => `<button type="button" data-s="${esc(s)}" aria-pressed="${s === src}" class="${s === src ? "on" : ""}"><span class="sw ${HUB.srcKey({ source: s })}"></span>${esc(s)}</button>`).join("")}</div>
         <div class="fgrid"><div class="full"><label for="f_title">Topic (title)</label><input id="f_title" name="title" value="${esc(d.title || "")}" placeholder="Leave empty: made from the car and the symptom"></div>
-          <div class="full"><label for="f_sourceRef">Source ref</label><input id="f_sourceRef" name="sourceRef" value="${esc(d.sourceRef || "")}" placeholder="Forum thread, bulletin no. or link"></div></div></section>
+          <div><label for="f_sourceRef">Source ref</label><input id="f_sourceRef" name="sourceRef" value="${esc(d.sourceRef || "")}" placeholder="Forum thread, bulletin no. or link"></div>
+          <div><label for="f_functionGroup">Function group</label><input id="f_functionGroup" name="functionGroup" list="f_fgList" value="${esc(d.functionGroup || "")}" placeholder="Pick or type, e.g. Engine · fuel system" autocomplete="off"><datalist id="f_fgList">${groups.map((g) => `<option value="${esc(g)}"></option>`).join("")}</datalist></div>
+          ${f?.topicNo ? `<p class="hint full" style="margin:0">Topic no. <b>${esc(f.topicNo)}</b> stays the same when you edit.</p>` : !f ? `<p class="hint full" style="margin:0">A topic no. (MLH-, MBM- or GEN-0001) is given when you save.</p>` : ""}</div></section>
       <section class="card fgroup"><div class="fgroup-h"><h3>Validity (car)</h3></div>
         <div class="fgrid"><div><label for="f_makeModel">Make &amp; model</label><input id="f_makeModel" name="makeModel" value="${esc(d.makeModel || "")}" placeholder="e.g. C200 W205"></div>
           <div><label for="f_engine">Engine</label><input id="f_engine" name="engine" value="${esc(d.engine || "")}" placeholder="e.g. M274, OM651"></div>
@@ -1321,11 +1329,13 @@
       <section class="card fgroup"><div class="fgroup-h"><h3>Diagnosis</h3></div>
         <div class="fgrid">${ta("symptom", "Symptom (what the customer noticed)", "e.g. Coolant level drops, no visible leak")}
           <div class="full"><label for="f_codeIn">Fault codes</label><div class="chip-input" id="f_codes"></div><input type="hidden" name="codes" id="f_codesVal"></div>
-          ${ta("tests", "Tests done (one step per line, in order)", "e.g. Pressure test 1.4 bar for 15 min\nUV dye, run hot", 4)}
+          <div class="full"><label id="f_testsL">Tests (in order)</label><div class="sb" id="f_tests" role="group" aria-labelledby="f_testsL"></div>
+            <button type="button" class="btn ghost" id="f_addStep">${icon("plus")}Add a step</button>
+            <p class="hint" style="margin:4px 0 0">Write where a step leads in "Then", e.g. <i>Too low → Remedy A</i>. That step is lit in the read view.</p></div>
           ${ta("cause", "Root cause", "e.g. Water pump seal weeping when hot")}</div></section>
       <section class="card fgroup"><div class="fgroup-h"><h3>Remedy and parts</h3></div>
-        <div class="fgrid">${ta("fix", "Fix (one step per line)", "e.g. Replaced water pump and thermostat\nBled the system", 4)}
-          ${ta("parts", "Parts used", "e.g. water pump, thermostat, coolant", 2)}</div></section>
+        <div id="f_rems" class="stack"></div>
+        <div><button type="button" class="btn ghost" id="f_addRem">${icon("plus")}<span>Add remedy B</span></button></div></section>
       <section class="card fgroup"><div class="fgroup-h"><h3>Details</h3></div>
         <div class="fgrid">${ta("details", "Details (specs, procedure, notes)", "e.g. Torque 10 Nm. Coolant capacity 8.5 L. Software update required first.", d.details && d.details.length > 300 ? 8 : 4, fmt)}</div></section>
       ${f ? `<section class="card fgroup"><div class="fgroup-h"><h3>Files</h3></div>
@@ -1364,6 +1374,75 @@
         if (!v) return false;
         codes = [...new Set([...codes, ...codeTokens(v)])];
         drawCodes();
+
+    // test step builder
+    const blankStep = () => ({ check: "", spec: "", measured: "", then: "" });
+    const drawTests = () => {
+      m.$("#f_tests").innerHTML = `<div class="sb-row sb-head" aria-hidden="true"><span></span><span>What to check</span><span>Spec</span><span>Measured</span><span>Then →</span><span></span></div>
+        ${tests.map((t, i) => `<div class="sb-row"><span class="n">${i + 1}</span>
+          <input data-t="${i}" data-f="check" value="${esc(t.check)}" placeholder="What to check" aria-label="Step ${i + 1}: what to check">
+          <input data-t="${i}" data-f="spec" value="${esc(t.spec)}" placeholder="Spec" aria-label="Step ${i + 1}: spec">
+          <input data-t="${i}" data-f="measured" value="${esc(t.measured)}" placeholder="Measured" aria-label="Step ${i + 1}: measured">
+          <input data-t="${i}" data-f="then" value="${esc(t.then)}" placeholder="Then → (optional)" aria-label="Step ${i + 1}: then">
+          <button type="button" class="x" data-tdel="${i}" aria-label="Remove step ${i + 1}">${icon("x")}</button></div>`).join("")}`;
+    };
+    m.$("#f_tests").oninput = (e) => { const x = e.target.closest("[data-t]"); if (x) tests[Number(x.dataset.t)][x.dataset.f] = x.value; };
+    m.$("#f_tests").onclick = (e) => {
+      const x = e.target.closest("[data-tdel]");
+      if (!x) return;
+      tests.splice(Number(x.dataset.tdel), 1);
+      if (!tests.length) tests.push(blankStep());
+      drawTests();
+    };
+    m.$("#f_addStep").onclick = () => {
+      tests.push(blankStep());
+      drawTests();
+      m.el.querySelector(`[data-t="${tests.length - 1}"][data-f=check]`).focus();
+    };
+    drawTests();
+
+    // remedy builder: A, B… each with steps and parts
+    const LT = "ABCDE";
+    const drawRems = () => {
+      m.$("#f_rems").innerHTML = rems.map((r, i) => `<div class="rem-edit" data-r="${i}"><div class="remedy-h"><span class="lt2${i ? " alt" : ""}">${LT[i]}</span><b>Remedy ${LT[i]}</b>${rems.length > 1 ? `<button type="button" class="btn ghost" data-rdel="${i}" style="margin-left:auto">${icon("x")}Remove</button>` : ""}</div>
+        <div class="body"><div class="fgrid"><div><label for="r${i}t">Title</label><input id="r${i}t" data-rf="title" value="${esc(r.title)}" placeholder="${i ? "e.g. Replace the pump" : "e.g. Software update of the ME control unit"}"></div>
+          <div><label for="r${i}w">When</label><input id="r${i}w" data-rf="when" value="${esc(r.when)}" placeholder="${i ? "e.g. Only if pressure stays low after A" : "e.g. First choice"}"></div>
+          <div class="full"><label for="r${i}s">Steps (one per line)</label><textarea class="grow" id="r${i}s" data-rf="steps" rows="4" placeholder="e.g. Connect a battery charger; keep at least 13.5 V">${esc(r.steps.join("\n"))}</textarea></div></div>
+          <div class="lbl-f">Parts</div>
+          ${r.parts.length ? `<div class="sb">${r.parts.map((x, k) => `<div class="sb-row parts-row"><input data-p="${k}" data-pf="name" value="${esc(x.name)}" placeholder="Part" aria-label="Remedy ${LT[i]} part ${k + 1}"><input data-p="${k}" data-pf="part_no" value="${esc(x.part_no || "")}" placeholder="Part no." aria-label="Remedy ${LT[i]} part ${k + 1} number"><input data-p="${k}" data-pf="qty" value="${esc(x.qty ?? "")}" type="number" min="0" step="1" inputmode="numeric" placeholder="Qty" aria-label="Remedy ${LT[i]} part ${k + 1} quantity"><button type="button" class="x" data-pdel="${k}" aria-label="Remove part ${k + 1}">${icon("x")}</button></div>`).join("")}</div>` : ""}
+          <div class="row" style="gap:10px;flex-wrap:wrap"><button type="button" class="btn ghost" data-padd="1">${icon("plus")}Add a part</button>
+            ${r.parts.length ? "" : `<select data-rf="no_parts" aria-label="Remedy ${LT[i]}: parts" style="width:auto;min-width:200px"><option value="">Parts not set</option><option value="none" ${r.no_parts === "none" ? "selected" : ""}>No parts needed</option><option value="depends" ${r.no_parts === "depends" ? "selected" : ""}>Depends on the case</option></select>`}</div></div></div>`).join("");
+      m.$("#f_addRem").hidden = rems.length >= 5;
+      m.$("#f_addRem").querySelector("span").textContent = `Add remedy ${LT[rems.length] || ""}`;
+    };
+    const remInput = (e) => {
+      const box = e.target.closest("[data-r]");
+      if (!box) return;
+      const r = rems[Number(box.dataset.r)];
+      const t = e.target;
+      if (t.dataset.rf === "steps") r.steps = t.value.split("\n");
+      else if (t.dataset.rf) r[t.dataset.rf] = t.value;
+      else if (t.dataset.pf) r.parts[Number(t.dataset.p)][t.dataset.pf] = t.value;
+    };
+    m.$("#f_rems").oninput = remInput;
+    m.$("#f_rems").onchange = remInput;
+    m.$("#f_rems").onclick = (e) => {
+      const box = e.target.closest("[data-r]");
+      const b = e.target.closest("[data-rdel],[data-pdel],[data-padd]");
+      if (!box || !b) return;
+      const i = Number(box.dataset.r);
+      if (b.dataset.rdel) rems.splice(i, 1);
+      else if (b.dataset.pdel) rems[i].parts.splice(Number(b.dataset.pdel), 1);
+      else { rems[i].parts.push({ name: "", part_no: "", qty: 1 }); rems[i].no_parts = ""; }
+      drawRems();
+      if (b.dataset.padd) m.el.querySelector(`[data-r="${i}"] .parts-row:last-child input`)?.focus();
+    };
+    m.$("#f_addRem").onclick = () => {
+      rems.push({ label: LT[rems.length], title: "", when: "", steps: [], parts: [], no_parts: "" });
+      drawRems();
+      m.el.querySelector(`#r${rems.length - 1}t`).focus();
+    };
+    drawRems();
         m.$("#f_codeIn").focus();
         return true;
       };
@@ -1407,6 +1486,8 @@
       const b = formObj(e.target);
       b.source = src;
       b.verified = verified;
+      b.testSteps = tests.map((t) => ({ check: t.check.trim(), spec: t.spec.trim(), measured: t.measured.trim(), then: t.then.trim() })).filter((t) => t.check || t.spec || t.measured || t.then);
+      b.remedies = rems.map((r) => ({ title: r.title.trim(), when: r.when.trim(), steps: r.steps.map((x) => x.trim()).filter(Boolean), parts: r.parts.map((x) => ({ name: String(x.name || "").trim(), part_no: String(x.part_no || "").trim(), qty: x.qty === "" || x.qty == null ? null : Number(x.qty) })).filter((x) => x.name || x.part_no), no_parts: r.no_parts || "" }));
       if (!b.date) delete b.date;
       if (!f) Object.assign(b, { jobId: d.jobId, plate: d.plate, docNo: d.docNo, date: b.date || d.date });
       const btn = e.submitter || m.$("#ff [type=submit]");
@@ -1415,7 +1496,8 @@
         const row = f ? await api(`/faults/${f.id}`, { method: "PATCH", body: b }) : await api("/faults", { method: "POST", body: b });
         await refresh("faults");
         m.close();
-        toast(f ? "Saved" : "Entry saved");
+        if (row?.missingFields?.length) toast(`Saved. Airtable has no ${row.missingFields.map((x) => `"${x}"`).join(", ")} field yet, so ${row.missingFields.length === 1 ? "that part was" : "those parts were"} kept as plain text only.`, "err");
+        else toast(f ? "Saved" : `Entry saved${row?.topicNo ? ` as ${row.topicNo}` : ""}`);
         if (!f && /^#\/hub/.test(location.hash) && row?.id) location.hash = `#/hub/${row.id}`;
         else route();
       } catch (err) {
@@ -1515,7 +1597,7 @@
       <span class="t">${esc(f.title || "Untitled")}</span><span class="tags">${hubStatus(f)}</span>
       <span class="meta">${chassisChips(f)}${f.engine ? `<span>${esc(f.engine)}</span>` : ""}${ref ? `<span class="dot"></span><span>${esc(ref)}</span>` : ""}${codes ? `<span class="dot"></span>${codes}` : ""}${src === "Our case" && f.verified ? `<span class="vmark" aria-label="Verified">${icon("check")}</span>` : ""}</span>
       ${sumHtml ? `<span class="sum">${sumHtml}</span>` : ""}
-      <span class="foot"><span>${esc(src)}</span>${f.date ? `<span>${dmy(f.date)}</span>` : ""}${nf ? `<span>${icon("file")}${nf} file${nf === 1 ? "" : "s"}</span>` : ""}</span>
+      <span class="foot"><span>${esc(src)}${f.topicNo ? ` · ${esc(f.topicNo)}` : ""}</span>${f.date ? `<span>${dmy(f.date)}</span>` : ""}${nf ? `<span>${icon("file")}${nf} file${nf === 1 ? "" : "s"}</span>` : ""}</span>
       ${icon("cr", "chev")}</a>`;
   }
 
@@ -1537,6 +1619,7 @@
     const topCodes = HUB.top(c.codes, 5);
     const maxCode = topCodes.length ? topCodes[0][1] : 1;
     const SCOPE = [["", "All"], ["Our case", "Ours"], ["MBM forum", "MBM"], ["General info", "General"]];
+    const unnumbered = all.filter((f) => !f.topicNo).length;
 
     view.innerHTML = `<div class="hub">
       <div class="ph hub-ph"><div style="min-width:0"><h1>Merc HUB</h1><div class="sub only-desk">Diagnosis reference: our cases, MBM forum and general information, in one place.</div></div>
@@ -1563,7 +1646,8 @@
       <aside class="rail" aria-label="HUB summary">
         <section class="card"><div class="card-h"><h2 class="h3">At a glance</h2></div><div class="stat4">
           <div><b>${c.total}</b><span>References · ${c.bySrc["Our case"]} ours, ${c.bySrc["MBM forum"]} MBM, ${c.bySrc["General info"]} general</span></div>
-          <div><b>${c.verified}</b><span>Verified fixes</span></div><div><b>${Object.keys(c.models).length}</b><span>Models</span></div><div><b>${Object.keys(c.codes).length}</b><span>Fault codes</span></div></div></section>
+          <div><b>${c.verified}</b><span>Verified fixes</span></div><div><b>${Object.keys(c.models).length}</b><span>Models</span></div><div><b>${Object.keys(c.codes).length}</b><span>Fault codes</span></div></div>
+          ${unnumbered ? `<button type="button" class="btn alt block" id="hubNumber" style="margin-top:12px">${icon("tag")}Give topic numbers to ${unnumbered} older entr${unnumbered === 1 ? "y" : "ies"}</button>` : ""}</section>
         <section class="card"><div class="card-h"><h2 class="h3">Most seen fault codes</h2></div>${topCodes.length ? `<div class="codes-seen">${topCodes.map(([k, n]) => `<a href="#/hub?q=${encodeURIComponent(k)}" data-code="${esc(k)}"><span class="code">${esc(k)}</span><span class="cbar"><i style="width:${Math.max(8, Math.round((n / maxCode) * 100))}%"></i></span><span class="n">${n}</span></a>`).join("")}</div>` : `<p class="muted" style="margin:0">Codes appear here as you add entries with fault codes.</p>`}</section>
         <section class="card"><div class="card-h"><h2 class="h3">How results rank</h2></div><div class="rows">
           <div>${srcTile({ source: "Our case" }, true)}<span class="grow"><b>Our verified fixes</b><span>Solved here and checked on the car</span></span></div>
@@ -1748,6 +1832,18 @@
       toast(`${data.cases.length} of our own case(s) exported. MBM forum and general info are never exported.`);
     };
     $("#hubExport").onclick = exportOurs;
+    if ($("#hubNumber")) $("#hubNumber").onclick = async (e) => {
+      busy(e.currentTarget, true, "Numbering…");
+      try {
+        const r = await api("/faults/number-old", { method: "POST", body: {} });
+        await refresh("faults");
+        toast(`${r.numbered} entr${r.numbered === 1 ? "y" : "ies"} numbered, oldest first.`);
+        route();
+      } catch (err) {
+        toast(err.message, "err");
+        busy(e.currentTarget, false);
+      }
+    };
     $("#hubMore").onclick = () => {
       const m = modal("Merc HUB", `<div class="stack"><button type="button" class="btn alt block" id="mNew">${icon("plus")}New entry</button><button type="button" class="btn alt block" id="mExp">${icon("download")}Export our cases</button>
         <p class="hint" style="margin:0">Export downloads our own cases only, without customer names, plates or prices.</p></div>`);
@@ -1775,7 +1871,7 @@
       view.innerHTML = `<div class="hub"><div class="card hub-empty"><span class="ring">${icon("search")}</span><h3>This entry is not in the HUB</h3><p>It may have been removed, or the link is old.</p><div class="btns"><a class="btn" href="#/hub">Back to the Merc HUB</a></div></div></div>`;
       return;
     }
-    crumbs([["Merc HUB", `#/hub${hubLast.qs}`], [f.title || "Entry"]]);
+    crumbs([["Merc HUB", `#/hub${hubLast.qs}`], [f.topicNo || f.title || "Entry"]]);
     const src = HUB.srcOf(f);
     const mbm = src === "MBM forum";
     const job = f.jobId ? state.jobs.find((j) => j.id === f.jobId) : null;
@@ -1789,15 +1885,18 @@
       const sec = (key, title, html, aside = "") => secs.push({ key, title, html: `<section class="sec" id="hs-${key}" data-sec="${key}"><div class="sec-h"><span class="no">${secs.length + 1}</span><h2>${title}</h2>${aside ? `<span class="aside">${aside}</span>` : ""}</div>${html}</section>` });
       if (c) {
         if (c.symptom) sec("symptom", "Symptom", `<div class="prose">${HUB.prose(c.symptom, esc)}</div>`);
-        const tests = HUB.steps(c.tests);
-        if (tests.length) sec("tests", "Tests", `<ol class="steps">${tests.map((t) => `<li class="step"><span class="do">${HUB.vals(esc(t))}</span></li>`).join("")}${c.fix ? `<li><a class="trace-end" href="#/hub/${esc(f.id)}" data-go="remedy"><i>${icon("ar")}</i>Leads to the remedy${c.cause ? " via the cause" : ""}</a></li>` : ""}</ol>`, `${tests.length} step${tests.length === 1 ? "" : "s"} · in this order`);
+        const tests = HUB.testsOf(c).list;
+        const rems = HUB.remediesOf(c).list;
+        const remTitle = (r, i) => r.title || (i ? `Remedy ${r.label}` : src === "Our case" ? (c.verified ? "What fixed it" : "What we did") : "Remedy");
+        if (tests.length) sec("tests", "Tests", `<ol class="steps">${tests.map((t) => `<li class="step${t.then ? " key" : ""}"><span class="do">${HUB.vals(esc(t.check || "Check"))}</span>
+            ${t.spec || t.measured ? `<span class="vals">${t.spec ? `<span><b>Spec</b><span class="val">${esc(t.spec)}</span></span>` : ""}${t.measured ? `<span><b>${t.spec ? "Measured" : "Found"}</b><span class="val">${esc(t.measured)}</span></span>` : ""}</span>` : ""}
+            ${t.then ? `<span class="then">${icon("ar")}${esc(t.then)}</span>` : ""}</li>`).join("")}${rems.length ? `<li><a class="trace-end" href="#/hub/${esc(f.id)}" data-go="remedy"><i>${esc(rems[0].label)}</i>Leads to Remedy ${esc(rems[0].label)}: ${esc(remTitle(rems[0], 0))}</a></li>` : ""}</ol>`, `${tests.length} step${tests.length === 1 ? "" : "s"} · in this order`);
         if (c.cause) sec("cause", "Cause", `<div class="prose">${HUB.prose(c.cause, esc)}</div>`);
-        if (c.fix || c.parts) {
-          const fx = HUB.steps(c.fix);
-          const parts = String(c.parts || "").split(/\r?\n|;|,(?![^(]*\))/).map((x) => x.trim()).filter(Boolean);
-          sec("remedy", "Remedy", `<div class="remedy"><div class="remedy-h"><span class="lt2">A</span><b>${src === "Our case" ? (c.verified ? "What fixed it" : "What we did") : "Remedy"}</b></div><div class="body">
-            ${fx.length > 1 ? `<ol>${fx.map((x) => `<li>${HUB.vals(esc(x))}</li>`).join("")}</ol>` : fx.length ? `<div class="prose">${HUB.prose(c.fix, esc)}</div>` : ""}
-            ${parts.length ? `<div class="parts-h">Parts</div><ul class="prose" style="margin:0;padding-left:20px">${parts.map((p) => `<li>${HUB.vals(esc(p))}</li>`).join("")}</ul>` : src === "Our case" && c.verified ? `<div class="no-parts">${icon("check", "s")}No parts listed.</div>` : ""}</div></div>`);
+        if (rems.length) {
+          sec("remedy", "Remedy", rems.map((r, i) => `<div class="remedy"><div class="remedy-h"><span class="lt2${i ? " alt" : ""}">${esc(r.label)}</span><b>${esc(remTitle(r, i))}</b>${r.when ? `<span class="when">${esc(r.when)}</span>` : ""}</div><div class="body">
+            ${r.steps.length > 1 ? `<ol>${r.steps.map((x) => `<li>${HUB.vals(esc(x))}</li>`).join("")}</ol>` : r.steps.length ? `<div class="prose">${HUB.prose(r.steps[0], esc)}</div>` : ""}
+            ${r.parts.length ? `<table class="parts"><thead><tr><th>Part</th><th>Part no.</th><th class="q">Qty</th></tr></thead><tbody>${r.parts.map((x) => `<tr><td>${esc(x.name)}</td><td class="pn">${esc(x.part_no || "—")}</td><td class="q">${x.qty ?? ""}</td></tr>`).join("")}</tbody></table>`
+              : r.no_parts === "none" ? `<div class="no-parts">${icon("check", "s")}No parts needed.</div>` : r.no_parts === "depends" ? `<div class="no-parts">${icon("info", "s")}Parts depend on the case.</div>` : ""}</div></div>`).join(""), rems.length > 1 ? `${rems.length} options` : "");
         }
         if (c.details) sec("details", "Details", `<div class="prose">${HUB.prose(c.details, esc)}</div>`);
         if (f.files?.length && !client) sec("files", "Files", `<div class="files">${f.files.map(hubFileTile).join("")}</div>`, `${f.files.length} original${f.files.length === 1 ? "" : "s"}`);
@@ -1807,6 +1906,7 @@
       const cells = [];
       if (ch.length || f.makeModel) cells.push(["Model series", ch.length ? chassisChips(f) : esc(f.makeModel)]);
       if (f.engine) cells.push(["Engine", esc(f.engine)]);
+      if (f.functionGroup) cells.push(["Function group", `<span style="font-weight:500">${esc(f.functionGroup)}</span>`]);
       if (f.makeModel && ch.length) cells.push(["Make & model", `<span style="font-weight:500">${esc(f.makeModel)}</span>`]);
       if (vin) cells.push(["Chassis no. (seen on)", client ? `<span class="vin">${esc(vin.shown)}${vin.hidden ? `<span class="mask">••••••</span>` : ""}</span>` : `<span class="vin">${esc(veh.chassisNo)}</span>`]);
       if (c && c.mileageKm) cells.push([src === "Our case" ? "Mileage at repair" : "Mileage", `<span class="val">${km(c.mileageKm)}</span>`]);
@@ -1831,7 +1931,7 @@
         <div class="ph" style="margin-bottom:14px"><a class="back" href="${back}" aria-label="Back to the HUB">${icon("back")}</a><div style="min-width:0"><div class="sub" style="margin:0">Merc HUB${hubLast.q ? ` · search “${esc(hubLast.q)}”` : ""}</div></div></div>
         <div class="entry-layout"><div class="entry">
           ${client ? `<div class="client-bar">${icon("eye")}<span>You are previewing the client view. Nothing here is editable.</span></div>` : ""}
-          <header class="entry-h"><div class="row">${srcLabel(f)}${hubStatus(f)}<span class="muted">${esc([f.sourceRef, f.date ? (src === "Our case" ? "" : "added ") + dmy(f.date) : ""].filter(Boolean).join(" · "))}</span></div>
+          <header class="entry-h"><div class="row">${srcLabel(f)}${hubStatus(f)}<span class="muted">${esc([f.topicNo, f.sourceRef, f.date ? (src === "Our case" ? "" : "added ") + dmy(f.date) : ""].filter(Boolean).join(" · "))}</span></div>
             <h1 class="ttl">${esc(f.title || "Untitled")}</h1>
             <div class="meta">${chassisChips(f)}${f.engine ? `<span>${esc(f.engine)}</span>` : ""}${HUB.codesOf(f.codes).length ? `<span class="dot"></span>${codeChips(f, 12)}` : ""}</div></header>
           ${mbm && !client ? `<div class="private-note">${icon("lock")}<span><b>Private: MBM material.</b> Only you can see it. It is never exported, never shared with members, and the Assistant only uses it for your own questions.</span></div>` : ""}
@@ -1841,8 +1941,8 @@
           <section class="card" style="display:grid;gap:12px"><div class="row" style="gap:6px"><span class="eyebrow grow">View as</span><button class="btn alt icon" type="button" id="hePrint" aria-label="Print">${icon("print")}</button></div>
             <div class="seg full" role="group" aria-label="View as"><button type="button" data-view="owner" class="${client ? "" : "on"}" aria-pressed="${!client}">Owner</button><button type="button" data-view="client" class="${client ? "on" : ""}" aria-pressed="${client}">${icon("users")}Client</button></div>
             ${client ? "" : `<div class="rail-acts"><button type="button" class="btn block" data-edit="1">${icon("edit")}Edit</button>${jobBtn}</div>`}</section>
-          <section class="card"><div class="card-h"><h2 class="h3">About this entry</h2></div><dl class="kv">
-            <dt>Source</dt><dd>${esc(src)}</dd>${f.sourceRef ? `<dt>Source ref</dt><dd>${esc(f.sourceRef)}</dd>` : ""}${f.date ? `<dt>Date</dt><dd>${dmy(f.date)}</dd>` : ""}
+          <section class="card"><div class="card-h"><h2 class="h3">Topic</h2></div><dl class="kv">
+            ${f.topicNo ? `<dt>Topic no.</dt><dd>${esc(f.topicNo)}</dd>` : ""}<dt>Source</dt><dd>${esc(src)}</dd>${f.sourceRef ? `<dt>Source ref</dt><dd>${esc(f.sourceRef)}</dd>` : ""}${f.date ? `<dt>Date</dt><dd>${dmy(f.date)}</dd>` : ""}
             ${src === "Our case" ? `<dt>Status</dt><dd>${f.verified ? "Verified on the car" : "Not verified yet"}</dd>` : ""}${f.tags ? `<dt>Tags</dt><dd>${esc(f.tags)}</dd>` : ""}${!client && f.files?.length ? `<dt>Files</dt><dd>${f.files.length}</dd>` : ""}</dl></section>
           ${related.length ? `<section class="card"><div class="card-h"><h2 class="h3">Related</h2></div><div class="rows">${related.map(({ x }) => `<a href="#/hub/${esc(x.id)}">${srcTile(x, true)}<span class="grow"><b>${esc(x.title)}</b><span>${esc([HUB.srcOf(x), HUB.codesOf(x.codes).slice(0, 2).join(", ") || x.engine].filter(Boolean).join(" · "))}</span></span></a>`).join("")}</div></section>` : ""}
         </aside></div>
@@ -1915,7 +2015,7 @@
             <input class="tt" data-i="${i}" data-k="title" value="${esc(x.title)}" aria-label="Title of entry ${i + 1}">
             <span class="meta">${srcLabel({ source: st.source })}<span class="dot"></span><span>${esc([x.makeModel || "No model", x.engine, x.codes || "no codes"].filter(Boolean).join(" · "))}</span></span>
             <details><summary>${icon("cd")}Show all fields</summary><div class="all">
-              <div class="fgrid">${f(i, "makeModel", "Make & model")}${f(i, "engine", "Engine")}</div>
+              <div class="fgrid">${f(i, "makeModel", "Make & model")}${f(i, "engine", "Engine")}${f(i, "functionGroup", "Function group")}</div>
               ${f(i, "symptom", "Symptom", 2)}${f(i, "codes", "Fault codes")}${f(i, "tests", "Tests", 2)}${f(i, "cause", "Cause", 2)}${f(i, "fix", "Remedy", 2)}${f(i, "parts", "Parts")}${f(i, "details", "Details", 3)}</div></details></div>`).join("")}</div>
           <div class="row" style="gap:10px;flex-wrap:wrap">${st.file && st.mode === "file" ? `<label style="display:flex;gap:10px;align-items:center;margin:0;min-height:44px" class="grow"><input type="checkbox" id="hiKeepFile" ${st.keepFile ? "checked" : ""} style="width:22px;min-height:0;margin:0">Keep the original file with each entry</label>` : `<span class="grow"></span>`}
             <button type="button" class="btn alt" id="hiBack">Back</button><button type="button" class="btn" id="hiSave" ${n ? "" : "disabled"}>${icon("check")}Save ${n} entr${n === 1 ? "y" : "ies"}</button></div>`;
@@ -1987,6 +2087,7 @@
         }
         await refresh("faults");
         st.saved = saved.faults.length;
+        if (saved.missingFields?.length) toast(`Saved. Airtable has no ${saved.missingFields.map((x) => `"${x}"`).join(", ")} field yet.`, "err");
         st.step = 4;
         if (fails) toast(`${fails} file copy(ies) did not attach. Open the entry and attach it again.`, "err");
         paint();

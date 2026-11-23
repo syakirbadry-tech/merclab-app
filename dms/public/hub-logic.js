@@ -29,7 +29,7 @@
   const engineCode = (s) => (String(s || "").toUpperCase().match(/\b(?:OM|M)\s?\d{3}\b/) || [""])[0].replace(/\s/, "");
 
   // Search: every word must be found. Title and codes weigh most.
-  const FIELDS = [["title", 3], ["codes", 3], ["symptom", 2], ["makeModel", 2], ["engine", 2], ["cause", 1], ["fix", 1], ["tests", 1], ["parts", 1], ["tags", 1], ["details", 1], ["sourceRef", 1]];
+  const FIELDS = [["topicNo", 3], ["title", 3], ["codes", 3], ["functionGroup", 1], ["symptom", 2], ["makeModel", 2], ["engine", 2], ["cause", 1], ["fix", 1], ["tests", 1], ["parts", 1], ["tags", 1], ["details", 1], ["sourceRef", 1]];
   const words = (q) => String(q || "").toLowerCase().split(/\s+/).filter(Boolean);
   function score(f, ws) {
     if (!ws.length) return 0;
@@ -134,6 +134,22 @@
   // One line per step (numbering and bullets removed).
   const steps = (text) => String(text || "").split(/\r?\n/).map((l) => l.trim().replace(/^([-•*]|\d+[.)])\s+/, "")).filter(Boolean);
 
+  // Structured tests and remedies; older entries fall back to their text.
+  const splitParts = (s) => String(s || "").split(/\r?\n|;|,(?![^(]*\))/).map((x) => x.trim()).filter(Boolean);
+  function testsOf(f) {
+    if (Array.isArray(f.testSteps) && f.testSteps.length) return { structured: true, list: f.testSteps };
+    return { structured: false, list: steps(f.tests).map((check) => ({ check, spec: "", measured: "", then: "" })) };
+  }
+  function remediesOf(f) {
+    if (Array.isArray(f.remedies) && f.remedies.length) return { structured: true, list: f.remedies };
+    const st = steps(f.fix);
+    const parts = splitParts(f.parts);
+    if (!st.length && !parts.length) return { structured: false, list: [] };
+    return { structured: false, list: [{ label: "A", title: "", when: "", steps: st, parts: parts.map((name) => ({ name, part_no: "", qty: null })), no_parts: "" }] };
+  }
+  // Function groups (short pick-list; free text is allowed too).
+  const FUNCTION_GROUPS = ["Engine · fuel system", "Engine · ignition", "Engine · cooling", "Engine · lubrication", "Engine · air intake and turbo", "Engine · timing and camshaft", "Exhaust and emissions", "Transmission", "Electrical · starting and charging", "Electrical · network (CAN)", "Body electronics", "Brakes", "Suspension and steering", "Climate control", "Infotainment and cameras", "Safety (SRS)", "Body and trim"];
+
   // What a paying member would see later: no hours, no job, chassis no. cut
   // to its first 11 characters, mileage rounded to 5,000 km. MBM never.
   const roundKm = (km) => (Number(km) > 0 ? Math.round(Number(km) / 5000) * 5000 : null);
@@ -149,7 +165,7 @@
     return {
       hub: "Merc HUB", version: 1, format: "Workshop Diagnostic Network cases", source: "The Merc Lab", exported: today,
       cases: ours.map((f, i) => ({
-        case_number: `ML-${String(today).slice(0, 4)}-${String(i + 1).padStart(4, "0")}`,
+        case_number: f.topicNo || `ML-${String(today).slice(0, 4)}-${String(i + 1).padStart(4, "0")}`,
         case_date: String(f.date || "").slice(0, 4), vehicle_model: f.makeModel, model_series: chassisOf(`${f.makeModel} ${f.title}`), engine: f.engine,
         mileage: f.mileageKm ? `${Math.floor(f.mileageKm / 5000) * 5}k km` : "", fault_codes: codesOf(f.codes).join(", "), symptom: f.symptom,
         diagnosis_steps: f.tests, root_cause: f.cause, fix_applied: f.fix, parts_used: f.parts, time_spent_hours: f.hours,
@@ -158,5 +174,5 @@
     };
   }
 
-  return { SOURCES, GROUPS, srcOf, srcKey, rankOf, chassisList, chassisOf, chassisOfEntry, codesOf, engineCode, words, score, carFilter, fitsCar, search, groups, counts, top, vals, prose, steps, roundKm, maskVin, clientCopy, exportCases };
+  return { FUNCTION_GROUPS, testsOf, remediesOf, splitParts, SOURCES, GROUPS, srcOf, srcKey, rankOf, chassisList, chassisOf, chassisOfEntry, codesOf, engineCode, words, score, carFilter, fitsCar, search, groups, counts, top, vals, prose, steps, roundKm, maskVin, clientCopy, exportCases };
 });

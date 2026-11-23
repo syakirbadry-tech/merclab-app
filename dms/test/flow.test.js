@@ -1305,3 +1305,86 @@ test("Merc HUB: AI reader gets the pasted text and no file part when only text i
     ai.callGemini = prev;
   }
 });
+
+// ================= Merc HUB: topic numbers, function group, structured steps =================
+
+test("HUB: topic numbers per source, never reused, old entries numbered", async () => {
+  reset();
+  await login();
+  const W = require("../server/workshop");
+  assert.deepEqual(W.nextTopicNos(["MLH-0009", "MBM-0002", "junk", ""], ["Our case", "MBM forum", "General info", "Our case"]), ["MLH-0010", "MBM-0003", "GEN-0001", "MLH-0011"]);
+  // an old entry from before numbers existed
+  store.faults.push({ id: newId(), fields: { Title: "Demo old case", Source: "Our case", Date: "2026-01-02" } });
+  const a = await call("POST", "/api/faults", { body: { symptom: "Demo: rough idle", makeModel: "W205" } });
+  assert.equal(a.status, 201);
+  assert.equal(a.body.topicNo, "MLH-0001");
+  assert.deepEqual(a.body.missingFields, []);
+  const b = await call("POST", "/api/faults/bulk", { body: { source: "MBM forum", entries: [{ title: "Demo tip 1", functionGroup: "Engine · ignition" }, { title: "Demo tip 2" }] } });
+  assert.deepEqual(b.body.faults.map((f) => f.topicNo), ["MBM-0001", "MBM-0002"]);
+  assert.equal(b.body.faults[0].functionGroup, "Engine · ignition");
+  // editing never changes the number, even when the source changes
+  const e = await call("PATCH", `/api/faults/${a.body.id}`, { body: { source: "General info", topicNo: "MLH-9999" } });
+  assert.equal(e.body.topicNo, "MLH-0001");
+  const n = await call("POST", "/api/faults/number-old", { body: {} });
+  assert.equal(n.body.numbered, 1);
+  const all = (await call("GET", "/api/faults")).body.faults;
+  assert.equal(all.find((f) => f.title === "Demo old case").topicNo, "MLH-0002");
+  assert.equal((await call("POST", "/api/faults/number-old", { body: {} })).body.numbered, 0);
+});
+
+test("HUB: structured tests and remedies, with plain text kept in step", async () => {
+  reset();
+  await login();
+  const body = {
+    title: "Demo: misfire at cold start", functionGroup: "Engine · fuel system", source: "Our case",
+    testSteps: [{ check: "Read the fault memory", measured: "P0302" }, { check: "Fuel pressure, cold", spec: "4.5–6.5 bar", measured: "0.6 bar", then: "Too low → Remedy A" }, { check: "" }],
+    remedies: [{ title: "Software update", when: "First choice", steps: ["Charger on, 13.5 V", "", "Update ME"], no_parts: "none" },
+      { title: "Replace the pump", steps: ["Check again cold"], parts: [{ name: "Fuel pump (demo)", part_no: "A000 000 00 00", qty: "1" }, { name: "" }] }],
+  };
+  const r = await call("POST", "/api/faults", { body });
+  assert.equal(r.status, 201);
+  assert.equal(r.body.functionGroup, "Engine · fuel system");
+  assert.equal(r.body.testSteps.length, 2);
+  assert.equal(r.body.testSteps[1].then, "Too low → Remedy A");
+  assert.deepEqual(r.body.remedies.map((x) => x.label), ["A", "B"]);
+  assert.deepEqual(r.body.remedies[0].steps, ["Charger on, 13.5 V", "Update ME"]);
+  assert.deepEqual(r.body.remedies[1].parts, [{ name: "Fuel pump (demo)", part_no: "A000 000 00 00", qty: 1 }]);
+  assert.match(r.body.tests, /^1\. Read the fault memory · Measured P0302\n2\. Fuel pressure, cold · Spec 4\.5–6\.5 bar · Measured 0\.6 bar → Too low → Remedy A$/);
+  assert.match(r.body.fix, /^A: Software update \(First choice\)\n- Charger on, 13\.5 V\n- Update ME\nB: Replace the pump/);
+  assert.equal(r.body.parts, "A: no parts needed; Fuel pump (demo) (A000 000 00 00) x1");
+  // clearing the steps but sending plain text keeps the text
+  const p = await call("PATCH", `/api/faults/${r.body.id}`, { body: { testSteps: [], tests: "Demo plain tests" } });
+  assert.deepEqual(p.body.testSteps, []);
+  assert.equal(p.body.tests, "Demo plain tests");
+  // bad JSON in the database is ignored, not a crash
+  store.faults[0].fields["Tests JSON"] = "{not json";
+  assert.deepEqual((await call("GET", "/api/faults")).body.faults[0].testSteps, []);
+});
+
+test("HUB: saves still work before the new Airtable fields exist", async () => {
+  reset();
+  await login();
+  const realCreate = db.create;
+  const realUpdate = db.update;
+  const missing = ["Topic no", "Remedies JSON"];
+  const strict = (fn) => async (t, list) => {
+    for (const x of list) for (const k of Object.keys(x.fields || x)) if (missing.includes(k)) throw Object.assign(new Error(`Unknown field name: "${k}"`), { status: 502 });
+    return fn(t, list);
+  };
+  db.create = strict(realCreate);
+  db.update = strict(realUpdate);
+  try {
+    const r = await call("POST", "/api/faults", { body: { title: "Demo", remedies: [{ title: "Demo fix", steps: ["Do it"] }] } });
+    assert.equal(r.status, 201);
+    assert.deepEqual(r.body.missingFields.sort(), ["Remedies JSON", "Topic no"]);
+    assert.equal(r.body.topicNo, "");
+    assert.match(r.body.fix, /Demo fix/, "the plain text is still saved");
+    const p = await call("PATCH", `/api/faults/${r.body.id}`, { body: { remedies: [{ title: "Other" }] } });
+    assert.equal(p.status, 200);
+    assert.deepEqual(p.body.missingFields, ["Remedies JSON"]);
+    assert.equal((await call("POST", "/api/faults/number-old", { body: {} })).status, 400);
+  } finally {
+    db.create = realCreate;
+    db.update = realUpdate;
+  }
+});
