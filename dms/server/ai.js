@@ -95,7 +95,7 @@ const EXPENSE_SCHEMA = {
 // The AI normally answers in 5-20 seconds. Never leave the owner waiting forever.
 const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS) || 45000;
 
-async function callGemini({ prompt, schema, base64, mimeType }) {
+async function callGemini({ prompt, schema, base64, mimeType, timeoutMs }) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) {
     const err = new Error("The AI reader is not set up yet (GEMINI_API_KEY missing). Fill in the form by hand.");
@@ -108,10 +108,10 @@ async function callGemini({ prompt, schema, base64, mimeType }) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{ parts: [{ inline_data: { mime_type: mimeType, data: base64 } }, { text: prompt }] }],
+        contents: [{ parts: [...(base64 ? [{ inline_data: { mime_type: mimeType, data: base64 } }] : []), { text: prompt }] }],
         generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature: 0 },
       }),
-      signal: AbortSignal.timeout(AI_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs || AI_TIMEOUT_MS),
     });
   } catch (e) {
     const slow = e?.name === "TimeoutError" || e?.name === "AbortError";
@@ -217,4 +217,61 @@ async function readExpense(file) {
   return cleanExpense(await module.exports.callGemini({ prompt: EXPENSE_PROMPT, schema: EXPENSE_SCHEMA, ...file }));
 }
 
-module.exports = { MODEL, callGemini, readPurchase, readPayment, readExpense, cleanPurchase, cleanPayment, cleanExpense, cleanDate, METHODS, EXPENSE_CATS, PURCHASE_SCHEMA, PAYMENT_SCHEMA, EXPENSE_SCHEMA };
+// ---- Merc HUB: turn a technical document, forum post or own notes into
+// searchable entries (symptom → codes → tests → cause → fix) ----
+
+const HUB_KINDS = {
+  "Our case": "the workshop's own notes or job records of cases it handled itself",
+  "MBM forum": "a Mercedes-Benz Malaysia (MBM) technical forum post, technical tip or bulletin",
+  "General info": "general Mercedes-Benz technical information (specifications, procedures, how a system works, known issues)",
+};
+const hubPrompt = (source) => `You are building a diagnosis reference library for a Mercedes-Benz workshop in Malaysia. The material below is ${HUB_KINDS[source] || HUB_KINDS["General info"]}. It may be a PDF, a screenshot, a photo of notes or pasted text, in English or Malay.
+
+Split it into separate entries: one entry per separate problem, case, tip or topic (a forum page with 3 threads = 3 entries; one long procedure = 1 entry). At most 30 entries.
+Write in clear English (translate Malay). Copy codes, part numbers, values and steps exactly. Use null when a field does not apply. Never invent anything that is not in the material.
+
+For each entry:
+- title: short, specific (e.g. "W205 M274: coolant loss, water pump seal").
+- makeModel: model and chassis code as written (e.g. "C-Class W205", "GLC X253"), else null.
+- engine: engine code (e.g. "M274", "OM651"), else null.
+- symptom: what the driver or technician noticed.
+- codes: fault codes / DTCs exactly as written, comma separated.
+- tests: diagnostic steps and measurements, in order.
+- cause: the root cause found.
+- fix: the repair, remedy or procedure.
+- parts: part names and part numbers used.
+- details: any other useful information kept faithfully (specifications, torque values, capacities, conditions, notes, software versions). For general information, put the main content here.
+- tags: a few comma-separated keywords (system, e.g. "cooling, engine").
+- sourceRef: the thread, bulletin or document number / title / date if shown, else null.`;
+
+const HUB_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    entries: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: Object.fromEntries(["title", "makeModel", "engine", "symptom", "codes", "tests", "cause", "fix", "parts", "details", "tags", "sourceRef"].map((k) => [k, { type: "STRING", nullable: true }])),
+      },
+    },
+  },
+};
+const HUB_LIMITS = { title: 120, makeModel: 80, engine: 40, symptom: 2000, codes: 2000, tests: 3000, cause: 2000, fix: 3000, parts: 1000, details: 20000, tags: 200, sourceRef: 200 };
+
+function cleanHub(raw) {
+  const list = Array.isArray(raw?.entries) ? raw.entries : [];
+  return list.slice(0, 30).map((e) => {
+    const o = {};
+    for (const [k, max] of Object.entries(HUB_LIMITS)) o[k] = str(e?.[k], max) || "";
+    if (!o.title) o.title = [o.makeModel, (o.symptom || o.details).split("\n")[0]].filter(Boolean).join(": ").slice(0, 120);
+    return o;
+  }).filter((o) => o.title && (o.symptom || o.cause || o.fix || o.details || o.tests));
+}
+
+// file = { base64, mimeType } or text = pasted words (or both).
+async function readHub({ file, text, source }) {
+  const pasted = typeof text === "string" && text.trim() ? `\n\nMATERIAL (pasted text):\n${text.trim().slice(0, 60000)}` : "";
+  return cleanHub(await module.exports.callGemini({ prompt: hubPrompt(source) + pasted, schema: HUB_SCHEMA, ...(file || {}), timeoutMs: Number(process.env.AI_HUB_TIMEOUT_MS) || 100000 }));
+}
+
+module.exports = { MODEL, callGemini, readPurchase, readPayment, readExpense, readHub, cleanPurchase, cleanPayment, cleanExpense, cleanHub, cleanDate, METHODS, EXPENSE_CATS, HUB_KINDS, PURCHASE_SCHEMA, PAYMENT_SCHEMA, EXPENSE_SCHEMA, HUB_SCHEMA };

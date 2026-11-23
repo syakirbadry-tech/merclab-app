@@ -7,6 +7,7 @@ const M = require("./money");
 const P = require("./pricing");
 const { esc } = require("./template");
 const { noteFail } = require("./auth");
+const ai = require("./ai");
 
 const text = (v, max = 200) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 const bad = (msg, status = 400) => Object.assign(new Error(msg), { status });
@@ -71,18 +72,27 @@ function fitsList(v) {
 
 // ---------- fault cases ----------
 
-const FAULT_TEXT = { title: ["Title", 120], docNo: ["Doc no", 20], makeModel: ["Make model", 80], engine: ["Engine", 40], symptom: ["Symptom", 2000], codes: ["Fault codes", 2000], tests: ["Tests done", 3000], cause: ["Root cause", 2000], fix: ["Fix", 3000], parts: ["Parts used", 1000], tags: ["Tags", 200] };
+// Merc HUB entries come from three sources. Only "Our case" entries can ever
+// be exported (MBM forum material is MBM's and stays private).
+const FAULT_TEXT = { title: ["Title", 120], docNo: ["Doc no", 20], makeModel: ["Make model", 80], engine: ["Engine", 40], symptom: ["Symptom", 2000], codes: ["Fault codes", 2000], tests: ["Tests done", 3000], cause: ["Root cause", 2000], fix: ["Fix", 3000], parts: ["Parts used", 1000], tags: ["Tags", 200], sourceRef: ["Source ref", 200], details: ["Details", 20000] };
+const SOURCES = ["Our case", "MBM forum", "General info"];
 
 function faultOut(r) {
   const f = r.fields;
-  const o = { id: r.id, date: f.Date || "", jobId: f["Job record"] || "", plateKey: f["Plate key"] || "", mileageKm: f["Mileage km"] ?? null, hours: f.Hours ?? null, verified: !!f.Verified };
+  const src = f.Source?.name || f.Source;
+  const o = { id: r.id, date: f.Date || "", jobId: f["Job record"] || "", plateKey: f["Plate key"] || "", mileageKm: f["Mileage km"] ?? null, hours: f.Hours ?? null, verified: !!f.Verified, source: SOURCES.includes(src) ? src : "Our case" };
   for (const [k, [name]] of Object.entries(FAULT_TEXT)) o[k] = f[name] || "";
+  o.files = (Array.isArray(f.Files) ? f.Files : []).map((a) => ({ url: a.url, name: a.filename || "File", type: a.type || "" }));
   return o;
 }
 
 function faultFields(b) {
   const fields = {};
   for (const [k, [name, max]] of Object.entries(FAULT_TEXT)) if (k in b) fields[name] = text(b[k], max);
+  if ("source" in b) {
+    if (!SOURCES.includes(b.source)) throw bad("Choose where this came from: Our case, MBM forum or General info.");
+    fields.Source = b.source;
+  }
   if ("jobId" in b) fields["Job record"] = isRec(b.jobId) ? b.jobId : "";
   if ("plate" in b) fields["Plate key"] = plateKey(b.plate);
   if ("date" in b) fields.Date = /^\d{4}-\d{2}-\d{2}$/.test(b.date || "") ? b.date : P.todayKL();
@@ -266,8 +276,9 @@ function register(router, { wrap, oneFile, fileOf, bodyData, jobOut, newToken })
   router.post("/faults", wrap(async (req, res) => {
     const b = req.body || {};
     const fields = faultFields({ date: "", ...b });
-    if (!fields.Symptom && !fields.Title) throw bad("Write the symptom (what the customer noticed).");
-    if (!fields.Title) fields.Title = `${fields["Make model"] || "Car"}: ${fields.Symptom.split("\n")[0]}`.slice(0, 120);
+    if (!fields.Symptom && !fields.Title && !fields.Details) throw bad("Write the symptom (what the customer noticed).");
+    if (!fields.Title) fields.Title = `${fields["Make model"] || "Car"}: ${(fields.Symptom || fields.Details).split("\n")[0]}`.slice(0, 120);
+    if (!fields.Source) fields.Source = "Our case";
     const [row] = await db.create("faults", [fields]);
     res.status(201).json(faultOut(row));
   }));
@@ -276,6 +287,53 @@ function register(router, { wrap, oneFile, fileOf, bodyData, jobOut, newToken })
     await db.get("faults", req.params.id);
     const [row] = await db.update("faults", [{ id: req.params.id, fields: faultFields(req.body || {}) }]);
     res.json(faultOut(row));
+  }));
+
+  // Merc HUB import, step 1: the AI reads a document, screenshot, photo of
+  // notes or pasted text and splits it into entries. Nothing is saved here:
+  // the owner checks the list first.
+  router.post("/faults/read", oneFile, wrap(async (req, res) => {
+    const d = bodyData(req);
+    const source = SOURCES.includes(d.source) ? d.source : "General info";
+    const file = fileOf(req);
+    const pasted = text(d.text, 60000);
+    if (!file && !pasted) throw bad("Choose a file (PDF, screenshot or photo) or paste the text.");
+    let entries;
+    try {
+      entries = await ai.readHub({ file, text: pasted, source });
+    } catch (err) {
+      return res.status([503, 504].includes(err.status) ? err.status : 502).json({ error: err.message });
+    }
+    if (!entries.length) throw bad("The AI found nothing to add in this. Try a clearer file, or paste the text.", 422);
+    res.json({ source, entries });
+  }));
+
+  // Step 2: save the entries the owner kept (at most 30 at once).
+  router.post("/faults/bulk", wrap(async (req, res) => {
+    const b = req.body || {};
+    if (!SOURCES.includes(b.source)) throw bad("Choose where this came from: Our case, MBM forum or General info.");
+    const list = Array.isArray(b.entries) ? b.entries.slice(0, 30) : [];
+    if (!list.length) throw bad("Nothing to save. Tick at least one entry.");
+    const keys = ["title", "makeModel", "engine", "symptom", "codes", "tests", "cause", "fix", "parts", "details", "tags", "sourceRef"];
+    const rows = list.map((e) => {
+      const picked = Object.fromEntries(keys.filter((k) => typeof e?.[k] === "string").map((k) => [k, e[k]]));
+      if (!picked.sourceRef && typeof b.sourceRef === "string") picked.sourceRef = b.sourceRef;
+      const fields = faultFields({ ...picked, source: b.source, date: /^\d{4}-\d{2}-\d{2}$/.test(e?.date || "") ? e.date : "" });
+      if (!fields.Title) throw bad("Every entry needs a title.");
+      return fields;
+    });
+    const saved = await db.create("faults", rows);
+    res.status(201).json({ faults: saved.map(faultOut) });
+  }));
+
+  // Keep the original document / screenshot with the entry.
+  router.post("/faults/:id/file", oneFile, wrap(async (req, res) => {
+    if (!isRec(req.params.id)) throw bad("Unknown entry.");
+    const file = fileOf(req);
+    if (!file) throw bad("Choose the file.");
+    await db.get("faults", req.params.id);
+    await db.upload("faultFiles", req.params.id, { filename: file.filename, contentType: file.mimeType, base64: file.base64 });
+    res.json(faultOut(await db.get("faults", req.params.id)));
   }));
 
   // A photo for a job (odometer, inspection). Returns its id.

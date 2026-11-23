@@ -1239,3 +1239,69 @@ test("AI reader gives up after the time limit instead of hanging", async () => {
     require.cache[path] = saved;
   }
 });
+
+// ================= Merc HUB: our cases + MBM forum + general info =================
+
+test("Merc HUB: AI splits a forum file or pasted text into entries; owner saves the ones kept", async () => {
+  reset();
+  aiError = null;
+  cookie = "";
+  assert.equal((await call("POST", "/api/faults/read", { data: { source: "MBM forum", text: "x" }, noAuth: true })).status, 401);
+  await login();
+  // Nothing to read
+  assert.equal((await call("POST", "/api/faults/read", { data: { source: "MBM forum" } })).status, 400);
+  // A forum PDF with two separate tips (made-up demo content).
+  aiReply = { entries: [
+    { title: "W205 M274: coolant loss, no visible leak", makeModel: "C-Class W205", engine: "M274", symptom: "Coolant level drops", codes: "P0128", tests: "Pressure test 1.4 bar", cause: "Water pump seal weeping when hot", fix: "Replace water pump", parts: "Water pump", details: null, tags: "cooling", sourceRef: "Demo thread 123" },
+    { title: null, makeModel: "A-Class W177", engine: "M260", symptom: null, codes: null, tests: null, cause: null, fix: null, parts: null, details: "Demo: coolant capacity 6.5 L, bleed with the pump running.", tags: null, sourceRef: null },
+    { title: "Empty", makeModel: null },
+  ] };
+  let r = await call("POST", "/api/faults/read", { file: { type: "application/pdf", name: "forum.pdf" }, data: { source: "MBM forum" } });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.source, "MBM forum");
+  assert.equal(r.body.entries.length, 2, "an entry with no content is dropped");
+  assert.equal(r.body.entries[1].title, "A-Class W177: Demo: coolant capacity 6.5 L, bleed with the pump running.", "a title is made when missing");
+  // Save both as MBM forum, with the document reference.
+  r = await call("POST", "/api/faults/bulk", { body: { source: "MBM forum", sourceRef: "Demo bulletin", entries: r.body.entries } });
+  assert.equal(r.status, 201);
+  assert.equal(r.body.faults.length, 2);
+  assert.equal(r.body.faults[0].source, "MBM forum");
+  assert.equal(r.body.faults[0].sourceRef, "Demo thread 123", "the entry's own ref wins");
+  assert.equal(r.body.faults[1].sourceRef, "Demo bulletin");
+  assert.match(r.body.faults[1].details, /6\.5 L/);
+  // Bad source is refused; a normal new case is "Our case" by default.
+  assert.equal((await call("POST", "/api/faults/bulk", { body: { source: "Internet", entries: [{ title: "x" }] } })).status, 400);
+  const own = await call("POST", "/api/faults", { body: { symptom: "Demo: rough idle", makeModel: "W213" } });
+  assert.equal(own.body.source, "Our case");
+  // General info with only details is accepted.
+  const gen = await call("POST", "/api/faults", { body: { source: "General info", title: "Demo: M274 oil capacity", details: "5.7 L with filter" } });
+  assert.equal(gen.status, 201);
+  assert.equal(gen.body.source, "General info");
+  // Original file kept with the entry.
+  const fileR = await call("POST", `/api/faults/${r.body.faults[0].id}/file`, { file: { type: "application/pdf", name: "forum.pdf" } });
+  assert.equal(fileR.status, 200);
+  assert.equal(uploads.at(-1).key, "faultFiles");
+  // List shows all three sources.
+  const all = (await call("GET", "/api/faults")).body.faults;
+  assert.deepEqual([...new Set(all.map((f) => f.source))].sort(), ["General info", "MBM forum", "Our case"]);
+  // AI failure → clear message
+  aiError = Object.assign(new Error("The AI took too long to read this file. Fill in the form by hand."), { status: 504 });
+  assert.equal((await call("POST", "/api/faults/read", { data: { source: "General info", text: "abc" } })).status, 504);
+  aiError = null;
+});
+
+test("Merc HUB: AI reader gets the pasted text and no file part when only text is sent", async () => {
+  let seen;
+  const prev = ai.callGemini;
+  ai.callGemini = async (args) => { seen = args; return { entries: [{ title: "Demo", details: "Demo info" }] }; };
+  try {
+    const out = await ai.readHub({ text: "Demo forum text about W205", source: "MBM forum" });
+    assert.equal(out.length, 1);
+    assert.match(seen.prompt, /MBM\) technical forum/);
+    assert.match(seen.prompt, /Demo forum text about W205/);
+    assert.equal(seen.base64, undefined);
+    assert.ok(seen.timeoutMs >= 60000, "long documents get a longer time limit");
+  } finally {
+    ai.callGemini = prev;
+  }
+});
