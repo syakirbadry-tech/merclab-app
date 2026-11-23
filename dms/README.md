@@ -20,7 +20,7 @@ A dark menu on the left (on a phone: the Menu button and the bar at the bottom),
 - **CRM:**
   - *Customers:* type (Customer / Lead / Fleet), how they found you, tags, next follow-up. Each customer page has a follow-up card and an activity timeline (contacts, jobs, payments, bookings) with "Log contact".
   - *Follow-ups:* due in the next 7 days, a win-back list (no visit for 6+ months) and leads, with WhatsApp / Call / Log buttons.
-  - *Service reminders:* cars due within 30 days or near their service km (km estimated from visit history), with a WhatsApp reminder that records the date. Tick "Set next service reminder" on an invoice (Settings has the km / month interval).
+  - *Service reminders (service tracker):* every car's last service is read from its invoices (any invoice with an oil change or a service line, such as "TUKAR MINYAK" or "MAINTENANCE SERVICE"; aircond and gearbox services do not count). The next service is due 12 months or 10,000 km later (Settings), unless a date was set by hand on the car. Tabs: Due now, Next 60 days, Win back (6+ months late), All on record, No record. Shows each car's service history, the "came back on time" rate, and a WhatsApp reminder that records the date.
   - *Bookings:* a week calendar. "Car arrived: start estimate" opens a new estimate linked to the booking.
 - **Finance:**
   - *Money in:* receipts and who owes you.
@@ -38,6 +38,7 @@ A dark menu on the left (on a phone: the Menu button and the bar at the bottom),
 - **Packages and the chassis number:** a package can list the models it fits (Packages → Fits models), taken from the chassis number W1K**177**__0542__N161234: characters 4–6 are the model (177 = W177), 7–10 the variant (0542 = A45 S). `177` fits every W177, `1770542` only the A45 S, empty fits any model. On an estimate the chassis number is decoded under the field, and adding a package that does not fit (or with no chassis number yet) asks before adding it.
 - **Customers:** a table with phone, cars, last visit, spent and owes, and a page per customer.
 - **Parts & stock**, **Money** (receipts and who owes you, with a WhatsApp reminder button) and **Settings**.
+- **Parts analysis** (Parts & stock → Analysis): from invoiced jobs over 3/6/12/24 months. Fast / steady / slow movers, service and wear (maintenance) parts, a buy-for-stock list (about 6 weeks of use, at least one job's worth, minus what is on the shelf, for parts used on 3+ jobs or 2+ for service and wear parts), stock not used for 6 months, and what each model (W205, W177…, read from the car name or chassis number) needed, next to a general-knowledge list of parts commonly replaced on that model.
 - A search box at the top finds a plate, a customer or an EST / INV number.
 
 ## The flow

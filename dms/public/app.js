@@ -493,7 +493,7 @@
       }
       if (sec === "vehicles") return a ? pageVehicle(a, b || "details") : pageVehicles(q);
       if (sec === "customers") return a ? pageCustomer(a) : pageCustomers();
-      if (sec === "parts") return a === "count" ? pageStockCount() : pageParts(q);
+      if (sec === "parts") return a === "count" ? pageStockCount() : a === "insights" ? pagePartsInsights(q) : pageParts(q);
       if (sec === "inbox") return pageInbox();
       if (sec === "assistant") return pageAssistant();
       if (sec === "expenses") return pageExpenses(q);
@@ -508,7 +508,7 @@
       if (sec === "hub") return pageHub(q);
       if (sec === "bookings") return pageBookings(q);
       if (sec === "followups") return pageFollowups(q);
-      if (sec === "reminders") return pageReminders();
+      if (sec === "reminders") return pageReminders(q);
       if (sec === "money") return a === "receipt" ? pageReceipt(b) : pageMoney(q);
       if (sec === "settings") return pageSettings();
       location.hash = "#/dashboard";
@@ -546,7 +546,7 @@
     const lanes = ["Booked", "In workshop", "Waiting parts", "Ready"];
     const laneJobs = (st) => state.jobs.filter((j) => j.status !== "Cancelled" && j.stage === st && (st !== "Booked" || daysBetween(jobDate(j) || today, today) <= 30));
     const low = state.parts.filter((p) => p.qtyLeft <= 1).slice(0, 6);
-    const soon = state.vehicles.filter((v) => v.nextServiceDate && daysBetween(today, v.nextServiceDate) <= 30).sort((a, b) => a.nextServiceDate.localeCompare(b.nextServiceDate)).slice(0, 6);
+    const soon = state.vehicles.filter((v) => ["overdue", "due"].includes(v.serviceStatus)).sort((a, b) => a.serviceDueDate.localeCompare(b.serviceDueDate)).slice(0, 6);
     const monthName = new Date(today + "T00:00:00Z").toLocaleString("en-MY", { month: "long", timeZone: "UTC" });
     const tile = (href, ic, lbl, val, foot, extra = "") => `<a class="tile" href="${href}"><div class="lbl">${icon(ic)}${lbl}</div><div class="val">${val}</div><div class="foot">${foot}</div>${extra}</a>`;
 
@@ -587,8 +587,8 @@
           })()}
           <div class="card"><div class="card-h"><h2>Who owes you</h2><div class="r"><a class="btn ghost sm" href="#/money?tab=owed">All</a></div></div>
             ${owed.length ? `<div class="rows">${owed.slice(0, 5).map((j) => `<a href="#/jobs/${j.id}"><div class="grow"><b>${esc(j.customerName)}</b><span class="muted">${esc(j.invoiceNo)} · ${ago(j.invoiceDate)}</span></div><div class="r"><b>${rm(j.balance)}</b></div></a>`).join("")}</div>` : `<p class="muted">${icon("check")} Nobody owes you money.</p>`}</div>
-          <div class="card"><div class="card-h"><h2>Service due (30 days)</h2></div>
-            ${soon.length ? `<div class="rows">${soon.map((v) => `<a href="#/vehicles/${v.key}"><div class="grow"><b>${esc(v.makeModel || v.plate)}</b><span class="muted">${plateTag(v.plate)} ${esc(v.ownerName)}</span></div><div class="r"><b>${dmy(v.nextServiceDate)}</b><span class="muted">${ago(v.nextServiceDate)}</span></div></a>`).join("")}</div>` : `<p class="muted">No service due. Set "Next service" on a car to see it here.</p>`}</div>
+          <div class="card"><div class="card-h"><h2>Service due</h2><div class="r"><a class="btn ghost sm" href="#/reminders">All</a></div></div>
+            ${soon.length ? `<div class="rows">${soon.map((v) => `<a href="#/vehicles/${v.key}"><div class="grow"><b>${esc(v.makeModel || v.plate)}</b><span class="muted">${plateTag(v.plate)} ${esc(v.ownerName)}</span></div><div class="r"><b>${dmy(v.serviceDueDate)}</b><span class="muted">${ago(v.serviceDueDate)}</span></div></a>`).join("")}</div>` : `<p class="muted">No service due in the next 30 days.</p>`}</div>
           <div class="card"><div class="card-h"><h2>Low stock</h2><div class="r"><a class="btn ghost sm" href="#/parts">Parts</a></div></div>
             ${low.length ? `<div class="rows">${low.map((p) => `<a href="#/parts"><div class="grow"><b>${esc(p.name)}</b><span class="muted">${esc([p.brand, p.partNo].filter(Boolean).join(" · "))}</span></div><div class="r">${pill(`${p.qtyLeft} left`, p.qtyLeft <= 0 ? "bad" : "warn")}</div></a>`).join("")}</div>` : `<p class="muted">All parts have stock.</p>`}</div>
           <div class="card"><div class="card-h"><h2>Latest payments</h2></div>
@@ -1399,7 +1399,7 @@
       recentPayments: state.payments.slice(0, 30).map((p) => ({ no: p.receiptNo, date: p.paidOn, customer: p.customerName, amount: p.amount, method: p.method, for: p.docNo })),
       bookingsNext7Days: state.bookings.filter((b) => b.date >= today && b.date <= in7).map((b) => ({ date: b.date, time: b.time, customer: b.customerName, plate: b.plate, work: b.work, status: b.status })),
       followUpsDue: state.customers.filter((c) => c.nextFollowUp && c.nextFollowUp <= in7).map((c) => ({ customer: c.name, due: c.nextFollowUp, note: c.followUpNote })),
-      serviceDue: state.vehicles.filter((v) => v.nextServiceDate && v.nextServiceDate <= new Date(Date.parse(today) + 30 * 864e5).toISOString().slice(0, 10)).map((v) => ({ plate: v.plate, car: v.makeModel, owner: v.ownerName, due: v.nextServiceDate })),
+      serviceDue: state.vehicles.filter((v) => v.serviceDueDate && v.serviceDueDate <= new Date(Date.parse(today) + 30 * 864e5).toISOString().slice(0, 10)).map((v) => ({ plate: v.plate, car: v.makeModel, owner: v.ownerName, due: v.serviceDueDate })),
       lowStock: state.parts.filter((p) => Number(p.qtyLeft) <= 1).map((p) => ({ part: p.name, partNo: p.partNo, left: p.qtyLeft })),
       expensesThisMonth: state.expenses.filter((e) => inRange(e.date, month)).map((e) => ({ date: e.date, description: e.description, category: e.category, amount: e.amount })),
       faultCases: state.faults.slice(0, 80).map((f) => ({ title: f.title, model: f.makeModel, engine: f.engine, codes: f.codes, symptom: f.symptom, cause: f.cause, fix: f.fix, verified: f.verified })),
@@ -1756,32 +1756,85 @@
     return Math.round(k1 + ((k1 - k0) / days) * daysBetween(d1, todayKL()));
   }
 
-  function pageReminders() {
+  // ---------- service tracker ----------
+  // Each car's last service comes from its invoices (oil change or a service
+  // line); the next is due a set time after it (Settings, 12 months by default),
+  // unless a date was set by hand on the car. Worked out on the server.
+
+  const SVC = {
+    lapsed: ["Over 6 months late", "bad"], overdue: ["Overdue", "bad"], due: ["Due this month", "warn"],
+    soon: ["Due in 60 days", "info"], ok: ["OK", "ok"], none: ["No service record", ""],
+  };
+  const svcPill = (v) => pill(SVC[v.serviceStatus]?.[0] || "—", SVC[v.serviceStatus]?.[1] || "");
+
+  function pageReminders(q) {
     crumbs([["Service reminders"]]);
-    const today = todayKL();
-    const rows = state.vehicles.map((v) => ({ v, pk: predictKm(v) })).filter(({ v, pk }) =>
-      (v.nextServiceDate && daysBetween(today, v.nextServiceDate) <= 30) || (v.nextServiceKm && pk && pk >= v.nextServiceKm - 1000))
-      .sort((a, b) => (a.v.nextServiceDate || "9").localeCompare(b.v.nextServiceDate || "9"));
-    const unset = state.vehicles.filter((v) => v.visits && !v.nextServiceDate && !v.nextServiceKm).length;
-    view.innerHTML = `${pageHead("Service reminders", { sub: "Cars due for service in the next 30 days, or close to their service km" })}
-      ${unset ? `<div class="notice">${icon("alert")}<div>${unset} car(s) have no next service set. It is set when you tick "Set next service reminder" on an invoice, or on the car's Details tab.</div></div>` : ""}
-      <div class="card flush">${rows.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Car</th><th>Due</th><th class="d">Km now (estimate)</th><th class="d">Last reminded</th><th></th></tr></thead><tbody>
-        ${rows.map(({ v, pk }) => {
-          const over = v.nextServiceDate && v.nextServiceDate < today;
-          const msg = `Hi ${v.ownerName || ""}, this is ${brandName()}. Your ${v.makeModel || "car"} (${v.plate}) is due for service${v.nextServiceDate ? ` on ${dmy(v.nextServiceDate)}` : ""}${v.nextServiceKm ? ` or at ${Number(v.nextServiceKm).toLocaleString("en-MY")} km` : ""}. Would you like to book a slot?`;
-          return `<tr><td><a href="#/vehicles/${v.key}" class="strong" style="color:inherit;text-decoration:none">${esc(v.makeModel || "Car")}</a><div class="sm">${plateTag(v.plate)} ${esc(v.ownerName)}</div></td>
-            <td class="nowrap">${v.nextServiceDate ? (over ? pill(dmy(v.nextServiceDate), "bad") : dmy(v.nextServiceDate)) : "—"}${v.nextServiceKm ? `<div class="sm">or ${km(v.nextServiceKm)}</div>` : ""}</td>
-            <td class="d nowrap">${pk ? km(pk) : "—"}</td><td class="d nowrap">${v.lastReminded ? `${dmy(v.lastReminded)}<div class="sm">${ago(v.lastReminded)}</div>` : "Not yet"}</td>
-            <td class="num nowrap">${v.ownerPhone ? `<a class="btn wa sm" data-remind="${v.key}" href="${esc(waLink(v.ownerPhone, msg))}" target="_blank" rel="noopener">${icon("chat")}Remind</a>` : ""} <button type="button" class="btn alt sm" data-book="${v.key}">${icon("calendar")}Book</button></td></tr>`;
-        }).join("")}</tbody></table></div>`
-        : emptyBox("calendar", "No services due in the next 30 days.")}</div>`;
-    $$("[data-remind]").forEach((a) => a.addEventListener("click", async () => {
-      try { updateVehicle(await api(`/vehicles/${a.dataset.remind}`, { method: "PATCH", body: { lastReminded: todayKL() } })); } catch { /* the message still opens */ }
-    }));
-    $$("[data-book]").forEach((b) => (b.onclick = () => {
-      const v = vehicleByKey(b.dataset.book);
-      bookingDialog(null, { customerId: v.customerId, customerName: v.ownerName, phone: v.ownerPhone, plate: v.plate, car: v.makeModel, work: "Service" });
-    }));
+    const s = state.settings || {};
+    const cars = state.vehicles.filter((v) => v.visits || v.serviceDueDate);
+    const by = (k) => cars.filter((v) => k.includes(v.serviceStatus));
+    const order = (list) => list.slice().sort((a, b) => (a.serviceDueDate || "9").localeCompare(b.serviceDueDate || "9"));
+    const TABS = {
+      now: ["Due now", order(by(["overdue", "due"])), "Overdue, or due in the next 30 days. Send a reminder, then book them in."],
+      soon: ["Next 60 days", order(by(["soon"])), "Due in 31 to 60 days. Remind them early to fill the diary."],
+      lapsed: ["Win back", order(by(["lapsed"])).reverse(), "More than 6 months past due. They may be servicing elsewhere: a friendly call can win them back."],
+      all: ["All on record", order(cars.filter((v) => v.serviceDueDate)), "Every car with a service on record, soonest first."],
+      none: ["No record", cars.filter((v) => v.serviceStatus === "none").sort((a, b) => (b.lastVisit || "").localeCompare(a.lastVisit || "")), "Cars that came for other work but have no service invoice here. Offer them a service."],
+    };
+    let tab = TABS[q && q.get("tab")] ? q.get("tab") : "now";
+    const ret = cars.reduce((t, v) => ({ due: t.due + (v.serviceReturns?.due || 0), back: t.back + (v.serviceReturns?.back || 0) }), { due: 0, back: 0 });
+    const tileB = (ic, lbl, val, foot, t) => `<a class="tile" href="#/reminders?tab=${t}" data-t="${t}"><div class="lbl">${icon(ic)}${lbl}</div><div class="val">${val}</div><div class="foot">${foot}</div></a>`;
+    view.innerHTML = `${pageHead("Service reminders", { sub: `Next service is due ${esc(s.serviceIntervalMonths || 12)} months or ${km(s.serviceIntervalKm || 10000)} after the last one, whichever comes first` })}
+      <div class="grid g4" style="margin-bottom:16px" id="stiles">
+        ${tileB("bell", "Due now", TABS.now[1].length, `${by(["overdue"]).length} overdue`, "now")}
+        ${tileB("calendar", "Next 60 days", TABS.soon[1].length, "remind early", "soon")}
+        ${tileB("history", "Win back", TABS.lapsed[1].length, "6+ months late", "lapsed")}
+        <div class="tile"><div class="lbl">${icon("trend")}Came back on time</div><div class="val">${ret.due ? Math.round((ret.back / ret.due) * 100) + "%" : "—"}</div><div class="foot">${ret.due ? `${ret.back} of ${ret.due} services that fell due` : "shows once services fall due"}</div></div>
+      </div>
+      <nav class="tabs" id="rtabs">${Object.entries(TABS).map(([k, [l, list]]) => `<a href="#/reminders?tab=${k}" data-t="${k}">${l} (${list.length})</a>`).join("")}</nav>
+      <p class="muted" id="rhint" style="margin-top:-6px"></p><div class="card flush" id="rbody"></div>`;
+    const msgFor = (v) => v.serviceStatus === "none"
+      ? `Hi ${v.ownerName || ""}, this is ${brandName()}. Thank you for trusting us with your ${v.makeModel || "car"} (${v.plate}). When is its next service due? We would be glad to take care of it. Would you like to book a slot?`
+      : v.serviceStatus === "lapsed"
+        ? `Hi ${v.ownerName || ""}, this is ${brandName()}. It has been a while since your ${v.makeModel || "car"} (${v.plate}) had its service with us (${dmy(v.lastServiceDate)}). Would you like us to check it and book a service?`
+        : `Hi ${v.ownerName || ""}, this is ${brandName()}. Your ${v.makeModel || "car"} (${v.plate}) is due for service${v.serviceDueDate ? ` on ${dmy(v.serviceDueDate)}` : ""}${v.serviceDueKm ? ` or at ${Number(v.serviceDueKm).toLocaleString("en-MY")} km` : ""}. Would you like to book a slot?`;
+    const draw = () => {
+      $$("#rtabs a").forEach((a) => a.classList.toggle("on", a.dataset.t === tab));
+      $("#rhint").textContent = TABS[tab][2];
+      const list = TABS[tab][1];
+      $("#rbody").innerHTML = list.length
+        ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Car</th><th>${tab === "none" ? "Last visit" : "Next service"}</th><th class="d">Last service</th><th class="d">Reminded</th><th></th></tr></thead><tbody>
+          ${list.map((v) => {
+            const pk = predictKm(v);
+            const kmLate = v.serviceDueKm && pk && pk >= v.serviceDueKm;
+            const hist = v.serviceHistory || [];
+            return `<tr><td><a href="#/vehicles/${v.key}" class="strong" style="color:inherit;text-decoration:none">${esc(v.makeModel || "Car")}</a><div class="sm">${plateTag(v.plate)} ${esc(v.ownerName)}</div></td>
+              <td>${tab === "none" ? (v.lastVisit ? `${dmy(v.lastVisit)}<div class="sm">${ago(v.lastVisit)}</div>` : "—")
+                : `<span class="nowrap strong">${dmy(v.serviceDueDate)}</span><div>${svcPill(v)}</div><div class="sm">${ago(v.serviceDueDate)}${v.serviceDueKm ? ` · or ${km(v.serviceDueKm)}` : ""}${v.serviceDueSet === "manual" ? " · set by hand" : ""}</div>${kmLate ? `<div class="sm">${pill(`about ${km(pk)} now`, "warn")}</div>` : ""}`}</td>
+              <td class="d">${v.lastServiceDate ? `${dmy(v.lastServiceDate)}<div class="sm">${[v.lastServiceKm ? km(v.lastServiceKm) : "", hist[0]?.docNo ? `inv ${esc(hist[0].docNo)}` : ""].filter(Boolean).join(" · ")}</div>
+                ${hist.length > 1 ? `<details class="sm"><summary>${hist.length} services</summary>${hist.map((h) => `<div><a href="#/jobs/${h.jobId}">${esc(h.docNo)}</a> · ${dmy(h.date)}${h.km ? " · " + km(h.km) : ""}</div>`).join("")}</details>` : ""}` : '<span class="sm">None here</span>'}</td>
+              <td class="d nowrap">${v.lastReminded ? `${dmy(v.lastReminded)}<div class="sm">${ago(v.lastReminded)}</div>` : '<span class="sm">Not yet</span>'}</td>
+              <td class="num nowrap">${v.ownerPhone ? `<a class="btn wa sm" data-remind="${v.key}" href="${esc(waLink(v.ownerPhone, msgFor(v)))}" target="_blank" rel="noopener" aria-label="WhatsApp reminder to ${esc(v.ownerName || v.plate)}" title="Send reminder">${icon("chat")}</a>` : ""} <button type="button" class="btn alt sm" data-book="${v.key}" aria-label="Book ${esc(v.plate)} for service" title="Book">${icon("calendar")}</button></td></tr>`;
+          }).join("")}</tbody></table></div>`
+        : emptyBox(tab === "none" ? "check" : "calendar", { now: "No services due now. Cars due in the next 60 days are on the next tab.", soon: "Nothing due in 31 to 60 days.", lapsed: "No one is more than 6 months late. Good work.", all: "No service on record yet. A service is any invoice with an oil change or a service line.", none: "Every car that came in has a service on record." }[tab]);
+      $$("#rbody [data-remind]").forEach((a) => a.addEventListener("click", async () => {
+        try { updateVehicle(await api(`/vehicles/${a.dataset.remind}`, { method: "PATCH", body: { lastReminded: todayKL() } })); } catch { /* the message still opens */ }
+      }));
+      $$("#rbody [data-book]").forEach((b) => (b.onclick = () => {
+        const v = vehicleByKey(b.dataset.book);
+        bookingDialog(null, { customerId: v.customerId, customerName: v.ownerName, phone: v.ownerPhone, plate: v.plate, car: v.makeModel, work: "Service" });
+      }));
+    };
+    const pick = (e) => {
+      const a = e.target.closest("[data-t]");
+      if (!a) return;
+      e.preventDefault();
+      tab = a.dataset.t;
+      history.replaceState(null, "", `#/reminders?tab=${tab}`);
+      draw();
+    };
+    $("#rtabs").onclick = pick;
+    $("#stiles").onclick = pick;
+    draw();
   }
 
   // ---------- bookings ----------
@@ -2623,7 +2676,7 @@
     const FILTERS = {
       all: ["All", () => true],
       workshop: ["In workshop", (v) => ["In workshop", "Waiting parts", "Ready"].includes(v.stage)],
-      due: ["Service due", (v) => v.nextServiceDate && daysBetween(today, v.nextServiceDate) <= 30],
+      due: ["Service due", (v) => ["overdue", "due"].includes(v.serviceStatus)],
       marks: ["Body marks", (v) => v.openMarks > 0],
     };
     let f = FILTERS[q.get("f")] ? q.get("f") : "all";
@@ -2643,7 +2696,7 @@
               <div class="specs">${specs(v) || '<span class="muted">No details yet</span>'}</div>
               <div class="meta">${v.lastVisit ? `Last visit ${ago(v.lastVisit)} · ${v.visits} visit${v.visits === 1 ? "" : "s"}` : "No visits yet"}${v.openMarks ? ` · ${v.openMarks} body mark${v.openMarks === 1 ? "" : "s"}` : ""}</div></div>
             <div class="side-r"><span class="who">${v.ownerName ? avatar(v.ownerName) + `<span>${esc(v.ownerName)}</span>` : '<span class="muted">No owner</span>'}</span>
-              ${v.nextServiceDate ? `<span class="pill ${daysBetween(today, v.nextServiceDate) < 0 ? "bad" : daysBetween(today, v.nextServiceDate) <= 30 ? "warn" : ""}">${icon("calendar")}Service ${dmy(v.nextServiceDate)}</span>` : ""}</div></a>`).join("")
+              ${v.serviceDueDate ? `<span class="pill ${daysBetween(today, v.serviceDueDate) < 0 ? "bad" : daysBetween(today, v.serviceDueDate) <= 30 ? "warn" : ""}">${icon("calendar")}Service ${dmy(v.serviceDueDate)}</span>` : ""}</div></a>`).join("")
           + (list.length > shown ? `<button class="btn alt block" id="vmore">Show more (${list.length - shown})</button>` : "")
         : `<div class="card">${emptyBox("car", state.vehicles.length ? "No car matches." : "No cars yet. Cars appear here when you make a job, or press Add vehicle.")}</div>`;
       const m = $("#vmore");
@@ -2742,7 +2795,7 @@
           <div>Fuel<b>${esc(v.fuel || "—")}</b></div>
           <div>Gearbox<b>${esc(v.transmission || "—")}</b></div>
           <div>Colour<b>${esc(v.colour || "—")}</b></div>
-          <div>Next service<b>${v.nextServiceDate ? `${dmy(v.nextServiceDate)}${daysBetween(today, v.nextServiceDate) < 0 ? ' <span class="pill bad">overdue</span>' : ""}` : v.nextServiceKm ? km(v.nextServiceKm) : "—"}</b></div>
+          <div>Next service<b>${v.serviceDueDate ? `${dmy(v.serviceDueDate)} ${["overdue", "lapsed", "due"].includes(v.serviceStatus) ? svcPill(v) : ""}` : v.nextServiceKm ? km(v.nextServiceKm) : "—"}</b>${v.lastServiceDate ? `<span class="sm">Last ${dmy(v.lastServiceDate)}${v.lastServiceKm ? " · " + km(v.lastServiceKm) : ""}</span>` : ""}</div>
         </div></div></div></div>
       <nav class="tabs" aria-label="Car sections">${TABS.map(([k, l, ic]) => `<a href="#/vehicles/${v.key}/${k}" class="${k === tab ? "on" : ""}" ${k === tab ? 'aria-current="page"' : ""}>${icon(ic)}${l}</a>`).join("")}</nav>
       <div id="vtab"></div>`;
@@ -2773,6 +2826,7 @@
         <div><label for="v_nextServiceKm">Next service at (km)</label><input id="v_nextServiceKm" name="nextServiceKm" type="number" inputmode="numeric" min="0" value="${esc(v.nextServiceKm ?? "")}"></div>
         <div><label for="v_customerId">Owner</label>${ownerSelect(v.customerId)}</div>
         <div class="full"><label for="v_notes">Notes</label><textarea id="v_notes" name="notes" rows="3" placeholder="e.g. Customer prefers original parts. Spare key in office.">${esc(v.notes)}</textarea></div>
+        <p class="hint full">Leave Next service empty and it is worked out from the last service invoice${v.lastServiceDate ? ` (${dmy(v.lastServiceDate)}, due ${dmy(v.serviceDueDate)})` : ""}. Fill it only to change that date.</p>
       </div><div class="btns"><button class="btn" type="submit">${icon("check")}Save details</button></div></form>`;
     $("#vdf").onsubmit = async (e) => {
       e.preventDefault();
@@ -3016,6 +3070,94 @@
 
   // ================= PARTS =================
 
+  // ---------- parts analysis ----------
+  // Worked out on the server from invoiced jobs: fast movers, maintenance
+  // parts, what to buy for stock, stock that is not moving, needs by model.
+
+  const SPEED_CLS = { Fast: "ok", Steady: "info", Slow: "" };
+  const KIND_CLS = { Service: "info", Wear: "warn", Repair: "" };
+
+  async function pagePartsInsights(q) {
+    crumbs([["Parts & stock", "#/parts"], ["Analysis"]]);
+    const months = [3, 6, 12, 24].includes(Number(q.get("m"))) ? Number(q.get("m")) : 12;
+    let tab = ["buy", "fast", "all", "models", "idle"].includes(q.get("tab")) ? q.get("tab") : "buy";
+    view.innerHTML = `${pageHead("Parts analysis", { back: "#/parts", sub: "From your invoices: what moves, what to stock, what each model needs" })}<div class="card"><p class="muted">Reading your invoices…</p></div>`;
+    let d;
+    try {
+      d = await api(`/insights/parts?months=${months}`);
+    } catch (err) {
+      view.innerHTML = `${pageHead("Parts analysis", { back: "#/parts" })}<div class="notice bad">${icon("alert")}<div>${esc(err.message)}</div></div>`;
+      return;
+    }
+    if (parseHash().parts[1] !== "insights") return; // moved to another page while loading
+    const fast = d.items.filter((i) => i.speed !== "Slow");
+    const TABS = {
+      buy: [`Buy for stock (${d.toBuy.length})`, "Parts that keep coming back, with less on the shelf than about 6 weeks of use. Service and wear parts first."],
+      fast: [`Fast moving (${fast.length})`, "Fast: used on 1 or more jobs a month. Steady: about 1 job every 1 to 3 months."],
+      all: [`All parts used (${d.items.length})`, "Every part on an invoice in this period, most-used first."],
+      models: [`By model (${d.byModel.length})`, "What each model came in for. The grey list is general workshop knowledge, not your records."],
+      idle: [`Not moving (${d.idle.length})`, "On the shelf, bought 3+ months ago and not used for 6 months. Money sitting still: use it up or return it."],
+    };
+    const S = d.summary;
+    view.innerHTML = `${pageHead("Parts analysis", { back: "#/parts", sub: `${d.invoices} invoices from ${dmy(d.from)} to ${dmy(d.today)}${d.monthsOfData < months - 0.5 ? ` · only ${Math.max(1, Math.round(d.monthsOfData))} month(s) of records so far` : ""}`,
+      acts: `<div class="seg" role="group" aria-label="Period" style="display:flex;gap:6px;flex-wrap:wrap">${[3, 6, 12, 24].map((m) => `<a class="btn ${m === months ? "" : "alt"} sm" href="#/parts/insights?m=${m}&tab=${tab}" ${m === months ? 'aria-current="true"' : ""}>${m} mo</a>`).join("")}</div>` })}
+      <div class="grid g4" style="margin-bottom:16px">
+        <div class="tile"><div class="lbl">${icon("trend")}Moving often</div><div class="val">${fast.length}</div><div class="foot">${S.fast} fast · ${fast.length - S.fast} steady · of ${S.partsUsed} used</div></div>
+        <div class="tile"><div class="lbl">${icon("gauge")}Maintenance parts</div><div class="val">${S.maintenance}</div><div class="foot">service and wear items</div></div>
+        <div class="tile"><div class="lbl">${icon("truck")}Suggested buy</div><div class="val">${rm0(S.buyCost)}</div><div class="foot">${d.toBuy.length} part(s), at last cost</div></div>
+        <div class="tile"><div class="lbl">${icon("box")}Not moving</div><div class="val">${rm0(S.idleValue)}</div><div class="foot">${d.idle.length} part(s) idle 6+ months</div></div>
+      </div>
+      <nav class="tabs" id="itabs">${Object.entries(TABS).map(([k, [l]]) => `<a href="#/parts/insights?m=${months}&tab=${k}" data-t="${k}">${l}</a>`).join("")}</nav>
+      <p class="muted" id="ihint" style="margin-top:-6px"></p><div id="ibody"></div>`;
+    const name = (i) => `<span class="strong">${esc(i.name)}</span><div class="sm">${esc(i.partNo || "")}</div>`;
+    const tags = (i) => `${pill(i.kind, KIND_CLS[i.kind])} ${pill(i.speed, SPEED_CLS[i.speed])}`;
+    const models = (i) => i.models.slice(0, 3).map((m) => `${esc(m.code)}${m.jobs > 1 ? ` ×${m.jobs}` : ""}`).join(", ");
+    const table = (head, rows) => `<div class="card flush"><div class="tbl-wrap"><table class="tbl"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div></div>`;
+    const draw = () => {
+      $$("#itabs a").forEach((a) => a.classList.toggle("on", a.dataset.t === tab));
+      $("#ihint").textContent = TABS[tab][1];
+      const box = $("#ibody");
+      if (tab === "buy") {
+        box.innerHTML = d.toBuy.length
+          ? table(`<th>Part</th><th class="num">Buy</th><th class="num d">On shelf</th><th class="num d">Used / month</th><th class="d">Supplier</th><th class="num">Cost</th>`,
+            d.toBuy.map((i) => `<tr><td>${name(i)}<div class="sm">${tags(i)}</div></td><td class="num strong">${i.buy}</td><td class="num d">${i.inStock}</td><td class="num d">${i.perMonth}</td><td class="d">${esc(i.supplier || "—")}</td><td class="num">${i.unitCost ? rm(i.buyCost) : '<span class="sm">no cost yet</span>'}</td></tr>`).join("")
+            + `<tr><td class="strong">Total</td><td></td><td class="d"></td><td class="d"></td><td class="d"></td><td class="num strong">${rm(S.buyCost)}</td></tr>`)
+            + `<p class="hint">Buy = about 6 weeks of use (at least one job's worth) minus what is on the shelf. Check the shelf before you order: the count is only as right as the stock count.</p>`
+          : emptyBox("check", "Nothing to buy right now. Every part that keeps coming back has enough on the shelf.");
+      } else if (tab === "fast" || tab === "all") {
+        const list = tab === "fast" ? fast : d.items;
+        box.innerHTML = list.length
+          ? table(`<th>Part</th><th class="num">Jobs</th><th class="num d">Qty used</th><th class="num d">Cars</th><th class="d">Models</th><th class="d">Last used</th><th class="num">On shelf</th>`,
+            list.map((i) => `<tr><td>${name(i)}<div class="sm">${tags(i)}</div></td><td class="num strong">${i.jobs}</td><td class="num d">${i.qtyUsed}</td><td class="num d">${i.cars}</td><td class="d">${models(i) || "—"}</td><td class="d nowrap">${dmy(i.lastUsed)}</td><td class="num">${i.inStock <= 0 ? pill("0", i.buy ? "bad" : "") : i.inStock}</td></tr>`).join(""))
+          : emptyBox("parts", tab === "fast" ? "No part is used often enough yet. Parts show here once they are on 1 job every 3 months or more." : "No parts on invoices in this period.");
+      } else if (tab === "models") {
+        const li = (x) => `<div><div class="grow"><b>${esc(x.name)}</b>${x.partNo ? `<span class="muted">${esc(x.partNo)}</span>` : ""}</div><span class="r muted">${x.jobs} job${x.jobs === 1 ? "" : "s"}</span></div>`;
+        box.innerHTML = d.byModel.length
+          ? `<div class="grid g2">${d.byModel.map((m) => `<div class="card"><div class="card-h"><h2>${esc(m.code)} · ${esc(m.name)}</h2><div class="r muted">${m.cars} car${m.cars === 1 ? "" : "s"} · ${m.jobs} job${m.jobs === 1 ? "" : "s"}</div></div>
+              <label>Maintenance parts used</label>${m.service.length ? `<div class="rows">${m.service.map(li).join("")}</div>` : '<p class="muted">None yet.</p>'}
+              <label>Repairs done</label>${m.repairs.length ? `<div class="rows">${m.repairs.map(li).join("")}</div>` : '<p class="muted">None yet.</p>'}
+              ${m.known.length ? `<label>Commonly replaced on the ${esc(m.code)}</label><p class="sm muted">General workshop knowledge, not from your invoices.</p><ul class="sm">${m.known.map((k) => `<li>${esc(k)}</li>`).join("")}</ul>` : ""}</div>`).join("")}</div>
+            <p class="hint">The model comes from the car name (for example "W205") or the chassis number. Cars with neither are left out.</p>`
+          : emptyBox("car", "No model found yet. Add the chassis number on the car's Details tab and its model shows here.");
+      } else {
+        box.innerHTML = d.idle.length
+          ? table(`<th>Part</th><th class="num">On shelf</th><th class="num">Value</th><th class="d">Bought</th><th class="d">Last used</th>`,
+            d.idle.map((i) => `<tr><td><span class="strong">${esc(i.name)}</span><div class="sm">${esc(i.partNo)}</div></td><td class="num">${i.inStock}</td><td class="num strong">${rm(i.value)}</td><td class="d nowrap">${dmy(i.boughtOn)}</td><td class="d nowrap">${i.lastUsed ? dmy(i.lastUsed) : "Never"}</td></tr>`).join(""))
+          : emptyBox("check", "No idle stock. Everything on the shelf has moved in the last 6 months.");
+      }
+    };
+    $("#itabs").onclick = (e) => {
+      const a = e.target.closest("[data-t]");
+      if (!a) return;
+      e.preventDefault();
+      tab = a.dataset.t;
+      history.replaceState(null, "", a.getAttribute("href"));
+      $$(".seg a").forEach((x) => (x.href = x.getAttribute("href").replace(/tab=\w+/, `tab=${tab}`)));
+      draw();
+    };
+    draw();
+  }
+
   function pageParts(q) {
     crumbs([["Parts & stock"]]);
     const s = state.settings;
@@ -3023,7 +3165,7 @@
     const value = inStock.reduce((t, p) => t + p.qtyLeft * p.unitCost, 0);
     const low = state.parts.filter((p) => p.qtyLeft <= 1).length;
     view.innerHTML = `
-      ${pageHead("Parts & stock", { sub: `Selling price = cost + ${esc(s.markupPercent)}% markup`, acts: `<a class="btn alt" href="#/parts/count">${icon("clipboard")}Stock count</a><button class="btn alt" id="buyManual">${icon("edit")}Enter by hand</button><label class="btn upload">${icon("upload")}Upload supplier receipt<input type="file" id="buyFile" accept="image/*,application/pdf"></label>` })}
+      ${pageHead("Parts & stock", { sub: `Selling price = cost + ${esc(s.markupPercent)}% markup`, acts: `<a class="btn alt" href="#/parts/insights">${icon("chart")}Analysis</a><a class="btn alt" href="#/parts/count">${icon("clipboard")}Stock count</a><button class="btn alt" id="buyManual">${icon("edit")}Enter by hand</button><label class="btn upload">${icon("upload")}Upload supplier receipt<input type="file" id="buyFile" accept="image/*,application/pdf"></label>` })}
       <div class="grid g3" style="margin-bottom:16px">
         <div class="tile"><div class="lbl">${icon("parts")}Parts in stock</div><div class="val">${inStock.length}</div><div class="foot">${state.parts.length} part lines in total</div></div>
         <div class="tile"><div class="lbl">${icon("money")}Stock value (at cost)</div><div class="val">${rm0(value)}</div><div class="foot">money sitting on the shelf</div></div>
