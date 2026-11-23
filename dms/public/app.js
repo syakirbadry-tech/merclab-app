@@ -269,6 +269,32 @@
     };
   }, true);
 
+  // Big numbers in tiles shrink to fit their box instead of being cut off
+  // ("RM 199,0…" on a phone). Runs after every screen change and on resize.
+  function fitTiles() {
+    const range = document.createRange();
+    // Exact text width (scrollWidth is rounded, so a few pixels could still be cut).
+    const tooWide = (el) => {
+      range.selectNodeContents(el);
+      return range.getBoundingClientRect().width > el.clientWidth - 1;
+    };
+    $$(".tile .val").forEach((el) => {
+      el.style.fontSize = "";
+      if (!el.clientWidth) return;
+      let size = parseFloat(getComputedStyle(el).fontSize);
+      while (tooWide(el) && size > 12) el.style.fontSize = (size -= 1) + "px";
+    });
+  }
+  let fitQueued = false;
+  const queueFit = () => {
+    if (fitQueued) return;
+    fitQueued = true;
+    requestAnimationFrame(() => { fitQueued = false; fitTiles(); });
+  };
+  new MutationObserver(queueFit).observe(view, { childList: true, subtree: true });
+  addEventListener("resize", queueFit);
+  if (document.fonts) document.fonts.ready.then(queueFit);
+
   // Empty state (after the 21st.dev "Empty State" pattern): icon circle, title, one line of help.
   const emptyBox = (ic, msg) => {
     const m = String(msg).match(/^(.+?[.!?])\s+(.+)$/);
@@ -1991,7 +2017,7 @@
     const last = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7) - 2, 1)).toISOString().slice(0, 7);
     return `<div class="toolbar" id="${id}"><div class="seg">
       <button type="button" data-p="m:${ym}" class="${cur === "m:" + ym ? "on" : ""}">This month</button><button type="button" data-p="m:${last}" class="${cur === "m:" + last ? "on" : ""}">Last month</button><button type="button" data-p="y:${t.slice(0, 4)}" class="${cur === "y:" + t.slice(0, 4) ? "on" : ""}">This year</button></div>
-      <input type="month" aria-label="Pick a month" value="${cur.startsWith("m:") ? cur.slice(2) : ""}" style="width:auto;min-height:38px"></div>`;
+      <label class="muted" style="display:flex;align-items:center;gap:8px;margin:0;font-weight:500">Other month <input type="month" aria-label="Pick another month" value="${cur.startsWith("m:") ? cur.slice(2) : ""}" style="width:auto;min-height:44px"></label></div>`;
   }
   const periodRange = (p) => (p.startsWith("y:") ? [`${p.slice(2)}-01-01`, `${p.slice(2)}-12-31`] : monthRange(p.slice(2)));
   const periodLabel = (p) => (p.startsWith("y:") ? `Year ${p.slice(2)}` : ymLabel(p.slice(2)));
