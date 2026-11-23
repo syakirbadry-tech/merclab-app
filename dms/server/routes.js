@@ -613,6 +613,17 @@ router.post("/jobs/:id/status", wrap(async (req, res) => {
   res.json(jobOut(row));
 }));
 
+// Mileage only (also on issued invoices: it is not money, and documents
+// cannot be made without it, e.g. old imported invoices).
+router.post("/jobs/:id/mileage", wrap(async (req, res) => {
+  if (!isRec(req.params.id)) throw bad("Unknown job.");
+  const km = Number(String(req.body?.mileageKm ?? "").replace(/[, ]/g, ""));
+  if (!Number.isInteger(km) || km <= 0 || km > 2000000) throw bad("Mileage must be a whole number of km, more than 0.");
+  const j = jobOut(await db.get("quotes", req.params.id));
+  const [row] = await db.update("quotes", [{ id: j.id, fields: { "Mileage km": km } }]);
+  res.json(jobOut(row));
+}));
+
 const STAGES = ["Booked", "In workshop", "Waiting parts", "Ready", "Collected"];
 
 router.post("/jobs/:id/stage", wrap(async (req, res) => {

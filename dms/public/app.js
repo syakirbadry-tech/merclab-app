@@ -229,6 +229,46 @@
     return { el, close, $: (s) => el.querySelector(s) };
   }
 
+  // Documents need the car's mileage. Any link marked data-doc="<job id>"
+  // (open PDF, send by WhatsApp, reminder, receipt) asks for it first when the
+  // job has none (e.g. old imported invoices), saves it, then offers the link
+  // again: a fresh tap, so phones do not block the new tab.
+  document.addEventListener("click", (e) => {
+    const a = e.target.closest("a[data-doc]");
+    if (!a || !a.dataset.doc) return;
+    const j = state.jobs.find((x) => x.id === a.dataset.doc);
+    if (!j || Number(j.mileageKm) > 0) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    const m = modal("Mileage needed", `<form id="kmF" novalidate><p style="margin-top:0">Every estimate, invoice and receipt shows the car's mileage. <b>${esc(docNo(j))}</b>${j.plate ? ` · ${plateTag(j.plate)}` : ""} has none yet.</p>
+      <label for="kmIn">Mileage (km)</label><input id="kmIn" inputmode="numeric" autocomplete="off" placeholder="e.g. 72,769" required>
+      <p class="hint" style="margin:6px 0 0">For an old job, use the mileage on the paper invoice or the nearest reading you know.</p>
+      <div class="btns" style="margin-top:14px"><button class="btn block" id="kmSave">Save mileage</button></div></form>`);
+    setTimeout(() => m.$("#kmIn").focus(), 50);
+    m.$("#kmF").onsubmit = async (ev) => {
+      ev.preventDefault();
+      const btn = m.$("#kmSave");
+      busy(btn, true, "Saving…");
+      try {
+        Object.assign(j, await api(`/jobs/${j.id}/mileage`, { method: "POST", body: { mileageKm: m.$("#kmIn").value } }));
+        busy(btn, false);
+        const go = a.cloneNode(true);
+        go.removeAttribute("data-doc");
+        go.className = a.classList.contains("wa") ? "btn wa block" : "btn block";
+        go.addEventListener("click", () => {
+          setTimeout(m.close, 300);
+          if (a.hasAttribute("data-sent") && j.status === "Draft") api(`/jobs/${j.id}/status`, { method: "POST", body: { status: "Sent" } }).then((x) => Object.assign(j, x)).catch(() => {});
+        });
+        m.$(".mb").innerHTML = `<p style="margin-top:0">${icon("check")} Mileage saved: <b>${Number(j.mileageKm).toLocaleString("en-MY")} km</b>. Tap to continue.</p>`;
+        m.$(".mb").appendChild(go);
+        toast("Mileage saved", "ok");
+      } catch (err) {
+        busy(btn, false);
+        toast(err.message, "err");
+      }
+    };
+  }, true);
+
   // Empty state (after the 21st.dev "Empty State" pattern): icon circle, title, one line of help.
   const emptyBox = (ic, msg) => {
     const m = String(msg).match(/^(.+?[.!?])\s+(.+)$/);
@@ -641,7 +681,7 @@
     const si = STAGES.indexOf(j.stage);
     const primary = cancelled ? "" : !j.invoiceNo ? `<a class="btn" href="#/jobs/${j.id}/invoice">${icon("check")}Work done → invoice</a>` : j.balance > 0.009 ? `<a class="btn" href="#/money?pay=${j.id}">${icon("money")}Record payment</a>` : "";
     view.innerHTML = `
-      ${pageHead(`${esc(docNo(j))}`, { back: "#/jobs", sub: `${esc(j.customerName)}${j.car ? " · " + esc(j.car) : ""}`, extra: `<div class="chips">${pill(kindOf(j), "info")}${statusPill(j.status)}${j.approvedAt ? pill(`Approved online by ${j.approvedName}`, "ok") : ""}</div>`, acts: `<button type="button" class="btn alt" id="jPrint">${icon("print")}Job card</button>${docs[0] ? `<a class="btn wa" data-sent href="${esc(docs[0].wa)}" target="_blank" rel="noopener">${icon("chat")}Send ${docs[0].kind.toLowerCase()}</a>` : ""}${primary}` })}
+      ${pageHead(`${esc(docNo(j))}`, { back: "#/jobs", sub: `${esc(j.customerName)}${j.car ? " · " + esc(j.car) : ""}`, extra: `<div class="chips">${pill(kindOf(j), "info")}${statusPill(j.status)}${j.approvedAt ? pill(`Approved online by ${j.approvedName}`, "ok") : ""}</div>`, acts: `<button type="button" class="btn alt" id="jPrint">${icon("print")}Job card</button>${docs[0] ? `<a class="btn wa" data-sent data-doc="${j.id}" href="${esc(docs[0].wa)}" target="_blank" rel="noopener">${icon("chat")}Send ${docs[0].kind.toLowerCase()}</a>` : ""}${primary}` })}
       ${cancelled ? "" : `<div class="card"><div class="stepper" id="stepper" role="group" aria-label="Job stage">${STAGES.map((s, i) => `<button type="button" data-stage="${s}" class="${i < si ? "done" : i === si ? "cur" : ""}" aria-pressed="${i === si}"><span class="b">${i <= si ? icon("check") : ""}</span>${s}</button>`).join("")}</div></div>`}
       <div class="split">
         <div>
@@ -664,7 +704,7 @@
             ${!cancelled && !j.invoiceNo && j.balance > 0.009 ? `<div class="btns"><a class="btn alt block" href="#/money?pay=${j.id}">${icon("money")}Record deposit</a></div>` : ""}
           </div>
           ${docs.length ? `<div class="card"><h2>Documents</h2><div class="rows">${docs.map((d) => `<div class="docrow"><div class="grow"><b>${d.kind}</b><span class="muted">${esc(d.no)}</span></div>
-            <div class="da"><a class="btn alt sm" href="${esc(d.link)}" target="_blank" rel="noopener">${icon("open")}PDF</a><a class="btn wa sm" data-sent href="${esc(d.wa)}" target="_blank" rel="noopener">${icon("chat")}Send</a></div></div>`).join("")}</div></div>` : ""}
+            <div class="da"><a class="btn alt sm" data-doc="${j.id}" href="${esc(d.link)}" target="_blank" rel="noopener">${icon("open")}PDF</a><a class="btn wa sm" data-sent data-doc="${j.id}" href="${esc(d.wa)}" target="_blank" rel="noopener">${icon("chat")}Send</a></div></div>`).join("")}</div></div>` : ""}
           ${cancelled ? "" : jobExtrasHtml(j)}
           <div class="card"><h2>Customer &amp; car</h2><dl class="kv">
             <dt>Customer</dt><dd>${cust ? `<a href="#/customers/${cust.id}">${esc(j.customerName)}</a>` : esc(j.customerName)}</dd>
@@ -3197,7 +3237,7 @@
               const msg = `Hi ${j.customerName}, a friendly reminder from ${brandName()}: invoice ${j.invoiceNo}${j.plate ? ` (${j.plate})` : ""} has a balance of ${rm(j.balance)}.${j.invoiceToken ? `\n${docLink(j.invoiceToken)}` : ""}\nThank you!`;
               return `<tr class="tap" data-href="#/jobs/${j.id}"><td class="nowrap"><a class="strong" style="color:inherit;text-decoration:none" href="#/jobs/${j.id}">${esc(j.invoiceNo)}</a><div class="sm">${days > 0 ? `${days} day${days === 1 ? "" : "s"}` : "today"}</div></td>
                 <td>${esc(j.customerName)}<div class="sm">${plateTag(j.plate)}</div></td><td class="d nowrap">${dmy(j.invoiceDate)}</td><td class="num strong">${rm(j.balance)}</td>
-                <td class="num">${j.phone ? `<a class="btn wa sm" href="${esc(waLink(j.phone, msg))}" target="_blank" rel="noopener">${icon("chat")}Remind</a>` : ""}</td></tr>`;
+                <td class="num">${j.phone ? `<a class="btn wa sm" data-doc="${j.id}" href="${esc(waLink(j.phone, msg))}" target="_blank" rel="noopener">${icon("chat")}Remind</a>` : ""}</td></tr>`;
             }).join("")}</tbody></table></div>`
           : emptyBox("check", "Nobody owes you money.");
       }
@@ -3307,8 +3347,8 @@
           ${p.reference ? `<div><span class="muted">Reference</span><span>${esc(p.reference)}</span></div>` : ""}${p.payerName ? `<div><span class="muted">Paid by</span><span>${esc(p.payerName)}</span></div>` : ""}
           <div><span class="muted">For</span><span>${j.id ? `<a href="#/jobs/${j.id}">${esc(p.docNo)}</a>` : esc(p.docNo)}</span></div></div></div>
         <div class="card"><h2>Send to customer</h2><div class="stack">
-          <a class="btn wa block" href="${esc(waLink(j.phone, msg))}" target="_blank" rel="noopener">${icon("chat")}Send receipt by WhatsApp</a>
-          <a class="btn alt block" href="${esc(link)}" target="_blank" rel="noopener">${icon("open")}Open / save as PDF</a></div></div></div>`;
+          <a class="btn wa block" data-doc="${esc(j.id || "")}" href="${esc(waLink(j.phone, msg))}" target="_blank" rel="noopener">${icon("chat")}Send receipt by WhatsApp</a>
+          <a class="btn alt block" data-doc="${esc(j.id || "")}" href="${esc(link)}" target="_blank" rel="noopener">${icon("open")}Open / save as PDF</a></div></div></div>`;
   }
 
   // ================= SETTINGS =================

@@ -274,6 +274,27 @@ test("missing details: hidden on the customer copy, chips on the staff view, pla
   assert.match(withQr, /<img src="https:\/\/example\.com\/qr\.png" alt="DuitNow QR"/);
 });
 
+test("missing mileage: staff get a form, customers a polite note; the mileage route fixes it", async () => {
+  reset();
+  await login();
+  const j = await call("POST", "/api/jobs", { body: jobBody(["", ""]) });
+  const id = j.body.job.id;
+  store.quotes.find((r) => r.id === id).fields["Mileage km"] = null; // like an old imported invoice
+  const cust = await call("GET", `/d/${j.body.job.token}`, { noAuth: true });
+  assert.equal(cust.status, 200);
+  assert.match(cust.text, /This document is being updated/);
+  assert.doesNotMatch(cust.text, /Mileage|cannot be made/);
+  const staff = await call("GET", `/d/${j.body.job.token}`);
+  assert.match(staff.text, /Mileage needed/);
+  assert.match(staff.text, new RegExp(`/api/jobs/${id}/mileage`));
+  assert.equal((await call("POST", `/api/jobs/${id}/mileage`, { body: { mileageKm: "0" } })).status, 400);
+  assert.equal((await call("POST", `/api/jobs/${id}/mileage`, { body: { mileageKm: "abc" } })).status, 400);
+  const ok = await call("POST", `/api/jobs/${id}/mileage`, { body: { mileageKm: "72,769" } });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.mileageKm, 72769);
+  assert.match((await call("GET", `/d/${j.body.job.token}`, { noAuth: true })).text, /<h1>ESTIMATE<\/h1>/);
+});
+
 // ================= AI cleaning =================
 
 test("purchase AI answer is cleaned", () => {
