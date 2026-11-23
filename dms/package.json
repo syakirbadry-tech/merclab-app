@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node server/index.js",
     "test": "node --test test/*.test.js",
+    "backup": "node scripts/backup.js",
     "generate": "node scripts/generate.js",
     "check-layout": "node scripts/check-layout.js"
   },
