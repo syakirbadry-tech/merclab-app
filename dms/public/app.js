@@ -1268,12 +1268,20 @@
     };
   }
 
+  // Merc HUB sources. Only "Our case" entries are ever exported.
+  const HUB_SOURCES = ["Our case", "MBM forum", "General info"];
+  const SRC_CLS = { "Our case": "ok", "MBM forum": "info", "General info": "" };
+  const srcPill = (s) => pill(s === "Our case" ? "Our case" : s, SRC_CLS[s] || "");
+
   function faultDialog(f, j) {
     const car = j ? vehicleByKey(plateKey(j.plate)) : null;
     const d = f || { makeModel: j?.car || "", engine: car?.engine || "", mileageKm: j?.mileageKm || "", docNo: j ? docNo(j) : "", plate: j?.plate || "", jobId: j?.id || "", date: todayKL() };
     const ta = (k, label, ph, rows = 2) => `<label for="f_${k}">${label}</label><textarea id="f_${k}" name="${k}" rows="${rows}" placeholder="${ph}">${esc(d[k] || "")}</textarea>`;
-    const m = modal(f ? "Fault case" : "Record fault case", `<form id="ff" novalidate>
+    const src = d.source || "Our case";
+    const m = modal(f ? (src === "Our case" ? "Fault case" : "HUB reference") : "Record fault case", `<form id="ff" novalidate>
       <div class="fgrid"><div class="full"><label for="f_title">Title</label><input id="f_title" name="title" value="${esc(d.title || "")}" placeholder="Leave empty: made from the car and the symptom"></div>
+        <div><label for="f_source">Source</label><select id="f_source" name="source">${opt(HUB_SOURCES, src)}</select></div>
+        <div><label for="f_sourceRef">Source ref</label><input id="f_sourceRef" name="sourceRef" value="${esc(d.sourceRef || "")}" placeholder="e.g. forum thread no, bulletin, link"></div>
         <div><label for="f_makeModel">Make &amp; model</label><input id="f_makeModel" name="makeModel" value="${esc(d.makeModel)}"></div>
         <div><label for="f_engine">Engine</label><input id="f_engine" name="engine" value="${esc(d.engine || "")}" placeholder="e.g. M274, OM651"></div>
         <div><label for="f_mileageKm">Mileage (km)</label><input id="f_mileageKm" name="mileageKm" type="number" inputmode="numeric" value="${esc(d.mileageKm ?? "")}"></div>
@@ -1284,10 +1292,30 @@
       ${ta("cause", "Root cause", "e.g. Water pump seal weeping when hot")}
       ${ta("fix", "Fix", "e.g. Replaced water pump and thermostat, bled the system")}
       ${ta("parts", "Parts used", "e.g. water pump, thermostat, coolant", 1)}
+      ${ta("details", "Details (specs, procedure, notes)", "e.g. Torque 10 Nm. Coolant capacity 8.5 L. Software update required first.", d.details && d.details.length > 300 ? 8 : 3)}
+      ${f?.files?.length ? `<label>Original files</label><div class="rows">${f.files.map((x) => `<a href="${esc(x.url)}" target="_blank" rel="noopener"><div class="grow"><b>${icon("file")} ${esc(x.name)}</b></div>${icon("open", "s")}</a>`).join("")}</div>` : ""}
+      ${f ? `<div class="btns" style="margin-top:8px"><label class="btn alt upload">${icon("upload")}Attach the original file<input type="file" id="f_file" accept="image/*,application/pdf"></label></div>` : ""}
       <div class="fgrid"><div><label for="f_tags">Tags</label><input id="f_tags" name="tags" value="${esc(d.tags || "")}" placeholder="cooling, W205"></div>
         <div><label style="display:flex;gap:8px;align-items:center;margin-top:36px"><input type="checkbox" name="verified" ${d.verified ? "checked" : ""} style="width:20px;min-height:20px">Fix verified (car checked after)</label></div></div>
       ${d.docNo ? `<p class="hint">Job ${esc(d.docNo)}. No customer names are kept here, so this can feed the Workshop Datahub.</p>` : ""}
       <div class="btns"><button class="btn" type="submit">${icon("check")}Save</button></div></form>`, { wide: true });
+    if (f && m.$("#f_file")) m.$("#f_file").onchange = async (e) => {
+      const file = e.target.files[0];
+      e.target.value = "";
+      if (!file) return;
+      const fd = new FormData();
+      fd.append("file", file);
+      toast("Attaching the file…");
+      try {
+        await api(`/faults/${f.id}/file`, { method: "POST", form: fd, timeout: 90000 });
+        await refresh("faults");
+        m.close();
+        toast("File attached");
+        faultDialog(state.faults.find((x) => x.id === f.id));
+      } catch (err) {
+        toast(err.message, "err");
+      }
+    };
     m.$("#ff").onsubmit = async (e) => {
       e.preventDefault();
       const b = formObj(e.target);
@@ -1316,6 +1344,7 @@
     const draw = () => {
       const words = $("#fq").value.trim().toLowerCase().split(/\s+/).filter(Boolean);
       const list = state.faults.filter((f) => {
+        if ((f.source || "Our case") !== "Our case") return false; // forum and general info live in the Merc HUB
         const hay = `${f.title} ${f.makeModel} ${f.engine} ${f.symptom} ${f.codes} ${f.tests} ${f.cause} ${f.fix} ${f.parts} ${f.tags}`.toLowerCase();
         return words.every((w) => hay.includes(w));
       });
@@ -1347,47 +1376,63 @@
       symptom: f.symptom, codes: codesOf(f.codes), tests: f.tests, cause: f.cause, fix: f.fix, parts: f.parts, hours: f.hours, tags: f.tags, verified: f.verified, year: (f.date || "").slice(0, 4) };
   }
 
+  // One reference library from three sources: our own cases, MBM technical
+  // forum material and general information. Searched together; our verified
+  // cases rank first. MBM and general entries are never exported.
+  const SRC_RANK = (f) => ((f.source || "Our case") === "Our case" ? (f.verified ? 0 : 2) : f.source === "MBM forum" ? 1 : 3);
+  const hayOf = (f) => `${f.title} ${f.makeModel} ${f.engine} ${f.symptom} ${f.codes} ${f.tests} ${f.cause} ${f.fix} ${f.parts} ${f.tags} ${f.details} ${f.sourceRef}`.toLowerCase();
+  const firstLine = (s, n = 160) => { const t = String(s || "").split("\n").find((x) => x.trim()) || ""; return t.length > n ? t.slice(0, n - 1) + "…" : t; };
+
   function pageHub(q) {
     crumbs([["Merc HUB"]]);
     let model = q.get("m") || "";
+    let source = HUB_SOURCES.includes(q.get("s")) ? q.get("s") : "";
     let verifiedOnly = q.get("v") === "1";
-    const all = state.faults.map((f) => ({ f, h: hubCase(f) }));
+    const all = state.faults.map((f) => ({ f, h: hubCase(f), src: f.source || "Our case" }));
     const models = {};
     const codes = {};
-    for (const { h } of all) {
+    const bySrc = Object.fromEntries(HUB_SOURCES.map((s) => [s, 0]));
+    for (const { f, h, src } of all) {
+      bySrc[src] += 1;
       if (h.chassis) models[h.chassis] = (models[h.chassis] || 0) + 1;
       for (const c of h.codes) codes[c] = (codes[c] || 0) + 1;
     }
-    view.innerHTML = `${pageHead("Merc HUB", { sub: "Diagnosis database: symptom → codes → tests → cause → fix, by Mercedes model", acts: `<button type="button" class="btn alt" id="hubExport">${icon("download")}Export for HUB</button><button class="btn" id="hubNew">${icon("plus")}New fault case</button>` })}
+    view.innerHTML = `${pageHead("Merc HUB", { sub: "Diagnosis reference: our own cases, MBM technical forum and general information in one place", acts: `<button type="button" class="btn alt" id="hubExport">${icon("download")}Export our cases</button><button type="button" class="btn alt" id="hubImport">${icon("upload")}Add references</button><button class="btn" id="hubNew">${icon("plus")}New entry</button>` })}
       <div class="grid g4" style="margin-bottom:16px">
-        <div class="tile"><div class="lbl">${icon("layers")}Cases</div><div class="val">${all.length}</div><div class="foot">fault cases recorded</div></div>
-        <div class="tile"><div class="lbl">${icon("check")}Verified</div><div class="val">${all.filter((x) => x.h.verified).length}</div><div class="foot">fix confirmed on the car</div></div>
+        <div class="tile"><div class="lbl">${icon("layers")}References</div><div class="val">${all.length}</div><div class="foot">${bySrc["Our case"]} ours · ${bySrc["MBM forum"]} MBM · ${bySrc["General info"]} general</div></div>
+        <div class="tile"><div class="lbl">${icon("check")}Verified fixes</div><div class="val">${all.filter((x) => x.src === "Our case" && x.h.verified).length}</div><div class="foot">confirmed on our cars</div></div>
         <div class="tile"><div class="lbl">${icon("car")}Models</div><div class="val">${Object.keys(models).length}</div><div class="foot">chassis codes covered</div></div>
-        <div class="tile"><div class="lbl">${icon("fault")}Fault codes</div><div class="val">${Object.keys(codes).length}</div><div class="foot">different codes logged</div></div></div>
+        <div class="tile"><div class="lbl">${icon("fault")}Fault codes</div><div class="val">${Object.keys(codes).length}</div><div class="foot">different codes</div></div></div>
       <div class="split"><div>
-        <div class="toolbar"><div class="search">${icon("search")}<input id="hq" type="search" placeholder="Symptom, fault code, model, part" aria-label="Search the diagnosis database" value="${esc(q.get("q") || "")}"></div>
+        <div class="toolbar"><div class="search">${icon("search")}<input id="hq" type="search" placeholder="Symptom, fault code, model, engine, part" aria-label="Search the diagnosis reference" value="${esc(q.get("q") || "")}"></div>
           <label class="chip" style="margin:0"><input type="checkbox" id="hv" ${verifiedOnly ? "checked" : ""} style="width:auto;min-height:0;margin:0"> Verified only</label></div>
+        <div class="chips" id="hs" style="margin-bottom:8px"><button type="button" class="chip" data-s="">All sources <span class="n">${all.length}</span></button>${HUB_SOURCES.map((s) => `<button type="button" class="chip" data-s="${esc(s)}">${esc(s === "Our case" ? "Our cases" : s)} <span class="n">${bySrc[s]}</span></button>`).join("")}</div>
         <div class="chips scroll" id="hm" style="margin-bottom:14px"><button type="button" class="chip" data-m="">All models</button>${Object.entries(models).sort((a, b) => b[1] - a[1]).map(([m, n]) => `<button type="button" class="chip" data-m="${esc(m)}">${esc(m)} <span class="n">${n}</span></button>`).join("")}</div>
+        <p class="muted" id="hcount" style="margin:-4px 0 10px"></p>
         <div id="hl"></div></div>
         <div class="stack">
-          <div class="card"><div class="card-h"><h2>Most seen fault codes</h2></div>${Object.keys(codes).length ? `<div class="rows">${Object.entries(codes).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([c, n]) => `<a href="#/hub?q=${encodeURIComponent(c)}"><div class="grow"><b>${esc(c)}</b><span>${n} case${n === 1 ? "" : "s"}</span></div>${icon("cr", "s")}</a>`).join("")}</div>` : `<p class="muted">Codes appear here as you record fault cases with their codes.</p>`}</div>
-          <div class="card"><div class="card-h"><h2>About Merc HUB</h2></div>
-            <p class="muted" style="margin-top:0">The Merc HUB (Workshop Diagnostic Network) is the diagnosis database we are building for independent Mercedes-Benz workshops. Each solved job becomes a case: what the customer noticed, the codes, the tests, the root cause and the fix.</p>
+          <div class="card"><div class="card-h"><h2>Most seen fault codes</h2></div>${Object.keys(codes).length ? `<div class="rows">${Object.entries(codes).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([c, n]) => `<a href="#/hub?q=${encodeURIComponent(c)}"><div class="grow"><b>${esc(c)}</b><span>${n} reference${n === 1 ? "" : "s"}</span></div>${icon("cr", "s")}</a>`).join("")}</div>` : `<p class="muted">Codes appear here as you add cases and references with fault codes.</p>`}</div>
+          <div class="card"><div class="card-h"><h2>How the HUB works</h2></div>
             <div class="rows">
-              <div><span class="mini">${icon("check")}</span><div class="grow"><b>Stage 1 · now</b><span>Our own cases, searchable here</span></div>${pill("Live", "ok")}</div>
-              <div><span class="mini">${icon("layers")}</span><div class="grow"><b>Stage 2 · shared HUB</b><span>Anonymised cases from partner workshops</span></div>${pill("Planned")}</div>
-              <div><span class="mini">${icon("sparkle")}</span><div class="grow"><b>Stage 3 · AI diagnosis</b><span>Likely causes suggested from symptoms and codes</span></div>${pill("Planned")}</div></div>
-            <p class="hint">No customer names, plates or prices ever leave the DMS. "Export for HUB" downloads the anonymised cases.</p></div></div></div>`;
+              <div><span class="mini">${icon("check")}</span><div class="grow"><b>Our cases</b><span>Solved here. Verified first.</span></div>${pill(String(bySrc["Our case"]), "ok")}</div>
+              <div><span class="mini">${icon("book")}</span><div class="grow"><b>MBM forum</b><span>Private: never exported.</span></div>${pill(String(bySrc["MBM forum"]), "info")}</div>
+              <div><span class="mini">${icon("info")}</span><div class="grow"><b>General info</b><span>Specs, procedures, known issues.</span></div>${pill(String(bySrc["General info"]))}</div></div>
+            <p class="hint"><b>Add references</b>: upload a PDF, screenshot or photo, or paste text. The AI splits it into entries; you check them before saving. The Assistant uses all of it when you ask about a fault.</p>
+            <p class="hint">"Export our cases" downloads only our own cases, without customer names, plates or prices.</p></div></div></div>`;
     const draw = () => {
       $$("#hm [data-m]").forEach((b) => b.classList.toggle("on", b.dataset.m === model));
+      $$("#hs [data-s]").forEach((b) => b.classList.toggle("on", b.dataset.s === source));
       const words = $("#hq").value.trim().toLowerCase().split(/\s+/).filter(Boolean);
-      const list = all.filter(({ f, h }) => (!model || h.chassis === model) && (!verifiedOnly || h.verified) && words.every((w) => `${f.title} ${f.makeModel} ${f.engine} ${f.symptom} ${f.codes} ${f.tests} ${f.cause} ${f.fix} ${f.parts} ${f.tags}`.toLowerCase().includes(w)));
+      const list = all.filter(({ f, h, src }) => (!model || h.chassis === model) && (!source || src === source) && (!verifiedOnly || (src === "Our case" && h.verified)) && words.every((w) => hayOf(f).includes(w)))
+        .sort((a, b) => SRC_RANK(a.f) - SRC_RANK(b.f) || (b.f.date || "").localeCompare(a.f.date || ""));
+      $("#hcount").textContent = words.length || model || source || verifiedOnly ? `${list.length} of ${all.length} references` : "";
       $("#hl").innerHTML = list.length
-        ? `<div class="stack">${list.map(({ f, h }) => `<a class="card" style="display:block;text-decoration:none;color:inherit" data-fc="${f.id}" href="#/hub">
-            <div class="card-h" style="margin-bottom:6px"><h2>${esc(f.title)}</h2><div class="r">${h.verified ? pill("Verified", "ok") : pill("Not verified")}</div></div>
-            <div class="row wrap" style="margin-bottom:8px">${h.chassis ? `<span class="pill ink plain">${esc(h.chassis)}</span>` : ""}<span class="muted">${esc([f.makeModel, f.engine, h.mileageBand, h.year].filter(Boolean).join(" · "))}</span>${h.codes.map((c) => `<span class="pill info plain">${esc(c)}</span>`).join("")}</div>
-            <dl class="kv"><dt>Symptom</dt><dd>${esc(f.symptom) || "—"}</dd>${f.tests ? `<dt>Tests</dt><dd>${esc(f.tests)}</dd>` : ""}<dt>Cause</dt><dd>${esc(f.cause) || "—"}</dd><dt>Fix</dt><dd>${esc(f.fix) || "—"}</dd>${f.parts ? `<dt>Parts</dt><dd>${esc(f.parts)}</dd>` : ""}</dl></a>`).join("")}</div>`
-        : `<div class="card">${emptyBox("layers", all.length ? "No case matches. Try fewer words or another model." : "No cases yet. Record a fault case on a job (what was wrong and how you fixed it) and it appears here.")}</div>`;
+        ? `<div class="stack">${list.slice(0, 150).map(({ f, h, src }) => `<a class="card" style="display:block;text-decoration:none;color:inherit" data-fc="${f.id}" href="#/hub">
+            <div class="card-h" style="margin-bottom:6px"><h2>${esc(f.title)}</h2><div class="r">${srcPill(src)}${src === "Our case" ? (h.verified ? pill("Verified", "ok") : pill("Not verified")) : ""}</div></div>
+            <div class="row wrap" style="margin-bottom:8px">${h.chassis ? `<span class="pill ink plain">${esc(h.chassis)}</span>` : ""}<span class="muted">${esc([f.makeModel, f.engine, h.mileageBand, src === "Our case" ? h.year : f.sourceRef].filter(Boolean).join(" · "))}</span>${h.codes.map((c) => `<span class="pill info plain">${esc(c)}</span>`).join("")}${f.files?.length ? `<span class="pill plain">${icon("file")}${f.files.length}</span>` : ""}</div>
+            <dl class="kv">${f.symptom ? `<dt>Symptom</dt><dd>${esc(f.symptom)}</dd>` : ""}${f.tests ? `<dt>Tests</dt><dd>${esc(firstLine(f.tests, 240))}</dd>` : ""}${f.cause ? `<dt>Cause</dt><dd>${esc(f.cause)}</dd>` : ""}${f.fix ? `<dt>Fix</dt><dd>${esc(f.fix)}</dd>` : ""}${f.parts ? `<dt>Parts</dt><dd>${esc(f.parts)}</dd>` : ""}${f.details && !(f.symptom || f.cause || f.fix) ? `<dt>Info</dt><dd>${esc(firstLine(f.details, 300))}</dd>` : ""}</dl></a>`).join("")}</div>
+            ${list.length > 150 ? `<p class="hint">Showing the first 150. Type more words to narrow it down.</p>` : ""}`
+        : `<div class="card">${emptyBox("layers", all.length ? "Nothing matches. Try fewer words, another model or All sources." : "No references yet. Tap Add references to upload MBM forum posts, general information or your old cases.")}</div>`;
       $$("#hl [data-fc]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); faultDialog(state.faults.find((x) => x.id === a.dataset.fc)); }));
     };
     $("#hq").oninput = draw;
@@ -1398,16 +1443,113 @@
       model = b.dataset.m;
       draw();
     };
+    $("#hs").onclick = (e) => {
+      const b = e.target.closest("[data-s]");
+      if (!b) return;
+      source = b.dataset.s;
+      draw();
+    };
     $("#hubNew").onclick = () => faultDialog(null, null);
+    $("#hubImport").onclick = () => hubImport();
     $("#hubExport").onclick = () => {
-      const blob = new Blob([JSON.stringify({ hub: "Merc HUB", version: 1, format: "Workshop Diagnostic Network cases", source: "The Merc Lab", exported: todayKL(), cases: all.map(({ h }, i) => ({ case_number: `ML-${todayKL().slice(0, 4)}-${String(i + 1).padStart(4, "0")}`, case_date: h.year, vehicle_model: h.model, model_series: h.chassis, engine: h.engine, mileage: h.mileageBand, fault_codes: h.codes.join(", "), symptom: h.symptom, diagnosis_steps: h.tests, root_cause: h.cause, fix_applied: h.fix, parts_used: h.parts, time_spent_hours: h.hours, status: h.verified ? "Resolved" : "Open", notes: h.tags })) }, null, 2)], { type: "application/json" });
+      const ours = all.filter((x) => x.src === "Our case");
+      const blob = new Blob([JSON.stringify({ hub: "Merc HUB", version: 1, format: "Workshop Diagnostic Network cases", source: "The Merc Lab", exported: todayKL(), cases: ours.map(({ h }, i) => ({ case_number: `ML-${todayKL().slice(0, 4)}-${String(i + 1).padStart(4, "0")}`, case_date: h.year, vehicle_model: h.model, model_series: h.chassis, engine: h.engine, mileage: h.mileageBand, fault_codes: h.codes.join(", "), symptom: h.symptom, diagnosis_steps: h.tests, root_cause: h.cause, fix_applied: h.fix, parts_used: h.parts, time_spent_hours: h.hours, status: h.verified ? "Resolved" : "Open", notes: h.tags })) }, null, 2)], { type: "application/json" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
       a.download = `merc-hub-cases-${todayKL()}.json`;
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      toast(`${ours.length} of our own case(s) exported. MBM forum and general info are never exported.`);
     };
     draw();
+  }
+
+  // Add references: a file (PDF, screenshot, photo of notes) or pasted text →
+  // the AI splits it into entries → the owner ticks which to keep → saved.
+  function hubImport() {
+    let file = null;
+    const m = modal("Add references to the Merc HUB", `<form id="hif" novalidate>
+      <label>Where is it from?</label>
+      <div class="seg" role="radiogroup" aria-label="Source" id="hisrc" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">${HUB_SOURCES.map((s, i) => `<button type="button" role="radio" aria-checked="${i === 1}" class="${i === 1 ? "on" : ""}" data-s="${esc(s)}">${esc(s === "Our case" ? "Our old cases" : s)}</button>`).join("")}</div>
+      <label for="hi_ref">Source ref <span class="muted">(optional)</span></label><input id="hi_ref" name="sourceRef" placeholder="e.g. MBM forum thread no, bulletin no, title">
+      <label>File</label>
+      <div class="btns" style="margin-top:0"><label class="btn alt upload">${icon("upload")}Choose PDF, screenshot or photo<input type="file" id="hi_file" accept="image/*,application/pdf"></label></div>
+      <p class="sm muted" id="hi_fname" style="margin:4px 0 8px">No file chosen. Max 10 MB.</p>
+      <label for="hi_text">…or paste the text</label><textarea id="hi_text" name="text" rows="5" placeholder="Copy the forum post or your notes and paste here"></textarea>
+      <p class="hint">The AI splits it into separate entries (one per problem or topic). You check them before anything is saved. MBM forum material stays private in your DMS.</p>
+      <div class="btns"><button class="btn" type="submit">${icon("sparkle")}Read it</button></div></form><div id="hires"></div>`, { wide: true });
+    let source = "MBM forum";
+    m.$("#hisrc").onclick = (e) => {
+      const b = e.target.closest("[data-s]");
+      if (!b) return;
+      source = b.dataset.s;
+      m.el.querySelectorAll("#hisrc [data-s]").forEach((x) => { x.classList.toggle("on", x === b); x.setAttribute("aria-checked", x === b); });
+    };
+    m.$("#hi_file").onchange = (e) => {
+      file = e.target.files[0] || null;
+      if (file && file.size > 10 * 1024 * 1024) {
+        file = null;
+        e.target.value = "";
+        toast("That file is over 10 MB. Split the PDF, or use screenshots of the pages.", "err");
+      }
+      m.$("#hi_fname").textContent = file ? `${file.name} (${Math.round(file.size / 1024)} KB)` : "No file chosen. Max 10 MB.";
+    };
+    m.$("#hif").onsubmit = async (e) => {
+      e.preventDefault();
+      const textIn = m.$("#hi_text").value.trim();
+      if (!file && !textIn) return toast("Choose a file or paste the text.", "err");
+      const fd = new FormData();
+      if (file) fd.append("file", file);
+      fd.append("data", JSON.stringify({ source, text: textIn }));
+      busy(e.submitter, true, "Reading… (up to 1 minute)");
+      m.$("#hires").innerHTML = `<div class="notice"><span class="spin"></span><div>The AI is reading it and splitting it into entries. Long PDFs take up to a minute.</div></div>`;
+      let out;
+      try {
+        out = await api("/faults/read", { method: "POST", form: fd, timeout: 120000 });
+      } catch (err) {
+        busy(e.submitter, false);
+        m.$("#hires").innerHTML = `<div class="notice bad">${icon("alert")}<div>${esc(err.aborted ? "The AI took too long. Try a shorter part (a few pages), or paste the text." : err.message)}</div></div>`;
+        return;
+      }
+      busy(e.submitter, false);
+      const ref = m.$("#hi_ref").value.trim();
+      const entries = out.entries;
+      const sum = (x) => [x.makeModel, x.engine, x.codes].filter(Boolean).join(" · ");
+      m.$("#hires").innerHTML = `<div class="card" style="margin-top:12px"><div class="card-h"><h2>${entries.length} entr${entries.length === 1 ? "y" : "ies"} found</h2><div class="r">${srcPill(source)}</div></div>
+        <p class="muted" style="margin-top:-6px">Untick anything you do not want. You can edit each one later in the HUB.</p>
+        <div class="stack" id="hilist">${entries.map((x, i) => `<div class="card" style="margin:0">
+          <label style="display:flex;gap:10px;align-items:flex-start;margin:0"><input type="checkbox" data-i="${i}" checked style="width:20px;min-height:20px;margin-top:12px">
+          <div style="flex:1;min-width:0"><input data-t="${i}" value="${esc(x.title)}" aria-label="Title of entry ${i + 1}">
+          <div class="sm muted" style="margin-top:4px">${esc(sum(x) || "No model given")}</div>
+          ${x.symptom ? `<div class="sm"><b>Symptom:</b> ${esc(firstLine(x.symptom))}</div>` : ""}${x.cause ? `<div class="sm"><b>Cause:</b> ${esc(firstLine(x.cause))}</div>` : ""}${x.fix ? `<div class="sm"><b>Fix:</b> ${esc(firstLine(x.fix))}</div>` : ""}${!x.symptom && !x.cause && !x.fix && x.details ? `<div class="sm">${esc(firstLine(x.details, 220))}</div>` : ""}</div></label></div>`).join("")}</div>
+        ${file ? `<label style="display:flex;gap:8px;align-items:center;margin-top:12px"><input type="checkbox" id="hikeep" checked style="width:20px;min-height:20px">Keep the original file with each entry</label>` : ""}
+        <div class="btns"><button type="button" class="btn" id="hisave">${icon("check")}Save to the HUB</button></div></div>`;
+      m.$("#hires").scrollIntoView({ behavior: "smooth", block: "start" });
+      m.$("#hisave").onclick = async (ev) => {
+        const keep = [...m.el.querySelectorAll("#hilist [data-i]")].filter((c) => c.checked).map((c) => Number(c.dataset.i));
+        if (!keep.length) return toast("Tick at least one entry.", "err");
+        const list = keep.map((i) => ({ ...entries[i], title: m.el.querySelector(`[data-t="${i}"]`).value.trim() || entries[i].title }));
+        busy(ev.currentTarget, true, "Saving…");
+        try {
+          const saved = await api("/faults/bulk", { method: "POST", body: { source, sourceRef: ref, entries: list } });
+          let fileFails = 0;
+          if (file && m.$("#hikeep")?.checked) {
+            for (const f of saved.faults) {
+              const one = new FormData();
+              one.append("file", file);
+              try { await api(`/faults/${f.id}/file`, { method: "POST", form: one, timeout: 90000 }); } catch { fileFails += 1; }
+            }
+          }
+          await refresh("faults");
+          m.close();
+          toast(`${saved.faults.length} reference(s) added to the HUB${fileFails ? `. ${fileFails} file copy(ies) did not attach` : ""}`);
+          route();
+        } catch (err) {
+          toast(err.message, "err");
+          busy(ev.currentTarget, false);
+        }
+      };
+    };
   }
 
   // ---------- Merc Lab Assistant + the AI team ----------
@@ -1418,11 +1560,32 @@
     ["ML-COO", "COO", "Operations", "Cars in the workshop, parts waiting, bookings", "jobs", ["Which cars are waiting for parts?", "What is booked this week?"]],
     ["ML-CFO", "CFO", "Finance", "Money in, who owes, expenses, profit", "money", ["Who owes us money and for how long?", "What did we spend most on this month?"]],
     ["ML-CRM", "Customer CRM", "Customers", "Follow-ups, service reminders, win-backs", "users", ["Who should I follow up today?", "Which cars are due for service soon?"]],
-    ["ML-TEC", "Technical", "Merc HUB", "Fault cases and the diagnosis database", "layers", ["What faults have we fixed on W205 cars?", "Which fault codes come up most?"]],
+    ["ML-TEC", "Technical", "Merc HUB", "Our cases, MBM forum and general info", "layers", ["W205 coolant loss, no leak: what to check?", "What do we know about fault code P0016?"]],
   ];
   const assistantLog = [];
 
-  function assistantContext() {
+  // The Merc HUB entries most related to the question (words, codes, model),
+  // within a fixed size so the context is never cut off half-way.
+  function hubForQuestion(question) {
+    const words = String(question || "").toLowerCase().split(/[^a-z0-9-]+/).filter((w) => w.length > 2);
+    const scored = state.faults.map((f) => {
+      const hay = hayOf(f);
+      const hits = words.reduce((n, w) => n + (hay.includes(w) ? 1 : 0), 0);
+      return { f, score: hits * 10 - SRC_RANK(f) };
+    }).sort((a, b) => b.score - a.score);
+    const out = [];
+    let size = 0;
+    for (const { f } of scored) {
+      const e = { title: f.title, source: f.source || "Our case", ref: f.sourceRef || undefined, model: f.makeModel, engine: f.engine, codes: f.codes, symptom: f.symptom, tests: f.tests, cause: f.cause, fix: f.fix, parts: f.parts, details: f.details ? f.details.slice(0, 1500) : undefined, verified: f.source === "Our case" ? f.verified : undefined };
+      const n = JSON.stringify(e).length;
+      if (size + n > 45000 || out.length >= 60) break;
+      out.push(e);
+      size += n;
+    }
+    return out;
+  }
+
+  function assistantContext(question = "") {
     const today = todayKL();
     const month = periodRange("m:" + today.slice(0, 7));
     const x = pnlFor(month);
@@ -1440,7 +1603,7 @@
       serviceDue: state.vehicles.filter((v) => v.serviceDueDate && v.serviceDueDate <= new Date(Date.parse(today) + 30 * 864e5).toISOString().slice(0, 10)).map((v) => ({ plate: v.plate, car: v.makeModel, owner: v.ownerName, due: v.serviceDueDate })),
       lowStock: state.parts.filter((p) => Number(p.qtyLeft) <= 1).map((p) => ({ part: p.name, partNo: p.partNo, left: p.qtyLeft })),
       expensesThisMonth: state.expenses.filter((e) => inRange(e.date, month)).map((e) => ({ date: e.date, description: e.description, category: e.category, amount: e.amount })),
-      faultCases: state.faults.slice(0, 80).map((f) => ({ title: f.title, model: f.makeModel, engine: f.engine, codes: f.codes, symptom: f.symptom, cause: f.cause, fix: f.fix, verified: f.verified })),
+      mercHub: hubForQuestion(question),
       supplierBillsUnpaid: state.purchases.filter((p) => p.status === "Unpaid").map((p) => ({ ref: p.ref, supplier: p.supplier, date: p.date, total: p.total })),
     };
   }
@@ -1518,7 +1681,7 @@
       drawLog();
       busy($("#asGo"), true, "Asking…");
       try {
-        const out = await api("/assistant/ask", { method: "POST", body: { question: q, role, context: assistantContext() } });
+        const out = await api("/assistant/ask", { method: "POST", body: { question: q, role, context: assistantContext(q) } });
         entry.a = out.answer;
         entry.src = out.sources;
         $("#asQ").value = "";

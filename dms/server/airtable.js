@@ -37,6 +37,7 @@ const ATTACHMENT_FIELDS = {
   jobPhotos: "flduOq0QvNrKmv0JP",
   expenseReceipt: "fldDuByhnms2FXyyv",
   inboxFile: "fldwgQ5eaSIcfhHk0",
+  faultFiles: "fldVh1eNieHSEMmbr",
 };
 
 async function request(path, options = {}) {

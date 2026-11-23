@@ -47,7 +47,7 @@ function createApp() {
   app.get("/api/me", (req, res) => res.json({ loggedIn: auth.validToken(auth.readCookie(req)) }));
 
   // AI reading costs money per call, so it has its own hourly limit.
-  app.post(["/api/purchases/extract", "/api/payments/extract", "/api/expenses/extract", "/api/assistant/ask"], auth.requireLogin, ops.aiLimit);
+  app.post(["/api/purchases/extract", "/api/payments/extract", "/api/expenses/extract", "/api/faults/read", "/api/assistant/ask"], auth.requireLogin, ops.aiLimit);
   app.use("/api", auth.requireLogin, ops.apiLimit, router);
   app.get("/d/:token", ops.docLimit, docRoute);
   app.post("/d/:token/approve", ops.docLimit, (req, res, next) => (auth.tooManyFails("ap:" + (req.ip || "x")) ? res.status(429).json({ error: "Too many tries. Wait 15 minutes." }) : next()), approveRoute);
