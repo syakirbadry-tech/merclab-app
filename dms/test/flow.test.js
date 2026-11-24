@@ -49,6 +49,7 @@ db.update = async (t, ups) => ups.map((u) => {
   Object.assign(r.fields, u.fields);
   return { id: r.id, fields: { ...r.fields } };
 });
+db.remove = async (t, ids) => { store[t] = store[t].filter((r) => !ids.includes(r.id)); };
 db.upload = async (key, id, file) => {
   uploads.push({ key, id, file });
   const att = { id: "att" + String(++seq).padStart(14, "0"), url: `https://files.test/${key}/${seq}.jpg`, thumbnails: { small: { url: "https://files.test/s.jpg" }, large: { url: "https://files.test/l.jpg" } } };
@@ -1387,4 +1388,118 @@ test("HUB: saves still work before the new Airtable fields exist", async () => {
     db.create = realCreate;
     db.update = realUpdate;
   }
+});
+
+// ================= Alerts =================
+test("alerts: approval pops up once, bell list, mark read, phone on/off, dead phones dropped", async () => {
+  const notify = require("../server/notify");
+  const ops = require("../server/ops");
+  reset();
+  ops._reset();
+  notify._reset();
+  await login();
+  const pushed = [];
+  let fail = null;
+  notify.send.push = async (sub, payload) => {
+    if (fail && sub.endpoint === fail) throw Object.assign(new Error("gone"), { statusCode: 410 });
+    pushed.push({ endpoint: sub.endpoint, payload: JSON.parse(payload) });
+  };
+
+  // No phones yet: the bell still gets the alert, and a server key is made once.
+  let n = await call("GET", "/api/notifications");
+  assert.equal(n.status, 200);
+  assert.match(n.body.publicKey, /^[A-Za-z0-9_-]{80,}$/);
+  assert.equal(store.push.filter((r) => r.fields.Kind === "Server key").length, 1);
+  assert.equal((await call("GET", "/api/notifications")).body.publicKey, n.body.publicKey);
+  assert.ok(!JSON.stringify(n.body).includes(JSON.parse(store.push[0].fields["Data JSON"]).privateKey), "private key never leaves the server");
+
+  // Turn on two phones.
+  const sub = (e) => ({ endpoint: `https://web.push.apple.com/${e}`, keys: { p256dh: "BPk" + "x".repeat(80), auth: "a".repeat(22) } });
+  assert.equal((await call("POST", "/api/push/subscribe", { body: { subscription: { endpoint: "http://bad", keys: {} } } })).status, 400);
+  assert.equal((await call("POST", "/api/push/subscribe", { body: { subscription: sub("one"), name: "iPhone" } })).body.devices, 1);
+  assert.equal((await call("POST", "/api/push/subscribe", { body: { subscription: sub("one"), name: "iPhone" } })).body.devices, 1, "same phone twice = one row");
+  assert.equal((await call("POST", "/api/push/subscribe", { body: { subscription: sub("two"), name: "iPad" } })).body.devices, 2);
+  assert.equal((await call("POST", "/api/push/test", { body: {} })).status, 200);
+  assert.equal(pushed.length, 2);
+  assert.equal(pushed[0].payload.title, "Alerts are on ✓");
+
+  // A client approves an estimate online.
+  const token = "q" + "a".repeat(32);
+  store.quotes.push({ id: newId(), fields: { "Quote no": "EST-0042", "Link token": token, Status: "Sent", Total: 1234.5, Balance: 1234.5, "Customer name": "Ali Demo", Car: "Mercedes-Benz C200 (W205)", Plate: "VDM 2841", Date: "2026-11-20" } });
+  const jobId = store.quotes[store.quotes.length - 1].id;
+  pushed.length = 0;
+  assert.equal((await call("POST", `/d/${token}/approve`, { noAuth: true, body: { name: "Ali Ahmad" } })).status, 200);
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(pushed.length, 2);
+  assert.equal(pushed[0].payload.title, "Estimate approved ✓ EST-0042");
+  assert.equal(pushed[0].payload.body, "Ali Ahmad approved · RM 1,234.50 · VDM 2841 C200 (W205)");
+  assert.equal(pushed[0].payload.url, `/#/jobs/${jobId}`);
+  // Approving again (already approved) does not send again.
+  await call("POST", `/d/${token}/approve`, { noAuth: true, body: { name: "Ali Ahmad" } });
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(store.notifications.filter((r) => r.fields.Kind === "Approval").length, 1);
+
+  // Bell list, newest first, mark one read, then all.
+  n = (await call("GET", "/api/notifications")).body;
+  assert.equal(n.unread, 2);
+  assert.equal(n.devices, 2);
+  assert.equal(n.items[0].kind, "Approval");
+  assert.equal(n.items[0].link, `#/jobs/${jobId}`);
+  await call("POST", "/api/notifications/read", { body: { ids: [n.items[0].id] } });
+  assert.equal((await call("GET", "/api/notifications")).body.unread, 1);
+  await call("POST", "/api/notifications/read", { body: {} });
+  assert.equal((await call("GET", "/api/notifications")).body.unread, 0);
+
+  // A phone that removed the app is dropped on the next alert.
+  fail = "https://web.push.apple.com/two";
+  await notify.notify({ kind: "Test", title: "Hello" });
+  assert.equal(store.push.filter((r) => r.fields.Kind === "Device").length, 1);
+  // Turning alerts off on a phone removes it.
+  await call("POST", "/api/push/unsubscribe", { body: { endpoint: "https://web.push.apple.com/one" } });
+  assert.equal(store.push.filter((r) => r.fields.Kind === "Device").length, 0);
+
+  // Bell and push routes need a login; the timed check does not.
+  cookie = "";
+  assert.equal((await call("GET", "/api/notifications")).status, 401);
+  assert.equal((await call("POST", "/api/push/test", { body: {} })).status, 401);
+  const t = await call("GET", "/cron/tick", { noAuth: true });
+  assert.equal(t.status, 200);
+  assert.equal(t.body.ok, true);
+  assert.equal((await call("GET", "/cron/tick", { noAuth: true })).body.skipped, true, "at most one run a minute");
+});
+
+test("alerts: morning bookings, 1-hour reminder, unpaid invoices and stock (Kuala Lumpur time)", () => {
+  const { dueAlerts, timeKL } = require("../server/notify");
+  const at = (kl) => new Date(new Date(kl + "+08:00").getTime());
+  const bookings = [
+    { id: "recB1", date: "2026-11-24", time: "10:00", status: "Booked", customerName: "Siti Demo", plate: "WXY 1177", work: "Service" },
+    { id: "recB2", date: "2026-11-24", time: "15:30", status: "Booked", customerName: "Lee Demo", plate: "BMS 3313" },
+    { id: "recB3", date: "2026-11-24", time: "09:00", status: "Cancelled", customerName: "Gone Demo" },
+    { id: "recB4", date: "2026-11-25", time: "09:00", status: "Booked", customerName: "Tomorrow Demo" },
+  ];
+  const jobs = [
+    { id: "recJ1", invoiceNo: "100001", invoiceDate: "2026-11-01", balance: 500, status: "Sent" },
+    { id: "recJ2", invoiceNo: "100002", invoiceDate: "2026-11-20", balance: 300, status: "Sent" }, // only 4 days
+    { id: "recJ3", invoiceNo: "100003", invoiceDate: "2026-10-01", balance: 0, status: "Paid" },
+    { id: "recJ4", invoiceNo: "", date: "2026-10-01", balance: 900, status: "Draft" }, // estimate, not owed
+  ];
+  const toBuy = [{ name: "Oil filter" }, { name: "Brake pad front" }];
+
+  assert.equal(timeKL(at("2026-11-24T08:31:00")), "08:31");
+  // Before 08:30: nothing.
+  assert.deepEqual(dueAlerts({ now: at("2026-11-24T07:00:00"), bookings, jobs, toBuy }), []);
+  // 09:05: morning list (2 bookings, cancelled left out), reminder for 10:00, money & stock.
+  const a = dueAlerts({ now: at("2026-11-24T09:05:00"), bookings, jobs, toBuy });
+  const byKey = Object.fromEntries(a.map((x) => [x.key, x]));
+  assert.equal(byKey["am-bookings-2026-11-24"].title, "Today: 2 bookings");
+  assert.equal(byKey["am-bookings-2026-11-24"].body, "10:00 · Siti Demo · WXY 1177\n15:30 · Lee Demo · BMS 3313");
+  assert.equal(byKey["remind-recB1-2026-11-24-1000"].title, "Booking at 10:00 (in 55 min)");
+  assert.equal(byKey["am-money-2026-11-24"].title, "Money & stock");
+  assert.equal(byKey["am-money-2026-11-24"].body, "1 invoice unpaid 14+ days: RM 500.00\n2 parts to restock: Oil filter, Brake pad front");
+  assert.equal(a.length, 3);
+  // 14:45: only the 15:30 reminder (morning ones are over).
+  const b = dueAlerts({ now: at("2026-11-24T14:45:00"), bookings, jobs, toBuy });
+  assert.deepEqual(b.map((x) => x.key), ["remind-recB2-2026-11-24-1530"]);
+  // Nothing owed and nothing to buy: no money alert.
+  assert.ok(!dueAlerts({ now: at("2026-11-24T09:05:00"), bookings: [], jobs: [], toBuy: [] }).length);
 });

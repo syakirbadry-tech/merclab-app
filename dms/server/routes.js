@@ -785,5 +785,6 @@ require("./finance").register(router, { wrap, oneFile, fileOf, bodyData, jobOut,
 require("./assistant").register(router, { wrap });
 require("./ops").register(router, { wrap });
 require("./insights").register(router, { wrap, jobOut, partOut, loadSettings, mergeVehicles: V.mergeVehicles });
+require("./notify").register(router, { wrap, jobOut, partOut, loadSettings, mergeVehicles: V.mergeVehicles });
 
 module.exports = { router, rankMatches, jobOut, paymentOut, partOut, loadSettings, clearSettingsCache, companyFor, parseJob, docNoOf };

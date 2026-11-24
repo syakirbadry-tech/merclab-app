@@ -25,6 +25,8 @@ const TABLES = {
   orders: "tbl6dl2HnRPyBzz8e",
   adjustments: "tblci2Kre4dEASIRv",
   inbox: "tblZV4AgXksnF46PR",
+  notifications: "tblwLrF8xsIj2qVqF",
+  push: "tblq2FgbD9RQFkBPX",
 };
 
 // Attachment fields need their field ID for the upload endpoint.
@@ -115,6 +117,14 @@ async function update(table, updates) {
   return out;
 }
 
+// Only used to drop phones whose alert subscription has expired.
+async function remove(table, ids) {
+  for (let i = 0; i < ids.length; i += 10) {
+    const qs = ids.slice(i, i + 10).map((id) => `records[]=${encodeURIComponent(id)}`).join("&");
+    await request(`${TABLES[table]}?${qs}`, { method: "DELETE" });
+  }
+}
+
 async function upload(fieldKey, recordId, { filename, contentType, base64 }) {
   const res = await fetch(`${CONTENT}/${BASE_ID}/${recordId}/${ATTACHMENT_FIELDS[fieldKey]}/uploadAttachment`, {
     method: "POST",
@@ -135,4 +145,4 @@ async function upload(fieldKey, recordId, { filename, contentType, base64 }) {
 }
 
 // Exported as one object so tests can swap in an in-memory version.
-module.exports = { TABLES, ATTACHMENT_FIELDS, list, findOne, ping, get, create, update, upload };
+module.exports = { TABLES, ATTACHMENT_FIELDS, list, findOne, ping, get, create, update, remove, upload };

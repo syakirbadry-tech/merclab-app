@@ -78,6 +78,20 @@ Switches in `config/company.json`:
 
 Personal details are not stored in this public repository; they are entered in Settings.
 
+## Alerts (bell and phone pop-ups)
+
+- The bell in the top bar lists alerts; new ones also pop up inside the app.
+- **Phone pop-ups**: tap the bell → *Turn on phone alerts*. On iPhone the DMS must
+  first be added to the Home Screen (Safari → Share → Add to Home Screen) and opened from there.
+- Alerts: a client approves an estimate online; a WhatsApp bill or slip has been read;
+  08:30 today's bookings; 1 hour before each booking; 08:30 invoices unpaid 14+ days
+  and parts to restock. Each alert is sent once (field *Key* in the Notifications table).
+- Tables: **Notifications** (the alerts) and **Push devices** (phones that turned alerts on,
+  plus the server's push key row). Set `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` to use your own key pair instead.
+- Timed alerts run every 5 minutes while the server is awake, and `GET /cron/tick` is called
+  every 10 minutes (07:00-22:00 Kuala Lumpur) by `.github/workflows/dms-alerts.yml`, which also wakes the free server.
+- To stop all timed alerts: disable that workflow in GitHub → Actions.
+
 ## Data
 
 Airtable base **Merc Lab DMS** (`appfipyDV5e2cZtyB`): Settings, Purchases, Parts, Customers, Vehicles (one record per car, with condition marks and photos), Quotations (one record per job: estimate and invoice, plus its Stage), Payments. It holds customer data, so keep it private. It is separate from the Command Center and from all Asbenz data.

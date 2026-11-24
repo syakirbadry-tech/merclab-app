@@ -15,6 +15,7 @@ const crypto = require("crypto");
 const db = require("./airtable");
 const ai = require("./ai");
 const M = require("./money");
+const { notify } = require("./notify");
 
 const GRAPH = "https://graph.facebook.com/v21.0";
 const FILE_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
@@ -114,6 +115,7 @@ async function handleMessage(m, appUrl) {
     }
     const summary = summaryOf(kind, suggestion);
     await db.update("inbox", [{ id: row.id, fields: { Summary: summary, "Suggestion JSON": suggestion ? JSON.stringify(suggestion) : "" } }]);
+    notify({ kind: "WhatsApp", key: `wa-${row.id}`, link: "#/inbox", title: `WhatsApp ${kind.toLowerCase()} read`, body: `${summary}. ${suggestion ? "Check it and press Save." : "Could not read it; please type it in."}` });
     await reply(from, `Got it ✓ ${kind}: ${summary}.\n${suggestion ? "Check it and press Save" : "I could not read it, please type it in"}: ${appUrl}/#/inbox`);
   } catch (err) {
     console.error("[wa] message:", err.message);
