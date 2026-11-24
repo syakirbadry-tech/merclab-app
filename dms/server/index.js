@@ -9,6 +9,7 @@ const { router } = require("./routes");
 const { docRoute, approveRoute } = require("./docs");
 const wa = require("./whatsapp");
 const ops = require("./ops");
+const notify = require("./notify");
 
 function createApp() {
   const app = express();
@@ -29,6 +30,8 @@ function createApp() {
   app.use(express.json({ limit: "200kb" }));
 
   app.get("/health", ops.health);
+  // Timed alerts (bookings, unpaid invoices, stock). A GitHub Actions schedule calls this.
+  app.get("/cron/tick", ops.docLimit, notify.tickRoute);
 
   app.post("/api/login", (req, res) => {
     const ip = req.ip || "x";
@@ -74,6 +77,7 @@ if (require.main === module) {
   if (!process.env.APP_PASSWORD) console.warn("[dms] APP_PASSWORD is not set: nobody can log in.");
   const port = process.env.PORT || 3000;
   createApp().listen(port, () => console.log(`[dms] listening on ${port}`));
+  notify.startTimer();
 }
 
 module.exports = { createApp };

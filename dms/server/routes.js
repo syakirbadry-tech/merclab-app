@@ -786,5 +786,6 @@ require("./assistant").register(router, { wrap });
 require("./ops").register(router, { wrap });
 require("./insights").register(router, { wrap, jobOut, partOut, loadSettings, mergeVehicles: V.mergeVehicles });
 require("./servicequote").register(router, { wrap, jobOut, partOut, packageOut: require("./workshop").packageOut, loadSettings, mergeVehicles: V.mergeVehicles });
+require("./notify").register(router, { wrap, jobOut, partOut, loadSettings, mergeVehicles: V.mergeVehicles });
 
 module.exports = { router, rankMatches, jobOut, paymentOut, partOut, loadSettings, clearSettingsCache, companyFor, parseJob, docNoOf };

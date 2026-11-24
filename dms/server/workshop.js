@@ -8,6 +8,7 @@ const P = require("./pricing");
 const { esc } = require("./template");
 const { noteFail } = require("./auth");
 const ai = require("./ai");
+const { notify } = require("./notify");
 
 const text = (v, max = 200) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 const bad = (msg, status = 400) => Object.assign(new Error(msg), { status });
@@ -324,6 +325,11 @@ async function approveRoute(req, res, { jobOut }) {
     if (!j.stage || j.stage === "Booked") fields.Stage = "In workshop";
     await db.update("quotes", [{ id: j.id, fields }]);
     res.json({ ok: true });
+    notify({
+      kind: "Approval", key: `approved-${j.id}`, link: `#/jobs/${j.id}`,
+      title: `Estimate approved ✓ ${j.estimateNo || ""}`.trim(),
+      body: [`${name} approved`, j.total ? `RM ${M.fmt(Math.round(j.total * 100))}` : "", [j.plate, String(j.car || "").replace(/^Mercedes-Benz\s+/i, "")].filter(Boolean).join(" ")].filter(Boolean).join(" · "),
+    });
   } catch (err) {
     console.error("[approve]", err.message);
     res.status(500).json({ error: "Could not save. Please try again." });
