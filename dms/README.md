@@ -78,6 +78,20 @@ Switches in `config/company.json`:
 
 Personal details are not stored in this public repository; they are entered in Settings.
 
+## Service quotation
+
+A customer asks for a service quote. Open the car and press **Service quote**, or ask the Assistant "service quotation for VDM 2841" (a plate or the owner's name).
+
+The DMS reads the car's own past invoices and builds the quote. Nothing is saved or sent until you press Save estimate.
+
+- **Every service:** engine oil, oil filter and drain seal, with the same part numbers and quantities as last time.
+- **When due:** cabin filter, air filter, brake fluid, spark plugs, fuel filter and wipers. The time and km are a general Mercedes guide. The quote shows when each was last changed.
+- **Price:** today's selling price from stock (newest purchase). If the part is not in stock, the last price charged is used. A price that changed since last time is marked "was RM …".
+- **Labour:** the same labour as last service. If it was priced by hours, it uses today's labour rate.
+- **Service name:** Service A and B alternate.
+- **Listed, never added:** gearbox oil and coolant when due, and wear parts (brake pads, discs, battery) with when they were last changed.
+- **No service here yet:** the Service package that fits the chassis is used. If there is none, the parts from the last service on the same model are used.
+
 ## Data
 
 Airtable base **Merc Lab DMS** (`appfipyDV5e2cZtyB`): Settings, Purchases, Parts, Customers, Vehicles (one record per car, with condition marks and photos), Quotations (one record per job: estimate and invoice, plus its Stage), Payments. It holds customer data, so keep it private. It is separate from the Command Center and from all Asbenz data.
