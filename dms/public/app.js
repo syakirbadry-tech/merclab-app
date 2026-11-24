@@ -93,6 +93,7 @@
     trend: '<path d="m3 17 6-6 4 4 8-8"></path><path d="M15 7h6v6"></path>',
     swipe: '<path d="M8 7 4 11l4 4M16 7l4 4-4 4"></path>',
     photo: '<rect x="3" y="4" width="18" height="16" rx="2"></rect><circle cx="9" cy="10" r="2"></circle><path d="m21 16-5-5-9 9"></path>',
+    eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"></path><circle cx="12" cy="12" r="3"></circle>',
     lock: '<rect x="4.5" y="10.5" width="15" height="10" rx="2"></rect><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"></path>',
     sun: '<circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path>',
   };
@@ -543,7 +544,7 @@
       if (sec === "orders") return pageOrders(q);
       if (sec === "packages") return a ? packageForm(a) : pagePackages();
       if (sec === "faults") return pageFaults();
-      if (sec === "hub") return pageHub(q);
+      if (sec === "hub") return a === "add" ? hubImport() : a ? pageHubEntry(a) : pageHub(q);
       if (sec === "bookings") return pageBookings(q);
       if (sec === "followups") return pageFollowups(q);
       if (sec === "reminders") return pageReminders(q);
@@ -1269,40 +1270,200 @@
   }
 
   // Merc HUB sources. Only "Our case" entries are ever exported.
-  const HUB_SOURCES = ["Our case", "MBM forum", "General info"];
-  const SRC_CLS = { "Our case": "ok", "MBM forum": "info", "General info": "" };
-  const srcPill = (s) => pill(s === "Our case" ? "Our case" : s, SRC_CLS[s] || "");
+  // Search, ranking and text helpers live in hub-logic.js (window.MLHub).
+  const HUB = window.MLHub;
+  const HUB_SOURCES = HUB.SOURCES;
+  const SRC_ICON = { our: "jobs", mbm: "book", gen: "info" };
+  const SRC_NOTE = { "Our case": "Our case", "MBM forum": "MBM forum", "General info": "General info" };
+  const srcTile = (f, sm) => { const k = HUB.srcKey(f); return `<span class="src ${k}${sm ? " sm" : ""}" aria-hidden="true">${icon(SRC_ICON[k])}</span>`; };
+  const srcLabel = (f) => { const k = HUB.srcKey(f); return `<span class="src-label ${k}">${icon(SRC_ICON[k])}${esc(HUB.srcOf(f))}</span>`; };
+  const hubStatus = (f) => {
+    const s = HUB.srcOf(f);
+    if (s === "Our case") return f.verified ? `<span class="verified">${icon("check")}Verified</span>` : `<span class="unverified">Not verified yet</span>`;
+    return s === "MBM forum" ? `<span class="private">${icon("lock")}Private</span>` : "";
+  };
+  const chassisChips = (f) => HUB.chassisOfEntry(f).map((c) => `<span class="chassis">${esc(c)}</span>`).join("");
+  const codeChips = (f, n = 6) => HUB.codesOf(f.codes).slice(0, n).map((c) => `<span class="code">${esc(c)}</span>`).join("");
 
-  function faultDialog(f, j) {
+  // Codes typed as "P0302, P0087" → chips. Free text such as "2B9A00 (stored)" stays one chip.
+  function codeTokens(s) {
+    const out = [];
+    for (const part of String(s || "").split(/[,;\n]+/).map((x) => x.trim()).filter(Boolean)) {
+      const bits = part.split(/\s+/);
+      if (bits.length > 1 && bits.every((b) => HUB.codesOf(b).length)) out.push(...bits.map((b) => b.toUpperCase()));
+      else out.push(part);
+    }
+    return [...new Set(out)];
+  }
+
+  // Edit (or record) one HUB entry. Same fields and API as before, grouped:
+  // source · car · diagnosis · remedy · details · files · status.
+  function faultDialog(f, j, preset) {
     const car = j ? vehicleByKey(plateKey(j.plate)) : null;
-    const d = f || { makeModel: j?.car || "", engine: car?.engine || "", mileageKm: j?.mileageKm || "", docNo: j ? docNo(j) : "", plate: j?.plate || "", jobId: j?.id || "", date: todayKL() };
-    const ta = (k, label, ph, rows = 2) => `<label for="f_${k}">${label}</label><textarea id="f_${k}" name="${k}" rows="${rows}" placeholder="${ph}">${esc(d[k] || "")}</textarea>`;
-    const src = d.source || "Our case";
-    const m = modal(f ? (src === "Our case" ? "Fault case" : "HUB reference") : "Record fault case", `<form id="ff" novalidate>
-      <div class="fgrid"><div class="full"><label for="f_title">Title</label><input id="f_title" name="title" value="${esc(d.title || "")}" placeholder="Leave empty: made from the car and the symptom"></div>
-        <div><label for="f_source">Source</label><select id="f_source" name="source">${opt(HUB_SOURCES, src)}</select></div>
-        <div><label for="f_sourceRef">Source ref</label><input id="f_sourceRef" name="sourceRef" value="${esc(d.sourceRef || "")}" placeholder="e.g. forum thread no, bulletin, link"></div>
-        <div><label for="f_makeModel">Make &amp; model</label><input id="f_makeModel" name="makeModel" value="${esc(d.makeModel)}"></div>
-        <div><label for="f_engine">Engine</label><input id="f_engine" name="engine" value="${esc(d.engine || "")}" placeholder="e.g. M274, OM651"></div>
-        <div><label for="f_mileageKm">Mileage (km)</label><input id="f_mileageKm" name="mileageKm" type="number" inputmode="numeric" value="${esc(d.mileageKm ?? "")}"></div>
-        <div><label for="f_hours">Hours spent</label><input id="f_hours" name="hours" type="number" step="0.1" inputmode="decimal" value="${esc(d.hours ?? "")}"></div></div>
-      ${ta("symptom", "Symptom (what the customer noticed)", "e.g. Coolant level drops, no visible leak")}
-      ${ta("codes", "Fault codes", "e.g. P0128, 2B9A00", 1)}
-      ${ta("tests", "Tests done", "e.g. Pressure test 1.4 bar for 15 min, UV dye")}
-      ${ta("cause", "Root cause", "e.g. Water pump seal weeping when hot")}
-      ${ta("fix", "Fix", "e.g. Replaced water pump and thermostat, bled the system")}
-      ${ta("parts", "Parts used", "e.g. water pump, thermostat, coolant", 1)}
-      ${ta("details", "Details (specs, procedure, notes)", "e.g. Torque 10 Nm. Coolant capacity 8.5 L. Software update required first.", d.details && d.details.length > 300 ? 8 : 3)}
-      ${f?.files?.length ? `<label>Original files</label><div class="rows">${f.files.map((x) => `<a href="${esc(x.url)}" target="_blank" rel="noopener"><div class="grow"><b>${icon("file")} ${esc(x.name)}</b></div>${icon("open", "s")}</a>`).join("")}</div>` : ""}
-      ${f ? `<div class="btns" style="margin-top:8px"><label class="btn alt upload">${icon("upload")}Attach the original file<input type="file" id="f_file" accept="image/*,application/pdf"></label></div>` : ""}
-      <div class="fgrid"><div><label for="f_tags">Tags</label><input id="f_tags" name="tags" value="${esc(d.tags || "")}" placeholder="cooling, W205"></div>
-        <div><label style="display:flex;gap:8px;align-items:center;margin-top:36px"><input type="checkbox" name="verified" ${d.verified ? "checked" : ""} style="width:20px;min-height:20px">Fix verified (car checked after)</label></div></div>
-      ${d.docNo ? `<p class="hint">Job ${esc(d.docNo)}. No customer names are kept here, so this can feed the Workshop Datahub.</p>` : ""}
-      <div class="btns"><button class="btn" type="submit">${icon("check")}Save</button></div></form>`, { wide: true });
+    const d = f || { makeModel: j?.car || "", engine: car?.engine || "", mileageKm: j?.mileageKm || "", docNo: j ? docNo(j) : "", plate: j?.plate || "", jobId: j?.id || "", date: todayKL(), ...(preset || {}) };
+    let src = HUB.srcOf(d);
+    let verified = !!d.verified;
+    let codes = codeTokens(d.codes);
+    const ta = (k, label, ph, rows = 3, hint = "") => `<div class="full"><label for="f_${k}">${label}</label><textarea class="grow" id="f_${k}" name="${k}" rows="${rows}" placeholder="${ph}">${esc(d[k] || "")}</textarea>${hint}</div>`;
+    const fmt = `<div class="fmt-hint"><span><code>1.</code> numbered steps</span><span><code>-</code> bullets</span><span><code>##</code> heading</span><span>Values like <code>13.5 V</code> or <code>10 Nm</code> are highlighted</span></div>`;
+    const title = f ? (f.topicNo ? `Edit ${f.topicNo}` : src === "Our case" ? "Edit fault case" : "Edit HUB reference") : preset ? "New HUB entry" : "Record fault case";
+    // structured steps: older text entries are turned into rows here
+    let tests = HUB.testsOf(d).list.map((t) => ({ ...t }));
+    const rems = HUB.remediesOf(d).list.map((r) => ({ ...r, steps: [...r.steps], parts: r.parts.map((x) => ({ ...x })) }));
+    if (!tests.length) tests = [{ check: "", spec: "", measured: "", then: "" }];
+    if (!rems.length) rems.push({ label: "A", title: "", when: "", steps: [], parts: [], no_parts: "" });
+    const groups = [...new Set([...HUB.FUNCTION_GROUPS, ...state.faults.map((x) => x.functionGroup).filter(Boolean)])];
+    const m = modal(title, `<form id="ff" class="hub" novalidate><div class="stack">
+      <section class="card fgroup"><div class="fgroup-h"><h3>Source and topic</h3></div>
+        <div class="seg-src" role="group" aria-label="Source" id="f_src">${HUB_SOURCES.map((s) => `<button type="button" data-s="${esc(s)}" aria-pressed="${s === src}" class="${s === src ? "on" : ""}"><span class="sw ${HUB.srcKey({ source: s })}"></span>${esc(s)}</button>`).join("")}</div>
+        <div class="fgrid"><div class="full"><label for="f_title">Topic (title)</label><input id="f_title" name="title" value="${esc(d.title || "")}" placeholder="Leave empty: made from the car and the symptom"></div>
+          <div><label for="f_sourceRef">Source ref</label><input id="f_sourceRef" name="sourceRef" value="${esc(d.sourceRef || "")}" placeholder="Forum thread, bulletin no. or link"></div>
+          <div><label for="f_functionGroup">Function group</label><input id="f_functionGroup" name="functionGroup" list="f_fgList" value="${esc(d.functionGroup || "")}" placeholder="Pick or type, e.g. Engine · fuel system" autocomplete="off"><datalist id="f_fgList">${groups.map((g) => `<option value="${esc(g)}"></option>`).join("")}</datalist></div>
+          ${f?.topicNo ? `<p class="hint full" style="margin:0">Topic no. <b>${esc(f.topicNo)}</b> stays the same when you edit.</p>` : !f ? `<p class="hint full" style="margin:0">A topic no. (MLH-, MBM- or GEN-0001) is given when you save.</p>` : ""}</div></section>
+      <section class="card fgroup"><div class="fgroup-h"><h3>Validity (car)</h3></div>
+        <div class="fgrid"><div><label for="f_makeModel">Make &amp; model</label><input id="f_makeModel" name="makeModel" value="${esc(d.makeModel || "")}" placeholder="e.g. C200 W205"></div>
+          <div><label for="f_engine">Engine</label><input id="f_engine" name="engine" value="${esc(d.engine || "")}" placeholder="e.g. M274, OM651"></div>
+          <div><label for="f_mileageKm">Mileage (km)</label><input id="f_mileageKm" name="mileageKm" type="number" inputmode="numeric" value="${esc(d.mileageKm ?? "")}"></div>
+          <div><label for="f_hours">Hours spent</label><input id="f_hours" name="hours" type="number" step="0.1" inputmode="decimal" value="${esc(d.hours ?? "")}"></div>
+          <div><label for="f_date">Date</label><input id="f_date" name="date" type="date" value="${esc(d.date || "")}"></div></div></section>
+      <section class="card fgroup"><div class="fgroup-h"><h3>Diagnosis</h3></div>
+        <div class="fgrid">${ta("symptom", "Symptom (what the customer noticed)", "e.g. Coolant level drops, no visible leak")}
+          <div class="full"><label for="f_codeIn">Fault codes</label><div class="chip-input" id="f_codes"></div><input type="hidden" name="codes" id="f_codesVal"></div>
+          <div class="full"><label id="f_testsL">Tests (in order)</label><div class="sb" id="f_tests" role="group" aria-labelledby="f_testsL"></div>
+            <button type="button" class="btn ghost" id="f_addStep">${icon("plus")}Add a step</button>
+            <p class="hint" style="margin:4px 0 0">Write where a step leads in "Then", e.g. <i>Too low → Remedy A</i>. That step is lit in the read view.</p></div>
+          ${ta("cause", "Root cause", "e.g. Water pump seal weeping when hot")}</div></section>
+      <section class="card fgroup"><div class="fgroup-h"><h3>Remedy and parts</h3></div>
+        <div id="f_rems" class="stack"></div>
+        <div><button type="button" class="btn ghost" id="f_addRem">${icon("plus")}<span>Add remedy B</span></button></div></section>
+      <section class="card fgroup"><div class="fgroup-h"><h3>Details</h3></div>
+        <div class="fgrid">${ta("details", "Details (specs, procedure, notes)", "e.g. Torque 10 Nm. Coolant capacity 8.5 L. Software update required first.", d.details && d.details.length > 300 ? 8 : 4, fmt)}</div></section>
+      ${f ? `<section class="card fgroup"><div class="fgroup-h"><h3>Files</h3></div>
+        ${f.files?.length ? `<div class="files">${f.files.map(hubFileTile).join("")}</div>` : `<p class="empty-sec">No files yet.</p>`}
+        <div class="drop"><span class="grow"><b>Attach the original</b><span>PDF, screenshot or photo · max 10 MB</span></span><label class="btn alt upload">${icon("upload")}Choose file<input type="file" id="f_file" accept="image/*,application/pdf"></label></div></section>` : ""}
+      <section class="card fgroup"><div class="fgroup-h"><h3>Status and sharing</h3></div>
+        <div><button type="button" class="toggle${verified ? " on" : ""}" id="f_ver" aria-pressed="${verified}"><span class="sw2"></span>Verified: the fix was confirmed on the car</button></div>
+        <div class="fgrid"><div class="full"><label for="f_tags">Tags</label><input id="f_tags" name="tags" value="${esc(d.tags || "")}" placeholder="cooling, W205"></div></div>
+        <p class="hint" id="f_share" style="margin:0"></p>
+        ${d.docNo ? `<p class="hint" style="margin:0">Job ${esc(d.docNo)}. No customer names are kept here, so this can feed the Workshop Datahub.</p>` : ""}</section>
+      </div>
+      <div class="edit-acts"><button type="button" class="btn alt" id="f_cancel">Cancel</button><button class="btn" type="submit">${icon("check")}Save</button></div></form>`, { wide: true });
+
+    const share = () => (m.$("#f_share").textContent = src === "MBM forum" ? "MBM forum entries are private: only you see them. Never exported or shown to clients." : src === "Our case" ? "Our cases can be exported (without names, plates or prices)." : "General info stays in your DMS; it is not exported.");
+    share();
+    m.$("#f_src").onclick = (e) => {
+      const b = e.target.closest("[data-s]");
+      if (!b) return;
+      src = b.dataset.s;
+      m.el.querySelectorAll("#f_src [data-s]").forEach((x) => { x.classList.toggle("on", x === b); x.setAttribute("aria-pressed", x === b); });
+      share();
+    };
+    m.$("#f_ver").onclick = (e) => {
+      verified = !verified;
+      e.currentTarget.classList.toggle("on", verified);
+      e.currentTarget.setAttribute("aria-pressed", verified);
+    };
+    m.$("#f_cancel").onclick = () => m.close();
+    // fault-code chips
+    const drawCodes = () => {
+      m.$("#f_codes").innerHTML = `${codes.map((c, i) => `<span class="code">${esc(c)}<button type="button" data-x="${i}" aria-label="Remove ${esc(c)}">${icon("x")}</button></span>`).join("")}<input id="f_codeIn" placeholder="${codes.length ? "Add a code" : "Type a code, then Enter"}" autocomplete="off" enterkeyhint="done">`;
+      m.$("#f_codesVal").value = codes.join(", ");
+      const inp = m.$("#f_codeIn");
+      const add = () => {
+        const v = inp.value.trim();
+        if (!v) return false;
+        codes = [...new Set([...codes, ...codeTokens(v)])];
+        drawCodes();
+
+    // test step builder
+    const blankStep = () => ({ check: "", spec: "", measured: "", then: "" });
+    const drawTests = () => {
+      m.$("#f_tests").innerHTML = `<div class="sb-row sb-head" aria-hidden="true"><span></span><span>What to check</span><span>Spec</span><span>Measured</span><span>Then →</span><span></span></div>
+        ${tests.map((t, i) => `<div class="sb-row"><span class="n">${i + 1}</span>
+          <input data-t="${i}" data-f="check" value="${esc(t.check)}" placeholder="What to check" aria-label="Step ${i + 1}: what to check">
+          <input data-t="${i}" data-f="spec" value="${esc(t.spec)}" placeholder="Spec" aria-label="Step ${i + 1}: spec">
+          <input data-t="${i}" data-f="measured" value="${esc(t.measured)}" placeholder="Measured" aria-label="Step ${i + 1}: measured">
+          <input data-t="${i}" data-f="then" value="${esc(t.then)}" placeholder="Then → (optional)" aria-label="Step ${i + 1}: then">
+          <button type="button" class="x" data-tdel="${i}" aria-label="Remove step ${i + 1}">${icon("x")}</button></div>`).join("")}`;
+    };
+    m.$("#f_tests").oninput = (e) => { const x = e.target.closest("[data-t]"); if (x) tests[Number(x.dataset.t)][x.dataset.f] = x.value; };
+    m.$("#f_tests").onclick = (e) => {
+      const x = e.target.closest("[data-tdel]");
+      if (!x) return;
+      tests.splice(Number(x.dataset.tdel), 1);
+      if (!tests.length) tests.push(blankStep());
+      drawTests();
+    };
+    m.$("#f_addStep").onclick = () => {
+      tests.push(blankStep());
+      drawTests();
+      m.el.querySelector(`[data-t="${tests.length - 1}"][data-f=check]`).focus();
+    };
+    drawTests();
+
+    // remedy builder: A, B… each with steps and parts
+    const LT = "ABCDE";
+    const drawRems = () => {
+      m.$("#f_rems").innerHTML = rems.map((r, i) => `<div class="rem-edit" data-r="${i}"><div class="remedy-h"><span class="lt2${i ? " alt" : ""}">${LT[i]}</span><b>Remedy ${LT[i]}</b>${rems.length > 1 ? `<button type="button" class="btn ghost" data-rdel="${i}" style="margin-left:auto">${icon("x")}Remove</button>` : ""}</div>
+        <div class="body"><div class="fgrid"><div><label for="r${i}t">Title</label><input id="r${i}t" data-rf="title" value="${esc(r.title)}" placeholder="${i ? "e.g. Replace the pump" : "e.g. Software update of the ME control unit"}"></div>
+          <div><label for="r${i}w">When</label><input id="r${i}w" data-rf="when" value="${esc(r.when)}" placeholder="${i ? "e.g. Only if pressure stays low after A" : "e.g. First choice"}"></div>
+          <div class="full"><label for="r${i}s">Steps (one per line)</label><textarea class="grow" id="r${i}s" data-rf="steps" rows="4" placeholder="e.g. Connect a battery charger; keep at least 13.5 V">${esc(r.steps.join("\n"))}</textarea></div></div>
+          <div class="lbl-f">Parts</div>
+          ${r.parts.length ? `<div class="sb">${r.parts.map((x, k) => `<div class="sb-row parts-row"><input data-p="${k}" data-pf="name" value="${esc(x.name)}" placeholder="Part" aria-label="Remedy ${LT[i]} part ${k + 1}"><input data-p="${k}" data-pf="part_no" value="${esc(x.part_no || "")}" placeholder="Part no." aria-label="Remedy ${LT[i]} part ${k + 1} number"><input data-p="${k}" data-pf="qty" value="${esc(x.qty ?? "")}" type="number" min="0" step="1" inputmode="numeric" placeholder="Qty" aria-label="Remedy ${LT[i]} part ${k + 1} quantity"><button type="button" class="x" data-pdel="${k}" aria-label="Remove part ${k + 1}">${icon("x")}</button></div>`).join("")}</div>` : ""}
+          <div class="row" style="gap:10px;flex-wrap:wrap"><button type="button" class="btn ghost" data-padd="1">${icon("plus")}Add a part</button>
+            ${r.parts.length ? "" : `<select data-rf="no_parts" aria-label="Remedy ${LT[i]}: parts" style="width:auto;min-width:200px"><option value="">Parts not set</option><option value="none" ${r.no_parts === "none" ? "selected" : ""}>No parts needed</option><option value="depends" ${r.no_parts === "depends" ? "selected" : ""}>Depends on the case</option></select>`}</div></div></div>`).join("");
+      m.$("#f_addRem").hidden = rems.length >= 5;
+      m.$("#f_addRem").querySelector("span").textContent = `Add remedy ${LT[rems.length] || ""}`;
+    };
+    const remInput = (e) => {
+      const box = e.target.closest("[data-r]");
+      if (!box) return;
+      const r = rems[Number(box.dataset.r)];
+      const t = e.target;
+      if (t.dataset.rf === "steps") r.steps = t.value.split("\n");
+      else if (t.dataset.rf) r[t.dataset.rf] = t.value;
+      else if (t.dataset.pf) r.parts[Number(t.dataset.p)][t.dataset.pf] = t.value;
+    };
+    m.$("#f_rems").oninput = remInput;
+    m.$("#f_rems").onchange = remInput;
+    m.$("#f_rems").onclick = (e) => {
+      const box = e.target.closest("[data-r]");
+      const b = e.target.closest("[data-rdel],[data-pdel],[data-padd]");
+      if (!box || !b) return;
+      const i = Number(box.dataset.r);
+      if (b.dataset.rdel) rems.splice(i, 1);
+      else if (b.dataset.pdel) rems[i].parts.splice(Number(b.dataset.pdel), 1);
+      else { rems[i].parts.push({ name: "", part_no: "", qty: 1 }); rems[i].no_parts = ""; }
+      drawRems();
+      if (b.dataset.padd) m.el.querySelector(`[data-r="${i}"] .parts-row:last-child input`)?.focus();
+    };
+    m.$("#f_addRem").onclick = () => {
+      rems.push({ label: LT[rems.length], title: "", when: "", steps: [], parts: [], no_parts: "" });
+      drawRems();
+      m.el.querySelector(`#r${rems.length - 1}t`).focus();
+    };
+    drawRems();
+        m.$("#f_codeIn").focus();
+        return true;
+      };
+      inp.onkeydown = (e) => {
+        if (e.key === "Enter" || e.key === ",") { if (add() || e.key === "Enter") e.preventDefault(); }
+        else if (e.key === "Backspace" && !inp.value && codes.length) { codes.pop(); drawCodes(); m.$("#f_codeIn").focus(); }
+      };
+      inp.onblur = () => { if (inp.value.trim()) add(); };
+    };
+    m.$("#f_codes").onclick = (e) => {
+      const x = e.target.closest("[data-x]");
+      if (x) { codes.splice(Number(x.dataset.x), 1); drawCodes(); }
+      m.$("#f_codeIn").focus();
+    };
+    drawCodes();
+
     if (f && m.$("#f_file")) m.$("#f_file").onchange = async (e) => {
       const file = e.target.files[0];
       e.target.value = "";
       if (!file) return;
+      if (file.size > 10 * 1024 * 1024) return toast(`Too big: ${file.name} is ${Math.round(file.size / 1048576)} MB. The limit is 10 MB.`, "err");
       const fd = new FormData();
       fd.append("file", file);
       toast("Attaching the file…");
@@ -1311,6 +1472,7 @@
         await refresh("faults");
         m.close();
         toast("File attached");
+        route();
         faultDialog(state.faults.find((x) => x.id === f.id));
       } catch (err) {
         toast(err.message, "err");
@@ -1318,22 +1480,38 @@
     };
     m.$("#ff").onsubmit = async (e) => {
       e.preventDefault();
+      const left = m.$("#f_codeIn").value.trim();
+      if (left) codes = [...new Set([...codes, ...codeTokens(left)])];
+      m.$("#f_codesVal").value = codes.join(", ");
       const b = formObj(e.target);
-      b.verified = e.target.elements.verified.checked;
-      if (!f) Object.assign(b, { jobId: d.jobId, plate: d.plate, docNo: d.docNo, date: d.date });
-      busy(e.submitter, true, "Saving…");
+      b.source = src;
+      b.verified = verified;
+      b.testSteps = tests.map((t) => ({ check: t.check.trim(), spec: t.spec.trim(), measured: t.measured.trim(), then: t.then.trim() })).filter((t) => t.check || t.spec || t.measured || t.then);
+      b.remedies = rems.map((r) => ({ title: r.title.trim(), when: r.when.trim(), steps: r.steps.map((x) => x.trim()).filter(Boolean), parts: r.parts.map((x) => ({ name: String(x.name || "").trim(), part_no: String(x.part_no || "").trim(), qty: x.qty === "" || x.qty == null ? null : Number(x.qty) })).filter((x) => x.name || x.part_no), no_parts: r.no_parts || "" }));
+      if (!b.date) delete b.date;
+      if (!f) Object.assign(b, { jobId: d.jobId, plate: d.plate, docNo: d.docNo, date: b.date || d.date });
+      const btn = e.submitter || m.$("#ff [type=submit]");
+      busy(btn, true, "Saving…");
       try {
-        if (f) await api(`/faults/${f.id}`, { method: "PATCH", body: b });
-        else await api("/faults", { method: "POST", body: b });
+        const row = f ? await api(`/faults/${f.id}`, { method: "PATCH", body: b }) : await api("/faults", { method: "POST", body: b });
         await refresh("faults");
         m.close();
-        toast("Fault case saved");
-        route();
+        if (row?.missingFields?.length) toast(`Saved. Airtable has no ${row.missingFields.map((x) => `"${x}"`).join(", ")} field yet, so ${row.missingFields.length === 1 ? "that part was" : "those parts were"} kept as plain text only.`, "err");
+        else toast(f ? "Saved" : `Entry saved${row?.topicNo ? ` as ${row.topicNo}` : ""}`);
+        if (!f && /^#\/hub/.test(location.hash) && row?.id) location.hash = `#/hub/${row.id}`;
+        else route();
       } catch (err) {
         toast(err.message, "err");
-        busy(e.submitter, false);
+        busy(btn, false);
       }
     };
+  }
+
+  // A file tile: photo thumbnail, or a PDF / file mark.
+  function hubFileTile(x) {
+    const img = /^image\//.test(x.type || "") || /\.(jpe?g|png|webp|gif|heic)$/i.test(x.name || "");
+    const pdf = /pdf/i.test(x.type || "") || /\.pdf$/i.test(x.name || "");
+    return `<a class="file" href="${esc(x.url)}" target="_blank" rel="noopener"><span class="th">${img ? `<img src="${esc(x.url)}" alt="" loading="lazy">` : `${pdf ? `<span class="badge">PDF</span>` : ""}${icon("file")}`}</span><span class="nm">${esc(x.name)}</span><span class="sz">${img ? "Photo" : pdf ? "PDF" : "File"} · opens in a new tab</span></a>`;
   }
 
   function pageFaults() {
@@ -1362,194 +1540,598 @@
     draw();
   }
 
-  // ---------- Merc HUB: diagnosis database ----------
-  // Every fault the workshop has solved, searchable by model (chassis code),
-  // fault code and symptom. Built from the fault cases, with no customer names
-  // or plates, so it can later be shared as the Merc HUB across workshops.
+  // ---------- Merc HUB: diagnosis reference ----------
+  // One library from three sources: our own cases, MBM technical forum
+  // material and general information. Searched together, best first:
+  // our verified fixes > MBM forum > our cases not verified yet > general.
+  // MBM and general entries are never exported. Tapping a result opens the
+  // read view (#/hub/<id>); Edit is a button inside it.
 
-  const chassisOf = (s) => (String(s || "").toUpperCase().match(/\b[WXCRSAVH]\d{3}\b/g) || [""]).pop(); // last match: "C200 W205" → W205
-  const codesOf = (s) => [...new Set(String(s || "").toUpperCase().split(/[\s,;/|]+/).filter((c) => /^[PBCU][0-9A-F]{4}(-[0-9A-F]{2,3})?$/.test(c) || /^[0-9A-F]{4,6}-[0-9A-F]{2,3}$/.test(c)))];
-
-  function hubCase(f) {
-    // The shareable form: no plate, job or customer, mileage rounded to 5,000 km.
-    return { model: f.makeModel, chassis: chassisOf(`${f.makeModel} ${f.title}`), engine: f.engine, mileageBand: f.mileageKm ? `${Math.floor(f.mileageKm / 5000) * 5}k km` : "",
-      symptom: f.symptom, codes: codesOf(f.codes), tests: f.tests, cause: f.cause, fix: f.fix, parts: f.parts, hours: f.hours, tags: f.tags, verified: f.verified, year: (f.date || "").slice(0, 4) };
-  }
-
-  // One reference library from three sources: our own cases, MBM technical
-  // forum material and general information. Searched together; our verified
-  // cases rank first. MBM and general entries are never exported.
-  const SRC_RANK = (f) => ((f.source || "Our case") === "Our case" ? (f.verified ? 0 : 2) : f.source === "MBM forum" ? 1 : 3);
+  const SRC_RANK = (f) => HUB.rankOf(f);
   const hayOf = (f) => `${f.title} ${f.makeModel} ${f.engine} ${f.symptom} ${f.codes} ${f.tests} ${f.cause} ${f.fix} ${f.parts} ${f.tags} ${f.details} ${f.sourceRef}`.toLowerCase();
   const firstLine = (s, n = 160) => { const t = String(s || "").split("\n").find((x) => x.trim()) || ""; return t.length > n ? t.slice(0, n - 1) + "…" : t; };
+  const hubLast = { qs: "", q: "" }; // the search to go back to from the read view
+
+  // Recent searches on this device only.
+  const hubRecent = {
+    list: () => (LS.get("hubRecent") || []).filter((x) => x && x.q).slice(0, 5),
+    add(q, n) {
+      q = String(q || "").trim();
+      if (q.length < 2) return;
+      LS.set("hubRecent", [{ q, n }, ...hubRecent.list().filter((x) => x.q.toLowerCase() !== q.toLowerCase())].slice(0, 5));
+    },
+  };
+
+  function hubPickCar(done) {
+    const list = state.vehicles.filter((v) => v.plate || v.makeModel);
+    const m = modal("Pick a car", `<div class="hub"><div class="toolbar"><div class="search" style="max-width:none">${icon("search")}<input id="pcq" type="search" placeholder="Plate, model or chassis no." aria-label="Find a car" autocomplete="off"></div></div><div class="rows" id="pcl"></div>
+      <p class="hint">The HUB then shows entries for that model series and engine.</p></div>`);
+    const draw = () => {
+      const w = m.$("#pcq").value.trim().toLowerCase();
+      const hits = list.filter((v) => !w || `${v.plate} ${v.makeModel} ${v.engine} ${v.chassisNo}`.toLowerCase().includes(w)).slice(0, 40);
+      m.$("#pcl").innerHTML = hits.length ? hits.map((v) => `<a href="#/hub" data-v="${esc(v.id)}"><div class="grow"><b>${esc(v.plate || "No plate")}</b><span>${esc([v.makeModel, v.engine].filter(Boolean).join(" · ") || "No model")}</span></div>${icon("cr", "s")}</a>`).join("") : `<p class="muted">No car matches.</p>`;
+    };
+    m.$("#pcl").onclick = (e) => {
+      const a = e.target.closest("[data-v]");
+      if (!a) return;
+      e.preventDefault();
+      const v = state.vehicles.find((x) => x.id === a.dataset.v);
+      m.close();
+      done(v);
+    };
+    m.$("#pcq").oninput = draw;
+    draw();
+    setTimeout(() => m.$("#pcq")?.focus(), 50);
+  }
+
+  function hubHit({ f }) {
+    const src = HUB.srcOf(f);
+    const ref = src === "Our case" ? "" : f.sourceRef;
+    const codes = codeChips(f, 4);
+    const sum = [["Symptom", f.symptom], ["Cause", f.cause], ["Fix", f.fix]].filter(([, v]) => v);
+    const sumHtml = sum.length
+      ? sum.map(([k, v]) => `<span><span class="k">${k}</span>${HUB.vals(esc(firstLine(v, 110)))}</span>`).join(`<span class="arr" aria-hidden="true">→</span>`)
+      : f.details ? `<span><span class="k">Details</span>${HUB.vals(esc(firstLine(f.details, 220)))}</span>` : "";
+    const nf = f.files?.length || 0;
+    return `<a class="hit" href="#/hub/${esc(f.id)}" data-id="${esc(f.id)}">${srcTile(f)}
+      <span class="t">${esc(f.title || "Untitled")}</span><span class="tags">${hubStatus(f)}</span>
+      <span class="meta">${chassisChips(f)}${f.engine ? `<span>${esc(f.engine)}</span>` : ""}${ref ? `<span class="dot"></span><span>${esc(ref)}</span>` : ""}${codes ? `<span class="dot"></span>${codes}` : ""}${src === "Our case" && f.verified ? `<span class="vmark" aria-label="Verified">${icon("check")}</span>` : ""}</span>
+      ${sumHtml ? `<span class="sum">${sumHtml}</span>` : ""}
+      <span class="foot"><span>${esc(src)}${f.topicNo ? ` · ${esc(f.topicNo)}` : ""}</span>${f.date ? `<span>${dmy(f.date)}</span>` : ""}${nf ? `<span>${icon("file")}${nf} file${nf === 1 ? "" : "s"}</span>` : ""}</span>
+      ${icon("cr", "chev")}</a>`;
+  }
 
   function pageHub(q) {
     crumbs([["Merc HUB"]]);
-    let model = q.get("m") || "";
-    let source = HUB_SOURCES.includes(q.get("s")) ? q.get("s") : "";
-    let verifiedOnly = q.get("v") === "1";
-    const all = state.faults.map((f) => ({ f, h: hubCase(f), src: f.source || "Our case" }));
-    const models = {};
-    const codes = {};
-    const bySrc = Object.fromEntries(HUB_SOURCES.map((s) => [s, 0]));
-    for (const { f, h, src } of all) {
-      bySrc[src] += 1;
-      if (h.chassis) models[h.chassis] = (models[h.chassis] || 0) + 1;
-      for (const c of h.codes) codes[c] = (codes[c] || 0) + 1;
-    }
-    view.innerHTML = `${pageHead("Merc HUB", { sub: "Diagnosis reference: our own cases, MBM technical forum and general information in one place", acts: `<button type="button" class="btn alt" id="hubExport">${icon("download")}Export our cases</button><button type="button" class="btn alt" id="hubImport">${icon("upload")}Add references</button><button class="btn" id="hubNew">${icon("plus")}New entry</button>` })}
-      <div class="grid g4" style="margin-bottom:16px">
-        <div class="tile"><div class="lbl">${icon("layers")}References</div><div class="val">${all.length}</div><div class="foot">${bySrc["Our case"]} ours · ${bySrc["MBM forum"]} MBM · ${bySrc["General info"]} general</div></div>
-        <div class="tile"><div class="lbl">${icon("check")}Verified fixes</div><div class="val">${all.filter((x) => x.src === "Our case" && x.h.verified).length}</div><div class="foot">confirmed on our cars</div></div>
-        <div class="tile"><div class="lbl">${icon("car")}Models</div><div class="val">${Object.keys(models).length}</div><div class="foot">chassis codes covered</div></div>
-        <div class="tile"><div class="lbl">${icon("fault")}Fault codes</div><div class="val">${Object.keys(codes).length}</div><div class="foot">different codes</div></div></div>
-      <div class="split"><div>
-        <div class="toolbar"><div class="search">${icon("search")}<input id="hq" type="search" placeholder="Symptom, fault code, model, engine, part" aria-label="Search the diagnosis reference" value="${esc(q.get("q") || "")}"></div>
-          <label class="chip" style="margin:0"><input type="checkbox" id="hv" ${verifiedOnly ? "checked" : ""} style="width:auto;min-height:0;margin:0"> Verified only</label></div>
-        <div class="chips" id="hs" style="margin-bottom:8px"><button type="button" class="chip" data-s="">All sources <span class="n">${all.length}</span></button>${HUB_SOURCES.map((s) => `<button type="button" class="chip" data-s="${esc(s)}">${esc(s === "Our case" ? "Our cases" : s)} <span class="n">${bySrc[s]}</span></button>`).join("")}</div>
-        <div class="chips scroll" id="hm" style="margin-bottom:14px"><button type="button" class="chip" data-m="">All models</button>${Object.entries(models).sort((a, b) => b[1] - a[1]).map(([m, n]) => `<button type="button" class="chip" data-m="${esc(m)}">${esc(m)} <span class="n">${n}</span></button>`).join("")}</div>
-        <p class="muted" id="hcount" style="margin:-4px 0 10px"></p>
-        <div id="hl"></div></div>
-        <div class="stack">
-          <div class="card"><div class="card-h"><h2>Most seen fault codes</h2></div>${Object.keys(codes).length ? `<div class="rows">${Object.entries(codes).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([c, n]) => `<a href="#/hub?q=${encodeURIComponent(c)}"><div class="grow"><b>${esc(c)}</b><span>${n} reference${n === 1 ? "" : "s"}</span></div>${icon("cr", "s")}</a>`).join("")}</div>` : `<p class="muted">Codes appear here as you add cases and references with fault codes.</p>`}</div>
-          <div class="card"><div class="card-h"><h2>How the HUB works</h2></div>
-            <div class="rows">
-              <div><span class="mini">${icon("check")}</span><div class="grow"><b>Our cases</b><span>Solved here. Verified first.</span></div>${pill(String(bySrc["Our case"]), "ok")}</div>
-              <div><span class="mini">${icon("book")}</span><div class="grow"><b>MBM forum</b><span>Private: never exported.</span></div>${pill(String(bySrc["MBM forum"]), "info")}</div>
-              <div><span class="mini">${icon("info")}</span><div class="grow"><b>General info</b><span>Specs, procedures, known issues.</span></div>${pill(String(bySrc["General info"]))}</div></div>
-            <p class="hint"><b>Add references</b>: upload a PDF, screenshot or photo, or paste text. The AI splits it into entries; you check them before saving. The Assistant uses all of it when you ask about a fault.</p>
-            <p class="hint">"Export our cases" downloads only our own cases, without customer names, plates or prices.</p></div></div></div>`;
+    const opts = {
+      q: q.get("q") || "",
+      source: HUB_SOURCES.includes(q.get("s")) ? q.get("s") : "",
+      model: q.get("m") || "",
+      verifiedOnly: q.get("v") === "1",
+      sort: q.get("o") === "new" ? "new" : "best",
+      car: null,
+    };
+    const carV = q.get("c") ? state.vehicles.find((v) => v.id === q.get("c")) : null;
+    if (carV) opts.car = { ...HUB.carFilter(carV), id: carV.id };
+    const all = state.faults;
+    const c = HUB.counts(all);
+    const models = HUB.top(c.models, 12);
+    const topCodes = HUB.top(c.codes, 5);
+    const maxCode = topCodes.length ? topCodes[0][1] : 1;
+    const SCOPE = [["", "All"], ["Our case", "Ours"], ["MBM forum", "MBM"], ["General info", "General"]];
+    const unnumbered = all.filter((f) => !f.topicNo).length;
+
+    view.innerHTML = `<div class="hub">
+      <div class="ph hub-ph"><div style="min-width:0"><h1>Merc HUB</h1><div class="sub only-desk">Diagnosis reference: our cases, MBM forum and general information, in one place.</div></div>
+        <div class="acts"><button type="button" class="btn ghost only-desk" id="hubExport" title="Downloads our own cases only, without customer names, plates or prices">${icon("download")}Export our cases</button>
+          <button type="button" class="btn alt only-desk" id="hubNew">${icon("plus")}New entry</button>
+          <a class="btn" href="#/hub/add" id="hubImport" aria-label="Add references">${icon("upload")}<span class="only-desk">Add references</span></a>
+          <button type="button" class="btn alt only-phone" id="hubMore" aria-label="More: new entry, export">${icon("more")}</button></div></div>
+      <div class="hub-layout"><div style="min-width:0">
+        <div class="hub-filters">
+          <div class="hub-search" role="search">${icon("search")}<label class="sr" for="hq">Search the HUB</label><input id="hq" type="search" placeholder="Fault code, symptom, model or engine" autocomplete="off" enterkeyhint="search" value="${esc(opts.q)}"><span class="kbd only-desk" id="hkbd" aria-hidden="true">/</span><button type="button" class="clear" id="hclr" aria-label="Clear the search" hidden>${icon("x")}</button></div>
+          <div id="hsug"></div>
+          <div class="row only-desk"><div class="seg-src" role="group" aria-label="Source" id="hs">${[["", "All", c.total], ...HUB_SOURCES.map((s) => [s, s === "Our case" ? "Our cases" : s, c.bySrc[s]])].map(([s, l, n]) => `<button type="button" data-s="${esc(s)}">${s ? `<span class="sw ${HUB.srcKey({ source: s })}"></span>` : ""}${esc(l)} <span class="n">${n}</span></button>`).join("")}</div>
+            <button type="button" class="toggle" id="hv"><span class="sw2"></span>Verified only</button>
+            <button type="button" class="chip" id="hcar">${icon("car", "s")}For a car…</button></div>
+          ${models.length ? `<div class="chips only-desk" id="hm"><button type="button" class="chip" data-m="">All models</button>${models.map(([m, n]) => `<button type="button" class="chip" data-m="${esc(m)}">${esc(m)} <span class="n">${n}</span></button>`).join("")}</div>` : ""}
+          <div class="scope only-phone" role="group" aria-label="Source" id="hsp">${SCOPE.map(([s, l]) => `<button type="button" data-s="${esc(s)}">${l}</button>`).join("")}</div>
+          <div class="active-filters" id="haf"></div>
+        </div>
+        <div class="row" style="margin:16px 2px 4px;gap:10px"><span class="result-count" id="hcount" aria-live="polite"></span><span class="grow"></span>
+          <select class="hub-sort only-desk" id="hsort" aria-label="Sort"><option value="best">Best match</option><option value="new">Newest</option></select>
+          <button type="button" class="btn alt filter-btn only-phone" id="hfil">${icon("filter", "s")}Filters<span class="badge-n" id="hfn" hidden></span></button></div>
+        <div id="hl"></div>
+        ${c.bySrc["MBM forum"] ? `<p class="muted only-phone" style="font-size:13px;margin:14px 2px 0">${icon("lock", "s")} MBM forum entries are private: never exported or shown to clients.</p>` : ""}</div>
+      <aside class="rail" aria-label="HUB summary">
+        <section class="card"><div class="card-h"><h2 class="h3">At a glance</h2></div><div class="stat4">
+          <div><b>${c.total}</b><span>References · ${c.bySrc["Our case"]} ours, ${c.bySrc["MBM forum"]} MBM, ${c.bySrc["General info"]} general</span></div>
+          <div><b>${c.verified}</b><span>Verified fixes</span></div><div><b>${Object.keys(c.models).length}</b><span>Models</span></div><div><b>${Object.keys(c.codes).length}</b><span>Fault codes</span></div></div>
+          ${unnumbered ? `<button type="button" class="btn alt block" id="hubNumber" style="margin-top:12px">${icon("tag")}Give topic numbers to ${unnumbered} older entr${unnumbered === 1 ? "y" : "ies"}</button>` : ""}</section>
+        <section class="card"><div class="card-h"><h2 class="h3">Most seen fault codes</h2></div>${topCodes.length ? `<div class="codes-seen">${topCodes.map(([k, n]) => `<a href="#/hub?q=${encodeURIComponent(k)}" data-code="${esc(k)}"><span class="code">${esc(k)}</span><span class="cbar"><i style="width:${Math.max(8, Math.round((n / maxCode) * 100))}%"></i></span><span class="n">${n}</span></a>`).join("")}</div>` : `<p class="muted" style="margin:0">Codes appear here as you add entries with fault codes.</p>`}</section>
+        <section class="card"><div class="card-h"><h2 class="h3">How results rank</h2></div><div class="rows">
+          <div>${srcTile({ source: "Our case" }, true)}<span class="grow"><b>Our verified fixes</b><span>Solved here and checked on the car</span></span></div>
+          <div>${srcTile({ source: "MBM forum" }, true)}<span class="grow"><b>MBM forum</b><span>Private. Never exported or shown to clients</span></span></div>
+          <div>${srcTile({ source: "Our case" }, true)}<span class="grow"><b>Our open cases</b><span>Fixed, not yet confirmed</span></span></div>
+          <div>${srcTile({ source: "General info" }, true)}<span class="grow"><b>General info</b><span>Specs, procedures, known issues</span></span></div></div></section>
+        <section class="card quiet" style="display:grid;gap:8px"><div class="row" style="gap:8px">${icon("users", "s")}<b style="font-size:14px">Client view</b><span class="later">Later</span></div>
+          <p class="muted" style="margin:0;line-height:1.5">When paid members join, they will see our cases and general info only. Chassis numbers show the first 11 characters; the last 6 are hidden. MBM material is never shared.</p></section>
+      </aside></div></div>`;
+
+    const input = $("#hq");
+    const saveUrl = () => {
+      const p = new URLSearchParams();
+      if (opts.q.trim()) p.set("q", opts.q.trim());
+      if (opts.source) p.set("s", opts.source);
+      if (opts.model) p.set("m", opts.model);
+      if (opts.verifiedOnly) p.set("v", "1");
+      if (opts.sort === "new") p.set("o", "new");
+      if (opts.car) p.set("c", opts.car.id);
+      hubLast.qs = p.toString() ? `?${p}` : "";
+      hubLast.q = opts.q.trim();
+      history.replaceState(null, "", `#/hub${hubLast.qs}`);
+    };
+    const filterCount = () => (opts.verifiedOnly ? 1 : 0) + (opts.model ? 1 : 0) + (opts.car ? 1 : 0) + (opts.sort === "new" ? 1 : 0);
+
     const draw = () => {
-      $$("#hm [data-m]").forEach((b) => b.classList.toggle("on", b.dataset.m === model));
-      $$("#hs [data-s]").forEach((b) => b.classList.toggle("on", b.dataset.s === source));
-      const words = $("#hq").value.trim().toLowerCase().split(/\s+/).filter(Boolean);
-      const list = all.filter(({ f, h, src }) => (!model || h.chassis === model) && (!source || src === source) && (!verifiedOnly || (src === "Our case" && h.verified)) && words.every((w) => hayOf(f).includes(w)))
-        .sort((a, b) => SRC_RANK(a.f) - SRC_RANK(b.f) || (b.f.date || "").localeCompare(a.f.date || ""));
-      $("#hcount").textContent = words.length || model || source || verifiedOnly ? `${list.length} of ${all.length} references` : "";
-      $("#hl").innerHTML = list.length
-        ? `<div class="stack">${list.slice(0, 150).map(({ f, h, src }) => `<a class="card" style="display:block;text-decoration:none;color:inherit" data-fc="${f.id}" href="#/hub">
-            <div class="card-h" style="margin-bottom:6px"><h2>${esc(f.title)}</h2><div class="r">${srcPill(src)}${src === "Our case" ? (h.verified ? pill("Verified", "ok") : pill("Not verified")) : ""}</div></div>
-            <div class="row wrap" style="margin-bottom:8px">${h.chassis ? `<span class="pill ink plain">${esc(h.chassis)}</span>` : ""}<span class="muted">${esc([f.makeModel, f.engine, h.mileageBand, src === "Our case" ? h.year : f.sourceRef].filter(Boolean).join(" · "))}</span>${h.codes.map((c) => `<span class="pill info plain">${esc(c)}</span>`).join("")}${f.files?.length ? `<span class="pill plain">${icon("file")}${f.files.length}</span>` : ""}</div>
-            <dl class="kv">${f.symptom ? `<dt>Symptom</dt><dd>${esc(f.symptom)}</dd>` : ""}${f.tests ? `<dt>Tests</dt><dd>${esc(firstLine(f.tests, 240))}</dd>` : ""}${f.cause ? `<dt>Cause</dt><dd>${esc(f.cause)}</dd>` : ""}${f.fix ? `<dt>Fix</dt><dd>${esc(f.fix)}</dd>` : ""}${f.parts ? `<dt>Parts</dt><dd>${esc(f.parts)}</dd>` : ""}${f.details && !(f.symptom || f.cause || f.fix) ? `<dt>Info</dt><dd>${esc(firstLine(f.details, 300))}</dd>` : ""}</dl></a>`).join("")}</div>
-            ${list.length > 150 ? `<p class="hint">Showing the first 150. Type more words to narrow it down.</p>` : ""}`
-        : `<div class="card">${emptyBox("layers", all.length ? "Nothing matches. Try fewer words, another model or All sources." : "No references yet. Tap Add references to upload MBM forum posts, general information or your old cases.")}</div>`;
-      $$("#hl [data-fc]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); faultDialog(state.faults.find((x) => x.id === a.dataset.fc)); }));
+      $$("#hs [data-s], #hsp [data-s]").forEach((b) => { b.classList.toggle("on", b.dataset.s === opts.source); b.setAttribute("aria-pressed", b.dataset.s === opts.source); });
+      $$("#hm [data-m]").forEach((b) => b.classList.toggle("on", b.dataset.m === opts.model));
+      $("#hv").classList.toggle("on", opts.verifiedOnly);
+      $("#hv").setAttribute("aria-pressed", opts.verifiedOnly);
+      $("#hsort").value = opts.sort;
+      $("#hclr").hidden = !input.value;
+      $("#hkbd").hidden = !!input.value;
+      const nf = filterCount();
+      $("#hfn").hidden = !nf;
+      $("#hfn").textContent = nf;
+      const chips = [];
+      if (opts.car) chips.push(`<button type="button" class="chip on" data-off="car">${icon("car", "s")}${esc(opts.car.label || "Car")} ${icon("x")}</button>`);
+      if (opts.model) chips.push(`<button type="button" class="chip on only-phone" data-off="model">${esc(opts.model)} ${icon("x")}</button>`);
+      if (opts.verifiedOnly) chips.push(`<button type="button" class="chip on only-phone" data-off="verified">Verified only ${icon("x")}</button>`);
+      $("#haf").innerHTML = chips.join("");
+      $("#haf").hidden = !chips.length;
+      saveUrl();
+
+      const list = HUB.search(all, opts);
+      const words = HUB.words(opts.q);
+      $("#hcount").innerHTML = all.length ? `<b>${list.length} reference${list.length === 1 ? "" : "s"}</b> · ${opts.sort === "new" ? "newest first" : "best match first"}` : "";
+      if (!all.length) {
+        $("#hl").innerHTML = `<div class="card hub-empty"><span class="ring">${icon("layers")}</span><h3>Build your diagnosis library</h3>
+          <p>Start with what you know: upload MBM forum PDFs, or turn a fault case you solved into an entry. Everything you add shows up here when you search a code or symptom.</p>
+          <div class="btns"><a class="btn" href="#/hub/add">${icon("upload")}Add references</a><button type="button" class="btn alt" data-new="">${icon("plus")}New entry</button></div></div>`;
+        return;
+      }
+      if (!list.length) {
+        const q1 = words[0] || "";
+        const filtered = opts.source || opts.model || opts.verifiedOnly || opts.car;
+        $("#hl").innerHTML = `<div class="card hub-empty"><span class="ring">${icon("search")}</span><h3>${opts.q.trim() ? `Nothing for “${esc(opts.q.trim())}” yet` : "Nothing matches these filters"}</h3>
+          <p>${filtered ? "Try All sources, another model or no car filter." : "Try fewer words, or only the code."} Or ask the Assistant, which also uses the HUB.</p>
+          <div class="btns">${filtered ? `<button type="button" class="btn alt" id="hreset">Clear filters</button>` : words.length > 1 ? `<button type="button" class="btn alt" data-only="${esc(q1)}">Search “${esc(q1.toUpperCase())}” only</button>` : ""}
+            <a class="btn alt" href="#/assistant">${icon("sparkle")}Ask the Assistant</a><button type="button" class="btn ghost" data-new="${esc(opts.q.trim())}">${icon("plus")}New entry for this</button></div></div>`;
+        return;
+      }
+      const shown = list.slice(0, 150);
+      const body = opts.sort === "new"
+        ? shown.map(hubHit).join("")
+        : HUB.groups(shown).map((g) => `<div class="eyebrow grp">${esc(g.label)} · ${g.items.length}</div>${g.items.map(hubHit).join("")}`).join("");
+      $("#hl").innerHTML = `<div class="hits">${body}</div>${list.length > 150 ? `<p class="hint">Showing the first 150. Type more words to narrow it down.</p>` : ""}`;
     };
-    $("#hq").oninput = draw;
-    $("#hv").onchange = () => { verifiedOnly = $("#hv").checked; draw(); };
-    $("#hm").onclick = (e) => {
-      const b = e.target.closest("[data-m]");
+
+    // Suggestions before typing: recent searches, most seen codes, pick a car.
+    const sug = $("#hsug");
+    const showSug = () => {
+      if (input.value.trim() || !all.length) { sug.innerHTML = ""; return; }
+      const rec = hubRecent.list();
+      sug.innerHTML = `<div class="suggest" role="listbox" aria-label="Suggestions">
+        ${rec.length ? `<div class="h">Recent searches</div>${rec.map((r) => `<button type="button" data-q="${esc(r.q)}">${icon("history")}<span>${esc(r.q)}</span><span class="r">${r.n ?? ""}</span></button>`).join("")}` : ""}
+        ${topCodes.length ? `<div class="h">Most seen fault codes</div><div class="codes">${topCodes.map(([k]) => `<button type="button" class="code" data-q="${esc(k)}">${esc(k)}</button>`).join("")}</div>` : ""}
+        ${state.vehicles.length ? `<div class="h">Browse by car</div><button type="button" data-car="1">${icon("car")}<span>Pick a car from Vehicles</span>${icon("cr", "s")}</button>` : ""}</div>`;
+    };
+    const hideSug = () => setTimeout(() => { if (!sug.contains(document.activeElement)) sug.innerHTML = ""; }, 150);
+    input.onfocus = showSug;
+    input.onblur = hideSug;
+    sug.onfocusout = hideSug;
+    sug.onmousedown = (e) => e.preventDefault(); // keep focus while tapping a suggestion
+    sug.onclick = (e) => {
+      const b = e.target.closest("[data-q],[data-car]");
       if (!b) return;
-      model = b.dataset.m;
+      sug.innerHTML = "";
+      if (b.dataset.car) return pickCar();
+      input.value = opts.q = b.dataset.q;
+      draw();
+      input.blur();
+    };
+    const pickCar = () => hubPickCar((v) => { opts.car = { ...HUB.carFilter(v), id: v.id }; opts.model = ""; draw(); });
+
+    input.oninput = () => { opts.q = input.value; showSug(); draw(); };
+    input.onkeydown = (e) => {
+      if (e.key === "Enter") { e.preventDefault(); hubRecent.add(input.value, HUB.search(all, opts).length); input.blur(); }
+      if (e.key === "Escape" && input.value) { e.stopPropagation(); input.value = opts.q = ""; draw(); showSug(); }
+    };
+    $("#hclr").onclick = () => { input.value = opts.q = ""; draw(); input.focus(); };
+    const pickSrc = (e) => { const b = e.target.closest("[data-s]"); if (!b) return; opts.source = b.dataset.s; draw(); };
+    $("#hs").onclick = pickSrc;
+    $("#hsp").onclick = pickSrc;
+    if ($("#hm")) $("#hm").onclick = (e) => { const b = e.target.closest("[data-m]"); if (!b) return; opts.model = b.dataset.m; draw(); };
+    $("#hv").onclick = () => { opts.verifiedOnly = !opts.verifiedOnly; draw(); };
+    $("#hsort").onchange = (e) => { opts.sort = e.target.value; draw(); };
+    $("#hcar").onclick = pickCar;
+    $("#haf").onclick = (e) => {
+      const b = e.target.closest("[data-off]");
+      if (!b) return;
+      if (b.dataset.off === "car") opts.car = null;
+      if (b.dataset.off === "model") opts.model = "";
+      if (b.dataset.off === "verified") opts.verifiedOnly = false;
       draw();
     };
-    $("#hs").onclick = (e) => {
-      const b = e.target.closest("[data-s]");
-      if (!b) return;
-      source = b.dataset.s;
-      draw();
+    $("#hl").onclick = (e) => {
+      const hit = e.target.closest(".hit");
+      if (hit && opts.q.trim()) hubRecent.add(opts.q, HUB.search(all, opts).length);
+      const only = e.target.closest("[data-only]");
+      if (only) { input.value = opts.q = only.dataset.only; draw(); }
+      if (e.target.closest("#hreset")) { Object.assign(opts, { source: "", model: "", verifiedOnly: false, car: null }); draw(); }
+      const nw = e.target.closest("[data-new]");
+      if (nw) {
+        const t = nw.dataset.new;
+        faultDialog(null, null, t ? (HUB.codesOf(t).length ? { codes: HUB.codesOf(t).join(", ") } : { symptom: t }) : {});
+      }
     };
-    $("#hubNew").onclick = () => faultDialog(null, null);
-    $("#hubImport").onclick = () => hubImport();
-    $("#hubExport").onclick = () => {
-      const ours = all.filter((x) => x.src === "Our case");
-      const blob = new Blob([JSON.stringify({ hub: "Merc HUB", version: 1, format: "Workshop Diagnostic Network cases", source: "The Merc Lab", exported: todayKL(), cases: ours.map(({ h }, i) => ({ case_number: `ML-${todayKL().slice(0, 4)}-${String(i + 1).padStart(4, "0")}`, case_date: h.year, vehicle_model: h.model, model_series: h.chassis, engine: h.engine, mileage: h.mileageBand, fault_codes: h.codes.join(", "), symptom: h.symptom, diagnosis_steps: h.tests, root_cause: h.cause, fix_applied: h.fix, parts_used: h.parts, time_spent_hours: h.hours, status: h.verified ? "Resolved" : "Open", notes: h.tags })) }, null, 2)], { type: "application/json" });
+    $(".rail .codes-seen")?.addEventListener("click", (e) => {
+      const a = e.target.closest("[data-code]");
+      if (!a) return;
+      e.preventDefault();
+      input.value = opts.q = a.dataset.code;
+      draw();
+    });
+
+    // Phone: Filters sheet (verified only, model, car, sort).
+    $("#hfil").onclick = () => {
+      const wrap = document.createElement("div");
+      wrap.className = "hub hub-sheet-wrap";
+      const prev = document.activeElement;
+      const close = () => { wrap.remove(); document.removeEventListener("keydown", onKey); prev?.focus?.(); };
+      const onKey = (e) => e.key === "Escape" && close();
+      const paint = () => {
+        const n = HUB.search(all, opts).length;
+        wrap.innerHTML = `<div class="hub-sheet" role="dialog" aria-modal="true" aria-label="Filters"><span class="grab" aria-hidden="true"></span>
+          <div class="sh-h"><button type="button" class="btn ghost" data-a="reset">Reset</button><b>Filters</b><button type="button" class="btn" data-a="show">Show ${n}</button></div>
+          <button type="button" class="toggle${opts.verifiedOnly ? " on" : ""}" data-a="ver" aria-pressed="${opts.verifiedOnly}"><span class="sw2"></span>Verified only</button>
+          ${models.length ? `<div><label>Model series</label><div class="wrapchips"><button type="button" class="chip${opts.model ? "" : " on"}" data-m="">All models</button>${models.map(([m, k]) => `<button type="button" class="chip${opts.model === m ? " on" : ""}" data-m="${esc(m)}">${esc(m)} <span class="n">${k}</span></button>`).join("")}</div></div>` : ""}
+          <div><label>For a car</label><button type="button" class="btn alt block" data-a="car">${icon("car")}${opts.car ? esc(opts.car.label) : "Pick a car from Vehicles"}</button></div>
+          <div><label>Sort</label><div class="seg full"><button type="button" data-o="best" class="${opts.sort === "best" ? "on" : ""}">Best match</button><button type="button" data-o="new" class="${opts.sort === "new" ? "on" : ""}">Newest</button></div></div></div>`;
+      };
+      wrap.onclick = (e) => {
+        if (e.target === wrap) return close();
+        const a = e.target.closest("[data-a],[data-m],[data-o]");
+        if (!a) return;
+        if (a.dataset.a === "reset") Object.assign(opts, { model: "", verifiedOnly: false, car: null, sort: "best" });
+        else if (a.dataset.a === "show") { close(); return; }
+        else if (a.dataset.a === "ver") opts.verifiedOnly = !opts.verifiedOnly;
+        else if (a.dataset.a === "car") { close(); pickCar(); return; }
+        else if (a.dataset.m !== undefined) { opts.model = a.dataset.m; opts.car = null; }
+        else if (a.dataset.o) opts.sort = a.dataset.o;
+        draw();
+        paint();
+      };
+      document.addEventListener("keydown", onKey);
+      paint();
+      document.body.appendChild(wrap);
+      wrap.querySelector("[data-a=show]").focus();
+    };
+
+    const newEntry = () => faultDialog(null, null, {});
+    $("#hubNew").onclick = newEntry;
+    const exportOurs = () => {
+      const data = HUB.exportCases(all, todayKL());
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
       a.download = `merc-hub-cases-${todayKL()}.json`;
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-      toast(`${ours.length} of our own case(s) exported. MBM forum and general info are never exported.`);
+      toast(`${data.cases.length} of our own case(s) exported. MBM forum and general info are never exported.`);
+    };
+    $("#hubExport").onclick = exportOurs;
+    if ($("#hubNumber")) $("#hubNumber").onclick = async (e) => {
+      busy(e.currentTarget, true, "Numbering…");
+      try {
+        const r = await api("/faults/number-old", { method: "POST", body: {} });
+        await refresh("faults");
+        toast(`${r.numbered} entr${r.numbered === 1 ? "y" : "ies"} numbered, oldest first.`);
+        route();
+      } catch (err) {
+        toast(err.message, "err");
+        busy(e.currentTarget, false);
+      }
+    };
+    $("#hubMore").onclick = () => {
+      const m = modal("Merc HUB", `<div class="stack"><button type="button" class="btn alt block" id="mNew">${icon("plus")}New entry</button><button type="button" class="btn alt block" id="mExp">${icon("download")}Export our cases</button>
+        <p class="hint" style="margin:0">Export downloads our own cases only, without customer names, plates or prices.</p></div>`);
+      m.$("#mNew").onclick = () => { m.close(); newEntry(); };
+      m.$("#mExp").onclick = () => { m.close(); exportOurs(); };
     };
     draw();
   }
 
-  // Add references: a file (PDF, screenshot, photo of notes) or pasted text →
-  // the AI splits it into entries → the owner ticks which to keep → saved.
-  function hubImport() {
-    let file = null;
-    const m = modal("Add references to the Merc HUB", `<form id="hif" novalidate>
-      <label>Where is it from?</label>
-      <div class="seg" role="radiogroup" aria-label="Source" id="hisrc" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">${HUB_SOURCES.map((s, i) => `<button type="button" role="radio" aria-checked="${i === 1}" class="${i === 1 ? "on" : ""}" data-s="${esc(s)}">${esc(s === "Our case" ? "Our old cases" : s)}</button>`).join("")}</div>
-      <label for="hi_ref">Source ref <span class="muted">(optional)</span></label><input id="hi_ref" name="sourceRef" placeholder="e.g. MBM forum thread no, bulletin no, title">
-      <label>File</label>
-      <div class="btns" style="margin-top:0"><label class="btn alt upload">${icon("upload")}Choose PDF, screenshot or photo<input type="file" id="hi_file" accept="image/*,application/pdf"></label></div>
-      <p class="sm muted" id="hi_fname" style="margin:4px 0 8px">No file chosen. Max 10 MB.</p>
-      <label for="hi_text">…or paste the text</label><textarea id="hi_text" name="text" rows="5" placeholder="Copy the forum post or your notes and paste here"></textarea>
-      <p class="hint">The AI splits it into separate entries (one per problem or topic). You check them before anything is saved. MBM forum material stays private in your DMS.</p>
-      <div class="btns"><button class="btn" type="submit">${icon("sparkle")}Read it</button></div></form><div id="hires"></div>`, { wide: true });
-    let source = "MBM forum";
-    m.$("#hisrc").onclick = (e) => {
-      const b = e.target.closest("[data-s]");
-      if (!b) return;
-      source = b.dataset.s;
-      m.el.querySelectorAll("#hisrc [data-s]").forEach((x) => { x.classList.toggle("on", x === b); x.setAttribute("aria-checked", x === b); });
-    };
-    m.$("#hi_file").onchange = (e) => {
-      file = e.target.files[0] || null;
-      if (file && file.size > 10 * 1024 * 1024) {
-        file = null;
-        e.target.value = "";
-        toast("That file is over 10 MB. Split the PDF, or use screenshots of the pages.", "err");
-      }
-      m.$("#hi_fname").textContent = file ? `${file.name} (${Math.round(file.size / 1024)} KB)` : "No file chosen. Max 10 MB.";
-    };
-    m.$("#hif").onsubmit = async (e) => {
-      e.preventDefault();
-      const textIn = m.$("#hi_text").value.trim();
-      if (!file && !textIn) return toast("Choose a file or paste the text.", "err");
-      const fd = new FormData();
-      if (file) fd.append("file", file);
-      fd.append("data", JSON.stringify({ source, text: textIn }));
-      busy(e.submitter, true, "Reading… (up to 1 minute)");
-      m.$("#hires").innerHTML = `<div class="notice"><span class="spin"></span><div>The AI is reading it and splitting it into entries. Long PDFs take up to a minute.</div></div>`;
-      let out;
-      try {
-        out = await api("/faults/read", { method: "POST", form: fd, timeout: 120000 });
-      } catch (err) {
-        busy(e.submitter, false);
-        m.$("#hires").innerHTML = `<div class="notice bad">${icon("alert")}<div>${esc(err.aborted ? "The AI took too long. Try a shorter part (a few pages), or paste the text." : err.message)}</div></div>`;
-        return;
-      }
-      busy(e.submitter, false);
-      const ref = m.$("#hi_ref").value.trim();
-      const entries = out.entries;
-      const sum = (x) => [x.makeModel, x.engine, x.codes].filter(Boolean).join(" · ");
-      m.$("#hires").innerHTML = `<div class="card" style="margin-top:12px"><div class="card-h"><h2>${entries.length} entr${entries.length === 1 ? "y" : "ies"} found</h2><div class="r">${srcPill(source)}</div></div>
-        <p class="muted" style="margin-top:-6px">Untick anything you do not want. You can edit each one later in the HUB.</p>
-        <div class="stack" id="hilist">${entries.map((x, i) => `<div class="card" style="margin:0">
-          <label style="display:flex;gap:10px;align-items:flex-start;margin:0"><input type="checkbox" data-i="${i}" checked style="width:20px;min-height:20px;margin-top:12px">
-          <div style="flex:1;min-width:0"><input data-t="${i}" value="${esc(x.title)}" aria-label="Title of entry ${i + 1}">
-          <div class="sm muted" style="margin-top:4px">${esc(sum(x) || "No model given")}</div>
-          ${x.symptom ? `<div class="sm"><b>Symptom:</b> ${esc(firstLine(x.symptom))}</div>` : ""}${x.cause ? `<div class="sm"><b>Cause:</b> ${esc(firstLine(x.cause))}</div>` : ""}${x.fix ? `<div class="sm"><b>Fix:</b> ${esc(firstLine(x.fix))}</div>` : ""}${!x.symptom && !x.cause && !x.fix && x.details ? `<div class="sm">${esc(firstLine(x.details, 220))}</div>` : ""}</div></label></div>`).join("")}</div>
-        ${file ? `<label style="display:flex;gap:8px;align-items:center;margin-top:12px"><input type="checkbox" id="hikeep" checked style="width:20px;min-height:20px">Keep the original file with each entry</label>` : ""}
-        <div class="btns"><button type="button" class="btn" id="hisave">${icon("check")}Save to the HUB</button></div></div>`;
-      m.$("#hires").scrollIntoView({ behavior: "smooth", block: "start" });
-      m.$("#hisave").onclick = async (ev) => {
-        const keep = [...m.el.querySelectorAll("#hilist [data-i]")].filter((c) => c.checked).map((c) => Number(c.dataset.i));
-        if (!keep.length) return toast("Tick at least one entry.", "err");
-        const list = keep.map((i) => ({ ...entries[i], title: m.el.querySelector(`[data-t="${i}"]`).value.trim() || entries[i].title }));
-        busy(ev.currentTarget, true, "Saving…");
-        try {
-          const saved = await api("/faults/bulk", { method: "POST", body: { source, sourceRef: ref, entries: list } });
-          let fileFails = 0;
-          if (file && m.$("#hikeep")?.checked) {
-            for (const f of saved.faults) {
-              const one = new FormData();
-              one.append("file", file);
-              try { await api(`/faults/${f.id}/file`, { method: "POST", form: one, timeout: 90000 }); } catch { fileFails += 1; }
-            }
-          }
-          await refresh("faults");
-          m.close();
-          toast(`${saved.faults.length} reference(s) added to the HUB${fileFails ? `. ${fileFails} file copy(ies) did not attach` : ""}`);
-          route();
-        } catch (err) {
-          toast(err.message, "err");
-          busy(ev.currentTarget, false);
+  // "/" jumps to the HUB search (desktop), unless you are typing somewhere.
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.target.closest?.("input, textarea, select, [contenteditable]") || document.querySelector(".modal")) return;
+    const box = $("#hq");
+    if (!box) return;
+    e.preventDefault();
+    box.focus();
+  });
+
+  // ---------- Merc HUB: read view ----------
+  function pageHubEntry(id) {
+    const f = state.faults.find((x) => x.id === id);
+    if (!f) {
+      crumbs([["Merc HUB", "#/hub"], ["Not found"]]);
+      view.innerHTML = `<div class="hub"><div class="card hub-empty"><span class="ring">${icon("search")}</span><h3>This entry is not in the HUB</h3><p>It may have been removed, or the link is old.</p><div class="btns"><a class="btn" href="#/hub">Back to the Merc HUB</a></div></div></div>`;
+      return;
+    }
+    crumbs([["Merc HUB", `#/hub${hubLast.qs}`], [f.topicNo || f.title || "Entry"]]);
+    const src = HUB.srcOf(f);
+    const mbm = src === "MBM forum";
+    const job = f.jobId ? state.jobs.find((j) => j.id === f.jobId) : null;
+    const veh = f.plateKey ? vehicleByKey(f.plateKey) : null;
+    let client = false;
+
+    const draw = () => {
+      const c = client ? HUB.clientCopy(f) : f;
+      const hidden = `<span class="hidden-field">${icon("lock")}Hidden from clients</span>`;
+      const secs = [];
+      const sec = (key, title, html, aside = "") => secs.push({ key, title, html: `<section class="sec" id="hs-${key}" data-sec="${key}"><div class="sec-h"><span class="no">${secs.length + 1}</span><h2>${title}</h2>${aside ? `<span class="aside">${aside}</span>` : ""}</div>${html}</section>` });
+      if (c) {
+        if (c.symptom) sec("symptom", "Symptom", `<div class="prose">${HUB.prose(c.symptom, esc)}</div>`);
+        const tests = HUB.testsOf(c).list;
+        const rems = HUB.remediesOf(c).list;
+        const remTitle = (r, i) => r.title || (i ? `Remedy ${r.label}` : src === "Our case" ? (c.verified ? "What fixed it" : "What we did") : "Remedy");
+        if (tests.length) sec("tests", "Tests", `<ol class="steps">${tests.map((t) => `<li class="step${t.then ? " key" : ""}"><span class="do">${HUB.vals(esc(t.check || "Check"))}</span>
+            ${t.spec || t.measured ? `<span class="vals">${t.spec ? `<span><b>Spec</b><span class="val">${esc(t.spec)}</span></span>` : ""}${t.measured ? `<span><b>${t.spec ? "Measured" : "Found"}</b><span class="val">${esc(t.measured)}</span></span>` : ""}</span>` : ""}
+            ${t.then ? `<span class="then">${icon("ar")}${esc(t.then)}</span>` : ""}</li>`).join("")}${rems.length ? `<li><a class="trace-end" href="#/hub/${esc(f.id)}" data-go="remedy"><i>${esc(rems[0].label)}</i>Leads to Remedy ${esc(rems[0].label)}: ${esc(remTitle(rems[0], 0))}</a></li>` : ""}</ol>`, `${tests.length} step${tests.length === 1 ? "" : "s"} · in this order`);
+        if (c.cause) sec("cause", "Cause", `<div class="prose">${HUB.prose(c.cause, esc)}</div>`);
+        if (rems.length) {
+          sec("remedy", "Remedy", rems.map((r, i) => `<div class="remedy"><div class="remedy-h"><span class="lt2${i ? " alt" : ""}">${esc(r.label)}</span><b>${esc(remTitle(r, i))}</b>${r.when ? `<span class="when">${esc(r.when)}</span>` : ""}</div><div class="body">
+            ${r.steps.length > 1 ? `<ol>${r.steps.map((x) => `<li>${HUB.vals(esc(x))}</li>`).join("")}</ol>` : r.steps.length ? `<div class="prose">${HUB.prose(r.steps[0], esc)}</div>` : ""}
+            ${r.parts.length ? `<table class="parts"><thead><tr><th>Part</th><th>Part no.</th><th class="q">Qty</th></tr></thead><tbody>${r.parts.map((x) => `<tr><td>${esc(x.name)}</td><td class="pn">${esc(x.part_no || "—")}</td><td class="q">${x.qty ?? ""}</td></tr>`).join("")}</tbody></table>`
+              : r.no_parts === "none" ? `<div class="no-parts">${icon("check", "s")}No parts needed.</div>` : r.no_parts === "depends" ? `<div class="no-parts">${icon("info", "s")}Parts depend on the case.</div>` : ""}</div></div>`).join(""), rems.length > 1 ? `${rems.length} options` : "");
         }
-      };
+        if (c.details) sec("details", "Details", `<div class="prose">${HUB.prose(c.details, esc)}</div>`);
+        if (f.files?.length && !client) sec("files", "Files", `<div class="files">${f.files.map(hubFileTile).join("")}</div>`, `${f.files.length} original${f.files.length === 1 ? "" : "s"}`);
+      }
+      const ch = HUB.chassisOfEntry(f);
+      const vin = veh?.chassisNo ? HUB.maskVin(veh.chassisNo) : null;
+      const cells = [];
+      if (ch.length || f.makeModel) cells.push(["Model series", ch.length ? chassisChips(f) : esc(f.makeModel)]);
+      if (f.engine) cells.push(["Engine", esc(f.engine)]);
+      if (f.functionGroup) cells.push(["Function group", `<span style="font-weight:500">${esc(f.functionGroup)}</span>`]);
+      if (f.makeModel && ch.length) cells.push(["Make & model", `<span style="font-weight:500">${esc(f.makeModel)}</span>`]);
+      if (vin) cells.push(["Chassis no. (seen on)", client ? `<span class="vin">${esc(vin.shown)}${vin.hidden ? `<span class="mask">••••••</span>` : ""}</span>` : `<span class="vin">${esc(veh.chassisNo)}</span>`]);
+      if (c && c.mileageKm) cells.push([src === "Our case" ? "Mileage at repair" : "Mileage", `<span class="val">${km(c.mileageKm)}</span>`]);
+      if (f.date) cells.push([src === "Our case" ? "Repaired" : "Added", dmy(f.date)]);
+      if (f.hours != null && f.hours !== "") cells.push(["Hours spent", client ? hidden : `${esc(f.hours)} h`]);
+      if (job || f.docNo) cells.push(["Linked job", client ? hidden : job ? `<a href="#/jobs/${esc(job.id)}">${esc(docNo(job))}</a>` : esc(f.docNo)]);
+      if (cells.length) secs.unshift({ key: "validity", title: "Validity", html: `<div class="validity" id="hs-validity" data-sec="validity">${cells.map(([k, v]) => `<div><span class="k">${k}</span><span class="v">${v}</span></div>`).join("")}</div>` });
+      const nav = secs.length > 2 ? `<nav class="tabs sec-bar" aria-label="Sections" id="hsecs">${secs.map((s, i) => `<a href="#/hub/${esc(f.id)}" data-go="${s.key}" class="${i ? "" : "on"}">${s.title}</a>`).join("")}</nav>` : "";
+      const related = state.faults.filter((x) => x.id !== f.id && (!client || HUB.srcOf(x) !== "MBM forum")).map((x) => {
+        let s = 0;
+        const xc = HUB.codesOf(x.codes);
+        for (const k of HUB.codesOf(f.codes)) if (xc.includes(k)) s += 3;
+        const xs = HUB.chassisOfEntry(x);
+        for (const k of ch) if (xs.includes(k)) s += 1;
+        if (f.engine && HUB.engineCode(x.engine) && HUB.engineCode(x.engine) === HUB.engineCode(f.engine)) s += 1;
+        return { x, s };
+      }).filter((r) => r.s >= 2).sort((a, b) => b.s - a.s || HUB.rankOf(a.x) - HUB.rankOf(b.x)).slice(0, 3);
+      const back = `#/hub${hubLast.qs}`;
+      const jobBtn = job && !client ? `<a class="btn alt block" href="#/jobs/${esc(job.id)}">${icon("open")}Open job ${esc(docNo(job))}</a>` : "";
+
+      view.innerHTML = `<div class="hub read">
+        <div class="ph" style="margin-bottom:14px"><a class="back" href="${back}" aria-label="Back to the HUB">${icon("back")}</a><div style="min-width:0"><div class="sub" style="margin:0">Merc HUB${hubLast.q ? ` · search “${esc(hubLast.q)}”` : ""}</div></div></div>
+        <div class="entry-layout"><div class="entry">
+          ${client ? `<div class="client-bar">${icon("eye")}<span>You are previewing the client view. Nothing here is editable.</span></div>` : ""}
+          <header class="entry-h"><div class="row">${srcLabel(f)}${hubStatus(f)}<span class="muted">${esc([f.topicNo, f.sourceRef, f.date ? (src === "Our case" ? "" : "added ") + dmy(f.date) : ""].filter(Boolean).join(" · "))}</span></div>
+            <h1 class="ttl">${esc(f.title || "Untitled")}</h1>
+            <div class="meta">${chassisChips(f)}${f.engine ? `<span>${esc(f.engine)}</span>` : ""}${HUB.codesOf(f.codes).length ? `<span class="dot"></span>${codeChips(f, 12)}` : ""}</div></header>
+          ${mbm && !client ? `<div class="private-note">${icon("lock")}<span><b>Private: MBM material.</b> Only you can see it. It is never exported, never shared with members, and the Assistant only uses it for your own questions.</span></div>` : ""}
+          ${client && mbm ? `<div class="card hub-empty"><span class="ring">${icon("lock")}</span><h3>Not shown to clients</h3><p>MBM forum material never appears in the client view.</p></div>` : `${nav}${secs.map((s) => s.html).join("") || `<p class="empty-sec">No details yet. Tap Edit to add the symptom, tests and fix.</p>`}`}
+        </div>
+        <aside class="rail" aria-label="Entry actions">
+          <section class="card" style="display:grid;gap:12px"><div class="row" style="gap:6px"><span class="eyebrow grow">View as</span><button class="btn alt icon" type="button" id="hePrint" aria-label="Print">${icon("print")}</button></div>
+            <div class="seg full" role="group" aria-label="View as"><button type="button" data-view="owner" class="${client ? "" : "on"}" aria-pressed="${!client}">Owner</button><button type="button" data-view="client" class="${client ? "on" : ""}" aria-pressed="${client}">${icon("users")}Client</button></div>
+            ${client ? "" : `<div class="rail-acts"><button type="button" class="btn block" data-edit="1">${icon("edit")}Edit</button>${jobBtn}</div>`}</section>
+          <section class="card"><div class="card-h"><h2 class="h3">Topic</h2></div><dl class="kv">
+            ${f.topicNo ? `<dt>Topic no.</dt><dd>${esc(f.topicNo)}</dd>` : ""}<dt>Source</dt><dd>${esc(src)}</dd>${f.sourceRef ? `<dt>Source ref</dt><dd>${esc(f.sourceRef)}</dd>` : ""}${f.date ? `<dt>Date</dt><dd>${dmy(f.date)}</dd>` : ""}
+            ${src === "Our case" ? `<dt>Status</dt><dd>${f.verified ? "Verified on the car" : "Not verified yet"}</dd>` : ""}${f.tags ? `<dt>Tags</dt><dd>${esc(f.tags)}</dd>` : ""}${!client && f.files?.length ? `<dt>Files</dt><dd>${f.files.length}</dd>` : ""}</dl></section>
+          ${related.length ? `<section class="card"><div class="card-h"><h2 class="h3">Related</h2></div><div class="rows">${related.map(({ x }) => `<a href="#/hub/${esc(x.id)}">${srcTile(x, true)}<span class="grow"><b>${esc(x.title)}</b><span>${esc([HUB.srcOf(x), HUB.codesOf(x.codes).slice(0, 2).join(", ") || x.engine].filter(Boolean).join(" · "))}</span></span></a>`).join("")}</div></section>` : ""}
+        </aside></div>
+        ${client ? "" : `<div class="hub-actbar">${job ? `<a class="btn alt" href="#/jobs/${esc(job.id)}">${icon("open")}Open job</a>` : ""}<button type="button" class="btn" data-edit="1">${icon("edit")}Edit</button></div>`}
+      </div>`;
+
+      $$("[data-edit]").forEach((b) => (b.onclick = () => faultDialog(f)));
+      $("#hePrint").onclick = () => window.print();
+      $$("[data-view]").forEach((b) => (b.onclick = () => { client = b.dataset.view === "client"; draw(); }));
+      $$("[data-go]").forEach((a) => (a.onclick = (e) => {
+        e.preventDefault();
+        const t = $(`#hs-${a.dataset.go}`);
+        if (t) t.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+      }));
+      const bar = $("#hsecs");
+      if (bar && "IntersectionObserver" in window) {
+        const io = new IntersectionObserver((ents) => {
+          const vis = ents.filter((x) => x.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+          if (!vis) return;
+          bar.querySelectorAll("[data-go]").forEach((a) => a.classList.toggle("on", a.dataset.go === vis.target.dataset.sec));
+        }, { rootMargin: "-120px 0px -60% 0px" });
+        $$(".hub [data-sec]").forEach((s) => io.observe(s));
+      }
     };
+    draw();
+  }
+
+  // ---------- Merc HUB: add references ----------
+  // A file (PDF, screenshot, photo of notes) or pasted text → the AI splits
+  // it into entries → the owner ticks and edits them → saved, with the
+  // original file kept on each entry if wanted. 3 steps on one screen.
+  function hubImport() {
+    crumbs([["Merc HUB", `#/hub${hubLast.qs}`], ["Add references"]]);
+    const MAX = 10 * 1024 * 1024;
+    const OPTS = [["MBM forum", "MBM forum", "Posts, tips, bulletins. Private: never exported or shown to clients."], ["Our case", "Our old cases", "Jobs you solved before the DMS. Can be shared with members later."], ["General info", "General info", "Specs, procedures, how a system works."]];
+    const st = { step: 1, source: "MBM forum", ref: "", mode: "file", file: null, tooBig: null, text: "", entries: [], keep: [], keepFile: true, error: "", saved: 0, ctl: null };
+    const mb = (n) => `${(n / 1048576).toFixed(1)} MB`;
+    const wiz = () => {
+      const s = (n, label) => `<span class="s${st.step === n ? " on" : st.step > n ? " done" : ""}"><i>${st.step > n ? icon("check") : n}</i>${label}</span>`;
+      return `<div class="wiz" aria-label="Step ${Math.min(st.step, 3)} of 3">${s(1, "Choose and upload")}<span class="ln"></span>${s(2, "AI reads it")}<span class="ln"></span>${s(3, "Check and save")}</div>`;
+    };
+    const srcName = () => OPTS.find((o) => o[0] === st.source)[1];
+
+    const paint = () => {
+      let body = "";
+      if (st.step === 1) {
+        const picked = st.file ? `<div class="picked">${icon("file")}<span class="grow"><b>${esc(st.file.name)}</b><span>${st.error ? "Kept · " : ""}${mb(st.file.size)}</span></span><button type="button" class="x" id="hiRm" aria-label="Remove the file">${icon("x")}</button></div>` : "";
+        const big = st.tooBig ? `<div class="notice bad">${icon("alert")}<div><b>Too big: ${esc(st.tooBig.name)} is ${Math.round(st.tooBig.size / 1048576)} MB.</b> The limit is 10 MB. Split the PDF, or take photos of the pages you need.</div></div>` : "";
+        const err = st.error ? `<div class="notice bad">${icon("alert")}<div><b>The AI could not read this.</b> ${esc(st.error)}${st.file ? " Your file is kept." : ""}</div></div>
+          <div class="btns" style="margin:0"><button type="button" class="btn" id="hiRetry">${icon("history")}Try again</button>${st.mode === "file" ? `<button type="button" class="btn alt" id="hiPaste">${icon("clipboard")}Paste text instead</button>` : ""}${st.file && st.mode === "file" ? `<button type="button" class="btn ghost" id="hiOne">Save the file as one entry</button>` : ""}</div>` : "";
+        body = `${wiz()}
+          <div><label>1 · Where is it from?</label><div class="src-pick" role="radiogroup" aria-label="Source">${OPTS.map(([s, l, t]) => `<button type="button" class="src-opt${st.source === s ? " on" : ""}" role="radio" aria-checked="${st.source === s}" data-s="${esc(s)}">${srcTile({ source: s })}<b>${l}</b><span>${t}</span></button>`).join("")}</div></div>
+          <div><label for="hiRef">Source ref <span class="muted">(optional)</span></label><input id="hiRef" value="${esc(st.ref)}" placeholder="e.g. forum thread no., bulletin no., document title"></div>
+          <div><label>2 · The material</label><div class="seg full" role="group" aria-label="File or text" id="hiMode"><button type="button" data-m="file" class="${st.mode === "file" ? "on" : ""}" aria-pressed="${st.mode === "file"}">File</button><button type="button" data-m="text" class="${st.mode === "text" ? "on" : ""}" aria-pressed="${st.mode === "text"}">Paste text</button></div></div>
+          ${st.mode === "file" ? `<div class="drop" id="hiDrop">${icon("upload")}<span class="grow"><b>Drop a PDF, screenshot or photo</b><span>Max 10 MB · several pages are fine</span></span><label class="btn alt upload">Choose file<input type="file" id="hiFile" accept="image/*,application/pdf"></label></div>${big}${picked}`
+            : `<div><label for="hiText" class="sr">Paste the text</label><textarea id="hiText" class="grow" rows="8" placeholder="Copy the forum post or your notes and paste here">${esc(st.text)}</textarea></div>`}
+          ${err}
+          <div class="row" style="gap:12px;flex-wrap:wrap"><span class="muted grow" style="font-size:13px">The AI splits it into entries. Nothing is saved until you check them.</span><button type="button" class="btn" id="hiGo">${icon("sparkle")}Read with AI</button></div>`;
+      } else if (st.step === 2) {
+        body = `${wiz()}<div class="reading" role="status" aria-live="polite">${window.MLFeedback ? window.MLFeedback.beat("lg") : `<span class="spin"></span>`}
+          <h3>AI is reading the material</h3><p class="muted" style="margin:0">About 10–60 seconds. Please keep this screen open.</p>
+          <ol id="hiStages"></ol><button type="button" class="btn ghost" id="hiCancel">Cancel</button></div>`;
+      } else if (st.step === 3) {
+        const n = st.keep.filter(Boolean).length;
+        const f = (i, k, label, rows) => `<div><label for="hr${i}${k}">${label}</label>${rows ? `<textarea id="hr${i}${k}" data-i="${i}" data-k="${k}" rows="${rows}">${esc(st.entries[i][k] || "")}</textarea>` : `<input id="hr${i}${k}" data-i="${i}" data-k="${k}" value="${esc(st.entries[i][k] || "")}">`}</div>`;
+        body = `${wiz()}
+          <div class="row" style="gap:8px"><b class="grow" style="font-size:16px">${st.entries.length} entr${st.entries.length === 1 ? "y" : "ies"} found · ${n} selected</b><button type="button" class="btn ghost" id="hiAll">Select all</button><button type="button" class="btn ghost" id="hiNone">None</button></div>
+          <div class="rev-list">${st.entries.map((x, i) => `<div class="rev${st.keep[i] ? "" : " off"}">
+            <label class="cbx"><input type="checkbox" data-keep="${i}" ${st.keep[i] ? "checked" : ""} aria-label="Keep entry ${i + 1}"></label>
+            <input class="tt" data-i="${i}" data-k="title" value="${esc(x.title)}" aria-label="Title of entry ${i + 1}">
+            <span class="meta">${srcLabel({ source: st.source })}<span class="dot"></span><span>${esc([x.makeModel || "No model", x.engine, x.codes || "no codes"].filter(Boolean).join(" · "))}</span></span>
+            <details><summary>${icon("cd")}Show all fields</summary><div class="all">
+              <div class="fgrid">${f(i, "makeModel", "Make & model")}${f(i, "engine", "Engine")}${f(i, "functionGroup", "Function group")}</div>
+              ${f(i, "symptom", "Symptom", 2)}${f(i, "codes", "Fault codes")}${f(i, "tests", "Tests", 2)}${f(i, "cause", "Cause", 2)}${f(i, "fix", "Remedy", 2)}${f(i, "parts", "Parts")}${f(i, "details", "Details", 3)}</div></details></div>`).join("")}</div>
+          <div class="row" style="gap:10px;flex-wrap:wrap">${st.file && st.mode === "file" ? `<label style="display:flex;gap:10px;align-items:center;margin:0;min-height:44px" class="grow"><input type="checkbox" id="hiKeepFile" ${st.keepFile ? "checked" : ""} style="width:22px;min-height:0;margin:0">Keep the original file with each entry</label>` : `<span class="grow"></span>`}
+            <button type="button" class="btn alt" id="hiBack">Back</button><button type="button" class="btn" id="hiSave" ${n ? "" : "disabled"}>${icon("check")}Save ${n} entr${n === 1 ? "y" : "ies"}</button></div>`;
+      } else {
+        body = `<div class="done-box"><span class="ok-ring">${icon("check")}</span><h3>${st.saved} entr${st.saved === 1 ? "y" : "ies"} saved to the HUB</h3>
+          <p>From ${st.mode === "file" && st.file ? esc(st.file.name) : "pasted text"} · ${esc(srcName())}${st.source === "MBM forum" ? " (private)" : ""}</p>
+          <div class="btns" style="justify-content:center"><a class="btn" href="#/hub?s=${encodeURIComponent(st.source)}&o=new">${icon("layers")}See the ${st.saved} entr${st.saved === 1 ? "y" : "ies"}</a><button type="button" class="btn alt" id="hiMore">${icon("upload")}Add more</button></div></div>`;
+      }
+      view.innerHTML = `<div class="hub">${pageHead("Add references", { back: `#/hub${hubLast.qs}`, sub: "Upload an MBM forum PDF, a screenshot or a photo, or paste text. The AI splits it into entries for you to check." })}
+        <section class="card add-card">${body}</section></div>`;
+      wire();
+    };
+
+    const pickFile = (file) => {
+      if (!file) return;
+      st.error = "";
+      if (file.size > MAX) { st.tooBig = file; st.file = null; }
+      else { st.file = file; st.tooBig = null; }
+      paint();
+    };
+
+    const read = async () => {
+      if (st.mode === "file" && !st.file) return toast("Choose a file, or paste the text.", "err");
+      if (st.mode === "text" && !st.text.trim()) return toast("Paste the text first.", "err");
+      st.step = 2;
+      st.error = "";
+      paint();
+      const stages = [[`Uploaded ${st.mode === "file" ? st.file.name : "the text"}`, 0], ["Reading the pages", 1500], ["Splitting into entries", 6000], ["Checking codes, models and part numbers", 16000]];
+      const t0 = Date.now();
+      const tick = () => {
+        const box = $("#hiStages");
+        if (!box) return;
+        const el = Date.now() - t0;
+        const now = stages.filter(([, at]) => el >= at).length - 1;
+        box.innerHTML = stages.map(([l], i) => `<li class="${i < now ? "done" : i === now ? "now" : ""}"><span class="dotc">${i < now ? icon("check") : i === now ? (window.MLFeedback ? window.MLFeedback.beat("sm") : "") : ""}</span>${esc(l)}</li>`).join("");
+      };
+      tick();
+      const timer = setInterval(tick, 500);
+      st.ctl = new AbortController();
+      const fd = new FormData();
+      if (st.mode === "file") fd.append("file", st.file);
+      fd.append("data", JSON.stringify({ source: st.source, text: st.mode === "text" ? st.text : "" }));
+      try {
+        const out = await api("/faults/read", { method: "POST", form: fd, timeout: 120000, signal: st.ctl.signal });
+        st.entries = out.entries.map((x) => ({ ...x }));
+        st.keep = st.entries.map(() => true);
+        st.step = 3;
+      } catch (err) {
+        st.step = 1;
+        st.error = st.ctl.signal.aborted ? "You stopped it." : err.aborted ? "It took longer than 2 minutes. Try a shorter part (a few pages), or paste the text." : err.message;
+      } finally {
+        clearInterval(timer);
+        st.ctl = null;
+      }
+      if (parseHash().parts[1] === "add") paint();
+    };
+
+    const save = async (list, btn) => {
+      busy(btn, true, "Saving…");
+      try {
+        const saved = await api("/faults/bulk", { method: "POST", body: { source: st.source, sourceRef: st.ref, entries: list } });
+        let fails = 0;
+        if (st.file && st.mode === "file" && st.keepFile) {
+          for (const f of saved.faults) {
+            const one = new FormData();
+            one.append("file", st.file);
+            try { await api(`/faults/${f.id}/file`, { method: "POST", form: one, timeout: 90000 }); } catch { fails += 1; }
+          }
+        }
+        await refresh("faults");
+        st.saved = saved.faults.length;
+        if (saved.missingFields?.length) toast(`Saved. Airtable has no ${saved.missingFields.map((x) => `"${x}"`).join(", ")} field yet.`, "err");
+        st.step = 4;
+        if (fails) toast(`${fails} file copy(ies) did not attach. Open the entry and attach it again.`, "err");
+        paint();
+      } catch (err) {
+        toast(err.message, "err");
+        busy(btn, false);
+      }
+    };
+
+    const wire = () => {
+      const on = (sel, ev, fn) => { const el = $(sel); if (el) el[ev] = fn; };
+      on(".src-pick", "onclick", (e) => { const b = e.target.closest("[data-s]"); if (!b) return; st.source = b.dataset.s; paint(); });
+      on("#hiRef", "oninput", (e) => (st.ref = e.target.value));
+      on("#hiMode", "onclick", (e) => { const b = e.target.closest("[data-m]"); if (!b) return; st.mode = b.dataset.m; st.error = ""; paint(); });
+      on("#hiFile", "onchange", (e) => pickFile(e.target.files[0]));
+      on("#hiRm", "onclick", () => { st.file = null; st.error = ""; paint(); });
+      on("#hiText", "oninput", (e) => (st.text = e.target.value));
+      const drop = $("#hiDrop");
+      if (drop) {
+        drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
+        drop.ondragleave = () => drop.classList.remove("over");
+        drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("over"); pickFile(e.dataTransfer.files[0]); };
+      }
+      on("#hiGo", "onclick", read);
+      on("#hiRetry", "onclick", read);
+      on("#hiPaste", "onclick", () => { st.mode = "text"; st.error = ""; paint(); $("#hiText")?.focus(); });
+      on("#hiOne", "onclick", (e) => save([{ title: st.file.name.replace(/\.[a-z0-9]+$/i, "").slice(0, 120) || "Reference file", details: `Original file: ${st.file.name}` }], e.currentTarget));
+      on("#hiCancel", "onclick", () => st.ctl?.abort());
+      on("#hiAll", "onclick", () => { st.keep = st.entries.map(() => true); paint(); });
+      on("#hiNone", "onclick", () => { st.keep = st.entries.map(() => false); paint(); });
+      $$(".rev-list [data-keep]").forEach((c) => (c.onchange = () => { st.keep[Number(c.dataset.keep)] = c.checked; paint(); }));
+      $$(".rev-list [data-k]").forEach((c) => (c.oninput = () => (st.entries[Number(c.dataset.i)][c.dataset.k] = c.value)));
+      $$(".rev details").forEach((d) => (d.ontoggle = () => { d.querySelector("summary").lastChild.textContent = d.open ? "Hide fields" : "Show all fields"; }));
+      on("#hiKeepFile", "onchange", (e) => (st.keepFile = e.target.checked));
+      on("#hiBack", "onclick", () => { st.step = 1; paint(); });
+      on("#hiSave", "onclick", (e) => {
+        const list = st.entries.filter((_, i) => st.keep[i]).map((x) => ({ ...x, title: String(x.title || "").trim() }));
+        if (!list.length) return toast("Tick at least one entry.", "err");
+        if (list.some((x) => !x.title)) return toast("Every entry needs a title.", "err");
+        save(list, e.currentTarget);
+      });
+      on("#hiMore", "onclick", () => { Object.assign(st, { step: 1, file: null, tooBig: null, text: "", entries: [], keep: [], error: "", saved: 0 }); paint(); });
+    };
+    paint();
   }
 
   // ---------- Merc Lab Assistant + the AI team ----------

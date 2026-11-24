@@ -74,15 +74,88 @@ function fitsList(v) {
 
 // Merc HUB entries come from three sources. Only "Our case" entries can ever
 // be exported (MBM forum material is MBM's and stays private).
-const FAULT_TEXT = { title: ["Title", 120], docNo: ["Doc no", 20], makeModel: ["Make model", 80], engine: ["Engine", 40], symptom: ["Symptom", 2000], codes: ["Fault codes", 2000], tests: ["Tests done", 3000], cause: ["Root cause", 2000], fix: ["Fix", 3000], parts: ["Parts used", 1000], tags: ["Tags", 200], sourceRef: ["Source ref", 200], details: ["Details", 20000] };
+const FAULT_TEXT = { title: ["Title", 120], docNo: ["Doc no", 20], makeModel: ["Make model", 80], engine: ["Engine", 40], symptom: ["Symptom", 2000], codes: ["Fault codes", 2000], tests: ["Tests done", 3000], cause: ["Root cause", 2000], fix: ["Fix", 3000], parts: ["Parts used", 1000], tags: ["Tags", 200], sourceRef: ["Source ref", 200], details: ["Details", 20000], functionGroup: ["Function group", 80] };
 const SOURCES = ["Our case", "MBM forum", "General info"];
+
+// Topic numbers for easy tracking: MLH-0001 our cases, MBM-0001 forum,
+// GEN-0001 general info. Given once when an entry is made and never changed
+// (not even if its source changes later), so a number always means one entry.
+const TOPIC_PREFIX = { "Our case": "MLH", "MBM forum": "MBM", "General info": "GEN" };
+const TOPIC_RE = /^(MLH|MBM|GEN)-(\d{4,})$/;
+function nextTopicNos(existing, sources) {
+  const max = {};
+  for (const t of existing) {
+    const m = TOPIC_RE.exec(String(t || ""));
+    if (m) max[m[1]] = Math.max(max[m[1]] || 0, Number(m[2]));
+  }
+  return sources.map((s) => {
+    const p = TOPIC_PREFIX[s] || "MLH";
+    max[p] = (max[p] || 0) + 1;
+    return `${p}-${String(max[p]).padStart(4, "0")}`;
+  });
+}
+// Structured tests and remedies (HUB-DATA-MODEL.md), kept as JSON text:
+//   tests:    [{ check, spec, measured, then }] in order
+//   remedies: [{ label: "A", title, when, steps: [..], parts: [{ name, part_no, qty }], no_parts: "none" | "depends" | "" }]
+// The plain text fields (Tests done, Fix, Parts used) are written from them
+// too, so search, the Assistant, export and Fault cases keep working.
+const s300 = (v, n = 300) => (typeof v === "string" ? v.trim().slice(0, n) : typeof v === "number" ? String(v) : "");
+function cleanTests(list) {
+  if (!Array.isArray(list)) return [];
+  return list.slice(0, 30).map((t) => ({ check: s300(t?.check), spec: s300(t?.spec, 80), measured: s300(t?.measured, 80), then: s300(t?.then, 120) })).filter((t) => t.check || t.spec || t.measured || t.then);
+}
+function cleanRemedies(list) {
+  if (!Array.isArray(list)) return [];
+  return list.slice(0, 5).map((r) => ({
+    title: s300(r?.title, 160),
+    when: s300(r?.when, 160),
+    steps: (Array.isArray(r?.steps) ? r.steps : []).map((x) => s300(x, 500)).filter(Boolean).slice(0, 20),
+    parts: (Array.isArray(r?.parts) ? r.parts : []).map((x) => {
+      const q = Number(x?.qty);
+      return { name: s300(x?.name, 120), part_no: s300(x?.part_no, 40), qty: Number.isFinite(q) && q > 0 && q < 1000 ? q : null };
+    }).filter((x) => x.name || x.part_no).slice(0, 30),
+    no_parts: ["none", "depends"].includes(r?.no_parts) ? r.no_parts : "",
+  })).filter((r) => r.title || r.steps.length || r.parts.length).map((r, i) => ({ label: "ABCDE"[i], ...r }));
+}
+const testsText = (tests) => tests.map((t, i) => `${i + 1}. ${[t.check, t.spec && `Spec ${t.spec}`, t.measured && `Measured ${t.measured}`].filter(Boolean).join(" · ")}${t.then ? ` → ${t.then}` : ""}`).join("\n");
+const fixText = (rems) => rems.map((r) => [`${r.label}: ${r.title || "Remedy"}${r.when ? ` (${r.when})` : ""}`, ...r.steps.map((x) => `- ${x}`)].join("\n")).join("\n");
+const partsText = (rems) => rems.flatMap((r) => (r.parts.length ? r.parts.map((x) => `${x.name}${x.part_no ? ` (${x.part_no})` : ""}${x.qty ? ` x${x.qty}` : ""}`) : r.no_parts === "none" ? [`${r.label}: no parts needed`] : [])).join("; ");
+
+// New HUB fields. Until the owner adds them in Airtable, entries still save
+// without them, and the reply says which ones are missing.
+const NEW_FAULT_FIELDS = ["Topic no", "Function group", "Tests JSON", "Remedies JSON"];
+function unknownField(err) {
+  if (!/unknown field/i.test(err?.message || "")) return "";
+  return NEW_FAULT_FIELDS.find((n) => err.message.toLowerCase().includes(n.toLowerCase())) || "";
+}
+async function writeFaults(write, rows) {
+  const missing = [];
+  for (;;) {
+    try {
+      const saved = await write(rows);
+      return { saved, missing };
+    } catch (err) {
+      const name = unknownField(err);
+      if (!name || missing.includes(name)) throw err;
+      missing.push(name);
+      rows = rows.map((r) => { const { [name]: _, ...rest } = r; return rest; });
+    }
+  }
+}
+async function createFaults(rows) {
+  const existing = (await db.list("faults")).map((r) => r.fields["Topic no"]);
+  const nos = nextTopicNos(existing, rows.map((f) => f.Source));
+  return writeFaults((list) => db.create("faults", list), rows.map((f, i) => ({ ...f, "Topic no": nos[i] })));
+}
 
 function faultOut(r) {
   const f = r.fields;
   const src = f.Source?.name || f.Source;
-  const o = { id: r.id, date: f.Date || "", jobId: f["Job record"] || "", plateKey: f["Plate key"] || "", mileageKm: f["Mileage km"] ?? null, hours: f.Hours ?? null, verified: !!f.Verified, source: SOURCES.includes(src) ? src : "Our case" };
+  const o = { id: r.id, topicNo: f["Topic no"] || "", date: f.Date || "", jobId: f["Job record"] || "", plateKey: f["Plate key"] || "", mileageKm: f["Mileage km"] ?? null, hours: f.Hours ?? null, verified: !!f.Verified, source: SOURCES.includes(src) ? src : "Our case" };
   for (const [k, [name]] of Object.entries(FAULT_TEXT)) o[k] = f[name] || "";
   o.files = (Array.isArray(f.Files) ? f.Files : []).map((a) => ({ url: a.url, name: a.filename || "File", type: a.type || "" }));
+  o.testSteps = cleanTests(parseJson(f["Tests JSON"], []));
+  o.remedies = cleanRemedies(parseJson(f["Remedies JSON"], []));
   return o;
 }
 
@@ -97,6 +170,17 @@ function faultFields(b) {
   if ("plate" in b) fields["Plate key"] = plateKey(b.plate);
   if ("date" in b) fields.Date = /^\d{4}-\d{2}-\d{2}$/.test(b.date || "") ? b.date : P.todayKL();
   if ("verified" in b) fields.Verified = b.verified === true;
+  if ("testSteps" in b) {
+    const t = cleanTests(b.testSteps);
+    fields["Tests JSON"] = t.length ? JSON.stringify(t) : "";
+    if (t.length || !("tests" in b)) fields["Tests done"] = testsText(t);
+  }
+  if ("remedies" in b) {
+    const r = cleanRemedies(b.remedies);
+    fields["Remedies JSON"] = r.length ? JSON.stringify(r) : "";
+    if (r.length || !("fix" in b)) fields.Fix = fixText(r);
+    if (r.length || !("parts" in b)) fields["Parts used"] = partsText(r);
+  }
   for (const [k, f, max] of [["mileageKm", "Mileage km", 3000000], ["hours", "Hours", 500]]) {
     if (!(k in b)) continue;
     if (b[k] === "" || b[k] === null) fields[f] = null;
@@ -279,14 +363,14 @@ function register(router, { wrap, oneFile, fileOf, bodyData, jobOut, newToken })
     if (!fields.Symptom && !fields.Title && !fields.Details) throw bad("Write the symptom (what the customer noticed).");
     if (!fields.Title) fields.Title = `${fields["Make model"] || "Car"}: ${(fields.Symptom || fields.Details).split("\n")[0]}`.slice(0, 120);
     if (!fields.Source) fields.Source = "Our case";
-    const [row] = await db.create("faults", [fields]);
-    res.status(201).json(faultOut(row));
+    const { saved: [row], missing } = await createFaults([fields]);
+    res.status(201).json({ ...faultOut(row), missingFields: missing });
   }));
   router.patch("/faults/:id", wrap(async (req, res) => {
     if (!isRec(req.params.id)) throw bad("Unknown fault case.");
     await db.get("faults", req.params.id);
-    const [row] = await db.update("faults", [{ id: req.params.id, fields: faultFields(req.body || {}) }]);
-    res.json(faultOut(row));
+    const { saved: [row], missing } = await writeFaults((list) => db.update("faults", list.map((fields) => ({ id: req.params.id, fields }))), [faultFields(req.body || {})]);
+    res.json({ ...faultOut(row), missingFields: missing });
   }));
 
   // Merc HUB import, step 1: the AI reads a document, screenshot, photo of
@@ -314,7 +398,7 @@ function register(router, { wrap, oneFile, fileOf, bodyData, jobOut, newToken })
     if (!SOURCES.includes(b.source)) throw bad("Choose where this came from: Our case, MBM forum or General info.");
     const list = Array.isArray(b.entries) ? b.entries.slice(0, 30) : [];
     if (!list.length) throw bad("Nothing to save. Tick at least one entry.");
-    const keys = ["title", "makeModel", "engine", "symptom", "codes", "tests", "cause", "fix", "parts", "details", "tags", "sourceRef"];
+    const keys = ["title", "makeModel", "engine", "symptom", "codes", "tests", "cause", "fix", "parts", "details", "tags", "sourceRef", "functionGroup"];
     const rows = list.map((e) => {
       const picked = Object.fromEntries(keys.filter((k) => typeof e?.[k] === "string").map((k) => [k, e[k]]));
       if (!picked.sourceRef && typeof b.sourceRef === "string") picked.sourceRef = b.sourceRef;
@@ -322,8 +406,25 @@ function register(router, { wrap, oneFile, fileOf, bodyData, jobOut, newToken })
       if (!fields.Title) throw bad("Every entry needs a title.");
       return fields;
     });
-    const saved = await db.create("faults", rows);
-    res.status(201).json({ faults: saved.map(faultOut) });
+    const { saved, missing } = await createFaults(rows);
+    res.status(201).json({ faults: saved.map(faultOut), missingFields: missing });
+  }));
+
+  // Give topic numbers to entries made before numbers existed, oldest first.
+  router.post("/faults/number-old", wrap(async (req, res) => {
+    const all = await db.list("faults");
+    const todo = all.filter((r) => !TOPIC_RE.test(String(r.fields["Topic no"] || "")))
+      .sort((a, b) => String(a.fields.Date || "").localeCompare(String(b.fields.Date || "")) || String(a.createdTime || "").localeCompare(String(b.createdTime || "")) || a.id.localeCompare(b.id));
+    if (!todo.length) return res.json({ numbered: 0 });
+    const src = (r) => { const v = r.fields.Source?.name || r.fields.Source; return SOURCES.includes(v) ? v : "Our case"; };
+    const nos = nextTopicNos(all.map((r) => r.fields["Topic no"]), todo.map(src));
+    try {
+      await db.update("faults", todo.map((r, i) => ({ id: r.id, fields: { "Topic no": nos[i] } })));
+    } catch (err) {
+      if (unknownField(err)) throw bad('Add the "Topic no" field (single line text) to the faults table in Airtable first.');
+      throw err;
+    }
+    res.json({ numbered: todo.length });
   }));
 
   // Keep the original document / screenshot with the entry.
@@ -370,4 +471,4 @@ function register(router, { wrap, oneFile, fileOf, bodyData, jobOut, newToken })
   }));
 }
 
-module.exports = { register, inspectionPage, addApproval, approveRoute, packageOut, faultOut, cleanInspection, FUEL };
+module.exports = { nextTopicNos, register, inspectionPage, addApproval, approveRoute, packageOut, faultOut, cleanInspection, FUEL };
