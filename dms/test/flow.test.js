@@ -1390,6 +1390,98 @@ test("HUB: saves still work before the new Airtable fields exist", async () => {
   }
 });
 
+// ================= service quotation =================
+
+const SQ = require("../server/servicequote");
+
+test("service quote: due items from the car's own invoices, today's prices, A/B swap", async () => {
+  reset();
+  const today = P.todayKL();
+  const ago = (m) => P.addMonths(today, -m);
+  const seal = () => ({ type: "part", description: "SEAL RING DRAIN PLUG", qty: 1, unitPrice: 5, amount: 5, partNo: "N 000 000 00 01" });
+  const cabin = () => ({ type: "part", description: "CABIN FILTER (CHARCOAL)", qty: 1, unitPrice: 120, amount: 120, partNo: "A 205 830 00 18" });
+  const labour = () => ({ type: "labour", description: "PERFORM SERVICE", hours: 1.5, amount: 150 });
+  const pads = () => ({ type: "part", description: "BRAKE PAD, FRONT", qty: 1, unitPrice: 350, amount: 350, partNo: "A 000 420 00 00" });
+  demoInvoice(201, ago(26), { km: 38000, request: "SERVICE A", lines: [oil(), filter(), seal(), cabin(), labour(), pads()] });
+  demoInvoice(202, ago(12), { km: 60000, request: "SERVICE B", lines: [oil(), filter(), seal(), labour()] });
+  demoInvoice(203, ago(2), { plate: "OTHER 1", km: 1000, request: "SERVICE A", lines: [oil(), filter()] });
+  store.vehicles.push({ id: newId(), fields: { Plate: "VDM 2841", "Plate key": "VDM2841", "Mileage km": 70000, "Owner name": "Demo Customer" } });
+  // The filter costs more now; nothing in stock for the oil.
+  store.parts.push({ id: newId(), fields: { Part: "Oil filter", "Part no": "A0000000001", "Qty left": 2, "Selling price": 75, "Bought on": ago(1) } });
+
+  cookie = "";
+  assert.equal((await call("GET", "/api/service-quote/VDM2841", { noAuth: true })).status, 401);
+  await login();
+  assert.equal((await call("GET", "/api/service-quote/NOPE1")).status, 404);
+  const r = await call("GET", "/api/service-quote/VDM2841");
+  assert.equal(r.status, 200);
+  const o = r.body;
+  assert.equal(o.source, "history");
+  assert.equal(o.lastService.docNo, "202");
+  assert.equal(o.group.request, "SERVICE A", "B last time, so A now");
+  const d = o.group.lines.map((l) => l.description);
+  assert.deepEqual(d, ["ENGINE OIL MB229.5 5W-40", "OIL FILTER", "SEAL RING DRAIN PLUG", "CABIN FILTER (CHARCOAL)", "PERFORM SERVICE"]);
+  assert.ok(!d.includes("BRAKE PAD, FRONT"), "wear parts are never added");
+  const f = o.items.find((i) => i.item === "Oil filter");
+  assert.equal(f.unitPrice, 75);
+  assert.equal(f.priceFrom, "stock");
+  assert.equal(f.lastPrice, 60);
+  assert.equal(f.priceChanged, true);
+  assert.equal(f.stockLeft, 2);
+  const oilItem = o.items.find((i) => i.item === "Engine oil");
+  assert.equal(oilItem.qty, 7);
+  assert.equal(oilItem.unitPrice, 80);
+  assert.equal(oilItem.priceFrom, "last");
+  assert.equal(o.items.find((i) => i.item === "Cabin filter").lastDoc, "201");
+  assert.equal(o.group.lines.find((l) => l.type === "labour").amount, 150, "1.5 h at RM 100/h");
+  assert.ok(o.checks.some((c) => /BRAKE PAD/.test(c)));
+  assert.ok(o.checks.some((c) => /Air filter: no record/.test(c)), "70,000 km and never changed here");
+  assert.equal(o.total, 7 * 80 + 75 + 5 + 120 + 150);
+  assert.ok(o.notes.some((n) => /prices changed/.test(n)));
+
+  // The filled lines save as a normal estimate.
+  const est = await call("POST", "/api/jobs", { body: { customer: { name: "Demo Customer", phone: "0123456789" }, vehicle: { makeModel: "C200", regNo: "VDM 2841", mileageKm: "70000" }, groups: [o.group] } });
+  assert.equal(est.status, 201, JSON.stringify(est.body));
+  assert.equal(est.body.job.docType, "Estimate");
+  assert.equal(est.body.job.total > 0, true);
+});
+
+test("service quote: no history uses the Service package that fits, else the last same-model service", () => {
+  const today = "2026-11-24";
+  const v = { key: "NEW1", plate: "NEW 1", makeModel: "C200", chassisNo: "WDD2050421F123456", mileageKm: 30000 };
+  const parts = [{ id: "recPART0000000001", name: "Oil filter", partNo: "A0000000001", sellingPrice: 70, qtyLeft: 4, boughtOn: today }];
+  const pkgs = [
+    { id: "recPKG00000000001", name: "Service A (W177)", request: "SERVICE A", active: true, setsService: true, fits: ["177"], lines: [{ type: "part", description: "OIL FILTER 177", qty: 1, unitPrice: 50 }] },
+    { id: "recPKG00000000002", name: "Service A (W205)", request: "SERVICE A", active: true, setsService: true, fits: ["205"], lines: [{ type: "part", partId: "recPART0000000001", description: "OIL FILTER", partNo: "A0000000001", qty: 1, unitPrice: 60 }, { type: "labour", description: "PERFORM SERVICE A", hours: 2, amount: 180 }] },
+  ];
+  let o = SQ.serviceQuote({ vehicle: v, jobs: [], parts, packages: pkgs, labourRate: 120, today });
+  assert.equal(o.source, "package");
+  assert.equal(o.package.name, "Service A (W205)");
+  assert.equal(o.group.request, "SERVICE A");
+  assert.equal(o.group.lines[0].unitPrice, 70, "today's stock price");
+  assert.equal(o.group.lines[1].amount, 240, "2 h at today's rate");
+  assert.equal(o.lastService, null);
+
+  // No package: copy the oil and filter from the last W205 service.
+  const job = { id: "recJOB00000000001", invoiceNo: "INV-1", invoiceDate: "2026-10-01", status: "Paid", plate: "OLD 2", car: "C300 (W205)", mileageKm: 80000, groups: [{ request: "SERVICE B", lines: [oil(), filter(), { type: "part", description: "BRAKE DISC", qty: 2, unitPrice: 400 }, { type: "labour", description: "PERFORM SERVICE B", hours: 2, amount: 200 }] }] };
+  o = SQ.serviceQuote({ vehicle: v, jobs: [job], parts, packages: [], labourRate: 120, today });
+  assert.equal(o.source, "model");
+  assert.deepEqual(o.group.lines.map((l) => l.description), ["ENGINE OIL MB229.5 5W-40", "OIL FILTER", "PERFORM SERVICE B"]);
+  assert.equal(o.group.lines[1].unitPrice, 70);
+  assert.ok(o.notes.some((n) => /last W205 service/.test(n)));
+
+  // Nothing to go on: says so, no lines.
+  o = SQ.serviceQuote({ vehicle: { ...v, chassisNo: "", makeModel: "Unknown" }, jobs: [], parts, packages: [], today });
+  assert.equal(o.group, null);
+  assert.ok(o.notes.some((n) => /Add the parts by hand/.test(n)));
+
+  assert.equal(SQ.nextRequest("TO PERFORM SERVICE A"), "TO PERFORM SERVICE B");
+  assert.equal(SQ.itemOf("CABIN AIR FILTER").id, "cabin");
+  assert.equal(SQ.itemOf("AIR FILTER ELEMENT").id, "air");
+  assert.equal(SQ.itemOf("OIL FILTER").id, "oilFilter");
+  assert.equal(SQ.itemOf("TRANSMISSION OIL 236.17").id, "atf");
+});
+
 // ================= Alerts =================
 test("alerts: approval pops up once, bell list, mark read, phone on/off, dead phones dropped", async () => {
   const notify = require("../server/notify");

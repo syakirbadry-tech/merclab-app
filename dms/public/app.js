@@ -888,6 +888,24 @@
   });
   const lineTotal = (lines) => lines.reduce((t, l) => t + (l.type === "part" ? (Number(l.qty) || 0) * (Number(l.unitPrice) || 0) : Number(l.amount) || 0), 0);
 
+  // The "what is due" summary above a service quotation.
+  const PRICE_FROM = { stock: "today's stock price", last: "last price charged", rate: "today's labour rate", package: "package price" };
+  function svcQuoteHtml(o) {
+    const last = o.lastService;
+    const head = last ? `Last service ${dmy(last.date)}${last.km ? ` at ${km(last.km)}` : ""} · ${esc(last.docNo)}${last.request ? ` · ${esc(last.request)}` : ""}` : "No service for this car in our records yet.";
+    const due = o.due?.date ? ` · Next service due ${dmy(o.due.date)}${o.due.km ? ` or ${km(o.due.km)}` : ""}` : "";
+    const rows = o.items.map((i) => `<tr><td><b>${esc(i.item)}</b><div class="sm">${esc(i.description)}${i.partNo ? ` · ${esc(i.partNo)}` : ""}</div><div class="sm muted">${esc(i.why || "")}</div></td>
+      <td class="num">${i.qty ?? ""}</td>
+      <td class="num strong">${rm(i.unitPrice)}${i.priceChanged ? `<div>${pill(`was ${rm(i.lastPrice)}`, "warn")}</div>` : ""}<div class="sm muted">${esc(PRICE_FROM[i.priceFrom] || "")}</div>${i.stockLeft === 0 ? `<div>${pill("None in stock", "bad")}</div>` : i.stockLeft > 0 ? `<div class="sm muted">${i.stockLeft} in stock</div>` : ""}</td>
+      <td class="d sm">${i.lastDate ? `${dmy(i.lastDate)}${i.lastKm ? `<br>${km(i.lastKm)}` : ""}${i.lastDoc ? `<br>${esc(i.lastDoc)}` : ""}` : "—"}</td></tr>`).join("");
+    return `<div class="card-h"><h2>${icon("sparkle")} What this car needs</h2><div class="r"><b>${rm(o.total)}</b></div></div>
+      <p class="muted" style="margin-top:0">${head}${due}</p>
+      ${o.notes.map((n) => `<div class="notice">${icon("alert")}<div>${esc(n)}</div></div>`).join("")}
+      ${rows ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Price</th><th class="d">Last changed</th></tr></thead><tbody>${rows}</tbody></table></div>` : ""}
+      ${o.checks.length ? `<h3 style="margin:14px 0 6px">Also check (not added)</h3><ul class="svcq-checks">${o.checks.map((c) => `<li>${esc(c)}</li>`).join("")}</ul>` : ""}
+      <p class="hint" style="margin-bottom:0">Intervals are a general Mercedes guide. The lines are filled in below: change anything, then press Save estimate. Nothing is sent to the customer.</p>`;
+  }
+
   function jobForm(mode, job, q) {
     if (mode === "invoice" && !job) return (location.hash = "#/jobs");
     // Prefill from a car or a customer (links on their pages).
@@ -904,14 +922,15 @@
         };
       }
     }
-    crumbs(mode === "invoice" ? [["Jobs", "#/jobs"], [job.estimateNo, `#/jobs/${job.id}`], ["Make invoice"]] : [["Jobs", "#/jobs"], ["New estimate"]]);
+    const svcKey = mode === "new" && !job && q?.get("svc") === "1" && pre?.plate ? plateKey(pre.plate) : "";
+    crumbs(mode === "invoice" ? [["Jobs", "#/jobs"], [job.estimateNo, `#/jobs/${job.id}`], ["Make invoice"]] : [["Jobs", "#/jobs"], [svcKey ? "Service quotation" : "New estimate"]]);
     const d = pre?.details || {};
     const adv = d.advisor || LS.get("advisor") || {};
     const groups = pre?.groups?.length ? pre.groups : [{ request: "", lines: [] }];
     const parts = state.parts;
     const v = (x) => esc(x ?? "");
     view.innerHTML = `
-      ${pageHead(mode === "invoice" ? `Make invoice from ${esc(job.estimateNo)}` : "New estimate", { back: job ? `#/jobs/${job.id}` : "#/jobs", sub: mode === "invoice" ? "Change the lines to what was actually done." : "Customer, car and the work to do." })}
+      ${pageHead(mode === "invoice" ? `Make invoice from ${esc(job.estimateNo)}` : svcKey ? `Service quotation ${plateTag(pre.plate)}` : "New estimate", { back: job ? `#/jobs/${job.id}` : svcKey ? `#/vehicles/${svcKey}` : "#/jobs", sub: mode === "invoice" ? "Change the lines to what was actually done." : svcKey ? "Worked out from this car's past invoices. Check it, then save it as an estimate." : "Customer, car and the work to do." })}
       <form id="jForm" autocomplete="off" novalidate>
         ${mode === "new" && !pre ? `<div class="card finder" id="finder"><h2>Find the customer or car</h2>
           <p class="muted" style="margin:-4px 0 10px">Type a plate, name or phone. Pick the result to fill everything in.</p>
@@ -939,6 +958,7 @@
           </div>
         </div>
         <datalist id="partOptions">${parts.map((p) => `<option value="${esc(p.name)}${p.partNo ? " · " + esc(p.partNo) : ""}">${rm(p.sellingPrice)} · ${p.qtyLeft} left</option>`).join("")}</datalist>
+        ${svcKey ? `<div class="card svcq" id="svcBox" style="margin-top:16px" aria-live="polite"><p class="muted" style="margin:0">Checking this car's past invoices…</p></div>` : ""}
         <div class="card" style="margin-top:16px"><div class="card-h"><h2>Work</h2><div class="r">
             ${state.packages.some((x) => x.active) ? `<select id="pkgPick" aria-label="Add a package" style="min-height:34px;padding:5px 10px;font-size:14px;width:auto"><option value="">+ Add package…</option>${state.packages.filter((x) => x.active).map((x) => `<option value="${x.id}">${esc(x.name)} · ${rm(lineTotal(packageLines(x)))}</option>`).join("")}</select>` : ""}
             <button type="button" class="btn alt sm" id="addGroup">${icon("plus")}Customer request</button></div></div>
@@ -1130,6 +1150,17 @@
     form.discount.oninput = totals;
     $("#addGroup").onclick = () => { box.insertAdjacentHTML("beforeend", groupHtml({ request: "", lines: [] }, $$(".group", box).length)); renumber(); };
     totals();
+    if (svcKey) api(`/service-quote/${encodeURIComponent(svcKey)}`).then((out) => {
+      if (!$("#svcBox")) return; // left the page
+      $("#svcBox").innerHTML = svcQuoteHtml(out);
+      if (out.group) {
+        box.innerHTML = groupHtml(out.group, 0);
+        renumber();
+        totals();
+        $("#nextSvc").checked = true;
+      }
+      if (!form.mileageKm.value && out.car.mileageKm) form.mileageKm.value = out.car.mileageKm;
+    }).catch((err) => { if ($("#svcBox")) $("#svcBox").innerHTML = `<div class="notice bad">${icon("alert")}<div>${esc(err.message)}</div></div>`; });
 
     form.onsubmit = async (e) => {
       e.preventDefault();
@@ -2167,6 +2198,33 @@
     return out;
   }
 
+  // The car a question is about: a plate in it, else the owner's name.
+  function carInQuestion(q) {
+    const flat = String(q).toUpperCase().replace(/[^A-Z0-9]/g, ""); // not plateKey: that cuts at 16
+    const byPlate = state.vehicles.filter((v) => v.key.length >= 3 && flat.includes(v.key)).sort((a, b) => b.key.length - a.key.length)[0];
+    if (byPlate) return byPlate;
+    const words = ` ${String(q).toLowerCase().replace(/[^a-z0-9]+/g, " ")} `;
+    const hits = state.vehicles.filter((v) => {
+      const n = String(v.ownerName || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      return n.length >= 4 && words.includes(` ${n} `);
+    });
+    return hits.length === 1 ? hits[0] : null;
+  }
+  function svcQuoteText(o) {
+    const c = o.car;
+    const out = [`${c.plate} · ${c.makeModel || "car"}${c.ownerName ? ` · ${c.ownerName}` : ""}`];
+    out.push(o.lastService ? `Last service ${dmy(o.lastService.date)}${o.lastService.km ? ` at ${km(o.lastService.km)}` : ""} (${o.lastService.docNo}).` : "No service here before.");
+    if (o.items.length) {
+      out.push("", "To replace:");
+      for (const i of o.items) out.push(`• ${i.description}${i.partNo ? ` (${i.partNo})` : ""}${i.qty && i.item !== "Labour" && i.item !== "Sundry" ? ` x${i.qty}` : ""} ${rm(i.unitPrice)}${i.priceChanged ? ` (was ${rm(i.lastPrice)})` : ""}${i.stockLeft === 0 ? " · none in stock" : ""}`);
+      out.push("", `About ${rm(o.total)} before discount and tax.`);
+    }
+    if (o.checks.length) out.push("", "Also check:", ...o.checks.slice(0, 5).map((x) => `• ${x}`));
+    const notes = o.notes.filter((n) => !/marked below/.test(n)); // the "(was RM …)" above says it
+    if (notes.length) out.push("", ...notes);
+    return out.join("\n");
+  }
+
   function assistantContext(question = "") {
     const today = todayKL();
     const month = periodRange("m:" + today.slice(0, 7));
@@ -2244,7 +2302,7 @@
     };
     const drawLog = () => {
       $("#asLog").innerHTML = assistantLog.map((e) => `<div class="card"><div class="muted" style="margin-bottom:6px">${esc(AI_TEAM.find((a) => a[0] === e.role)?.[1] || "Assistant")} · ${esc(e.q)}</div>
-        ${e.err ? `<div class="notice bad">${icon("alert")}<div>${esc(e.err)}</div></div>` : e.a === null ? `<p class="muted">Thinking…</p>` : `<div style="white-space:pre-wrap">${esc(e.a)}</div>${e.src && e.src.length ? `<div class="chips" style="margin-top:10px">${e.src.map((s) => `<span class="pill line plain">${esc(s)}</span>`).join("")}</div>` : ""}`}</div>`).join("");
+        ${e.err ? `<div class="notice bad">${icon("alert")}<div>${esc(e.err)}</div></div>` : e.a === null ? `<p class="muted">Thinking…</p>` : `<div style="white-space:pre-wrap">${esc(e.a)}</div>${e.src && e.src.length ? `<div class="chips" style="margin-top:10px">${e.src.map((s) => `<span class="pill line plain">${esc(s)}</span>`).join("")}</div>` : ""}${e.link ? `<div class="btns"><a class="btn" href="${esc(e.link.href)}">${icon("plus")}${esc(e.link.label)}</a></div>` : ""}`}</div>`).join("");
     };
     $("#asRole").onclick = (e) => {
       const b = e.target.closest("[data-r]");
@@ -2262,6 +2320,25 @@
       assistantLog.unshift(entry);
       drawLog();
       busy($("#asGo"), true, "Asking…");
+      // "Service quotation for VDM 2841": worked out here from the records, no AI needed.
+      if (/quot|quote|sebut ?harga|estimate|anggaran/i.test(q) && /servi[cs]/i.test(q)) {
+        try {
+          const car = carInQuestion(q);
+          if (!car) {
+            entry.a = "Which car? Type the plate or the owner's name, e.g. \"Service quotation for VDM 2841\".";
+          } else {
+            const o = await api(`/service-quote/${encodeURIComponent(car.key)}`);
+            entry.a = svcQuoteText(o);
+            entry.src = [o.lastService?.docNo, o.package?.name, ...o.items.map((i) => i.lastDoc)].filter((x, i, a) => x && a.indexOf(x) === i).slice(0, 8);
+            entry.link = { href: `#/jobs/new?plate=${car.key}&svc=1`, label: "Open as estimate" };
+            $("#asQ").value = "";
+          }
+        } catch (err) {
+          entry.err = err.message;
+        }
+        busy($("#asGo"), false);
+        return drawLog();
+      }
       try {
         const out = await api("/assistant/ask", { method: "POST", body: { question: q, role, context: assistantContext(q) } });
         entry.a = out.answer;
@@ -3582,7 +3659,7 @@
     const msg = `Hi ${v.ownerName || ""}, this is ${brandName()} about your car ${v.plate}.`;
     view.innerHTML = `
       ${pageHead(`${esc(v.makeModel || "Car")} ${plateTag(v.plate)}`, { back: "#/vehicles", sub: v.ownerName ? `Owner: ${v.customerId ? `<a href="#/customers/${v.customerId}">${esc(v.ownerName)}</a>` : esc(v.ownerName)}` : "No owner yet",
-        acts: `${v.ownerPhone ? `<a class="btn wa" href="${esc(waLink(v.ownerPhone, msg))}" target="_blank" rel="noopener">${icon("chat")}WhatsApp owner</a>` : ""}<a class="btn" href="#/jobs/new?plate=${v.key}">${icon("plus")}New estimate</a>` })}
+        acts: `${v.ownerPhone ? `<a class="btn wa" href="${esc(waLink(v.ownerPhone, msg))}" target="_blank" rel="noopener">${icon("chat")}WhatsApp owner</a>` : ""}<a class="btn alt" href="#/jobs/new?plate=${v.key}&svc=1" title="Works out what is due from this car's past invoices, with today's prices">${icon("sparkle")}Service quote</a><a class="btn" href="#/jobs/new?plate=${v.key}">${icon("plus")}New estimate</a>` })}
       <div class="card"><div class="vhero">
         <div>${vphoto(v)}<div class="btns"><label class="btn alt sm upload">${icon("camera")}${v.photo ? "Change photo" : "Add photo"}<input type="file" id="vPhoto" accept="image/*"></label></div></div>
         <div><div class="facts">
