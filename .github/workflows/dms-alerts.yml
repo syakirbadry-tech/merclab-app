@@ -1,0 +1,17 @@
+# Wakes the DMS (free Render plan sleeps when idle) and runs the timed alerts:
+# today's bookings and money & stock at 08:30, and 1 hour before each booking.
+# Runs every 10 minutes from 07:00 to 21:59 Kuala Lumpur time (23:00-13:59 UTC),
+# so the server is not kept awake all night.
+name: DMS alerts wake-up
+on:
+  schedule:
+    - cron: "*/10 23,0-13 * * *"
+  workflow_dispatch:
+permissions: {}
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Run the timed alerts
+        run: curl -sS --retry 3 --retry-delay 20 --max-time 90 https://merclab-dms.onrender.com/cron/tick || echo "DMS not reachable this time"
