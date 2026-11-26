@@ -4154,24 +4154,65 @@
     }
   }
 
+  // Supplier receipts write part numbers their own way ("A 001 982 81 08 BOS").
+  // Match them to part numbers already keyed in (stock, part orders, jobs) and
+  // use our own part name; the receipt's wording is shown underneath.
+  const partKey = (s) => String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  function samePartNo(a, b) {
+    const x = partKey(a), y = partKey(b);
+    if (!x || !y) return false;
+    if (x === y) return true;
+    const mb = (k) => (k.match(/^A?(\d{10})(\d{4})?/) || []).slice(1).join("");
+    if (mb(x) && mb(y)) return mb(x) === mb(y);
+    const [sh, lo] = x.length < y.length ? [x, y] : [y, x];
+    return sh.length >= 6 && lo.startsWith(sh) && /^[A-Z]{1,4}$/.test(lo.slice(sh.length));
+  }
+  function knownPart(partNo) {
+    if (!partKey(partNo)) return null;
+    const stock = state.parts.filter((p) => samePartNo(p.partNo, partNo)).sort((a, b) => (b.boughtOn || "").localeCompare(a.boughtOn || ""))[0];
+    const order = state.partorders.filter((o) => samePartNo(o.partNo, partNo))[0];
+    let job = null, line = null;
+    for (const j of [...state.jobs].sort((a, b) => jobDate(b).localeCompare(jobDate(a)))) {
+      line = (j.groups || []).flatMap((g) => g.lines || []).find((l) => l.type === "part" && samePartNo(l.partNo, partNo));
+      if (line) { job = j; break; }
+    }
+    const name = stock?.name || order?.part || line?.description;
+    if (!name) return null;
+    return { name, partNo: stock?.partNo || order?.partNo || line?.partNo, brand: stock?.brand || "", job: job ? `${docNo(job)}${job.plate ? " · " + job.plate : ""}` : "" };
+  }
+  function matchReceipt(sug) {
+    const bare = (s) => String(s || "").toLowerCase().replace(/\b(sdn|bhd|berhad|enterprise|trading|co)\b|[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+    const got = bare(sug.supplier);
+    const names = [...new Set([...state.suppliers.map((x) => x.name), ...state.parts.map((x) => x.supplier)].filter(Boolean))];
+    const sup = got && names.find((n) => bare(n) && (got.includes(bare(n)) || bare(n).includes(got)));
+    const items = (sug.items || []).map((it) => {
+      const k = knownPart(it.partNo);
+      if (!k) return { ...it, newPart: !!partKey(it.partNo) };
+      return { ...it, name: k.name, partNo: k.partNo, brand: k.brand || it.brand, receiptName: it.name, receiptNo: it.partNo, onJob: k.job };
+    });
+    return { ...sug, supplier: sup || sug.supplier, items };
+  }
+
   function itemRow(it, ai) {
     const s = state.settings;
     const markup = it.markupPercent ?? s.markupPercent;
     const sell = it.sellingPrice ?? (it.unitCost != null ? sellPrice(it.unitCost, markup, s.roundTo) : "");
     const c = (v) => (ai && v != null && v !== "" ? "ai" : "");
     return `<div class="item">
-      <div class="row"><input class="${c(it.name)}" name="name" placeholder="Part name" aria-label="Part name" value="${esc(it.name)}"><button type="button" class="x" title="Remove" aria-label="Remove part">${icon("trash")}</button></div>
+      <div class="row"><input class="${it.receiptName ? "" : c(it.name)}" name="name" placeholder="Part name" aria-label="Part name" value="${esc(it.name)}"><button type="button" class="x" title="Remove" aria-label="Remove part">${icon("trash")}</button></div>
+      ${it.receiptName ? `<p class="sm muted" style="margin:4px 0 0">${icon("check")} Matched part no ${esc(it.partNo)} to your name. Receipt says “${esc(it.receiptName)}”${it.receiptNo && partKey(it.receiptNo) !== partKey(it.partNo) ? ` (${esc(it.receiptNo)})` : ""}${it.onJob ? ` · on job ${esc(it.onJob)}` : ""}.</p>` : it.newPart ? `<p class="sm muted" style="margin:4px 0 0">New part: this part no is not in the system yet, so the receipt's name is used.</p>` : ""}
       <div class="item-grid">
         <div><label>Qty</label><input class="${c(it.qty)}" name="qty" type="number" inputmode="decimal" step="any" min="0" value="${esc(it.qty ?? 1)}"></div>
         <div><label>Cost each</label><input class="${c(it.unitCost)}" name="unitCost" type="number" inputmode="decimal" step="0.01" min="0" value="${esc(it.unitCost ?? "")}"></div>
         <div><label>Markup %</label><input name="markupPercent" type="number" inputmode="decimal" step="any" min="0" value="${esc(markup)}"></div>
         <div><label>Sell each</label><input name="sellingPrice" type="number" inputmode="decimal" step="0.01" min="0" value="${esc(sell)}"></div>
       </div>
-      <div class="fgrid"><div><label>Part no</label><input class="${c(it.partNo)}" name="partNo" value="${esc(it.partNo || "")}"></div><div><label>Brand</label><input class="${c(it.brand)}" name="brand" value="${esc(it.brand || "")}"></div></div>
+      <div class="fgrid"><div><label>Part no</label><input class="${it.receiptName ? "" : c(it.partNo)}" name="partNo" value="${esc(it.partNo || "")}"></div><div><label>Brand</label><input class="${c(it.brand)}" name="brand" value="${esc(it.brand || "")}"></div></div>
     </div>`;
   }
 
   function purchaseForm(sug, file, ai, inboxItem) {
+    if (ai) sug = matchReceipt(sug);
     $("#buyCard").hidden = false;
     const box = $("#buyForm");
     const c = (v) => (ai && v != null && v !== "" ? "ai" : "");
