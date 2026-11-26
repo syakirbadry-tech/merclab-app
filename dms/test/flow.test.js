@@ -1220,6 +1220,42 @@ test("expenses: AI reads a transfer slip to a technician (recipient, amount, cat
   aiError = null;
 });
 
+test("AI reader: works out a PDF's type from its name and falls back when the model is refused", async () => {
+  const path = require.resolve("../server/ai");
+  const saved = require.cache[path];
+  const realFetch = global.fetch;
+  const realWarn = console.warn, realErr = console.error;
+  console.warn = console.error = () => {};
+  process.env.GEMINI_API_KEY = "test-key";
+  delete require.cache[path];
+  try {
+    const fresh = require("../server/ai");
+    assert.equal(fresh.fileType("", "DOS040 - Cash Sales Entry.pdf"), "application/pdf");
+    assert.equal(fresh.fileType("application/octet-stream", "r.PDF"), "application/pdf");
+    assert.equal(fresh.fileType("image/jpg", "x"), "image/jpeg");
+    assert.equal(fresh.fileType("image/png", "x.pdf"), "image/png");
+    const calls = [];
+    global.fetch = async (url, opts) => {
+      const body = JSON.parse(opts.body);
+      calls.push({ model: url.split("/models/")[1].split(":")[0], type: body.contents[0].parts[0].inline_data.mime_type });
+      if (calls.length === 1) return { ok: false, status: 404, json: async () => ({ error: { message: "models/x is not found" } }) };
+      return { ok: true, status: 200, json: async () => ({ candidates: [{ content: { parts: [{ text: '{"ok":1}' }] } }] }) };
+    };
+    const out = await fresh.callGemini({ prompt: "x", schema: {}, base64: "AAAA", mimeType: "", filename: "bill.pdf" });
+    assert.deepEqual(out, { ok: 1 });
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1].model, fresh.FALLBACK_MODEL);
+    assert.equal(calls[0].type, "application/pdf");
+    global.fetch = async () => ({ ok: false, status: 400, json: async () => ({ error: { message: "Unsupported MIME type: x/y" } }) });
+    await assert.rejects(fresh.callGemini({ prompt: "x", schema: {}, base64: "AAAA", mimeType: "x/y" }), (e) => e.status === 502 && /Unsupported MIME type/.test(e.message));
+  } finally {
+    global.fetch = realFetch;
+    console.warn = realWarn; console.error = realErr;
+    delete process.env.GEMINI_API_KEY;
+    require.cache[path] = saved;
+  }
+});
+
 test("AI reader gives up after the time limit instead of hanging", async () => {
   const path = require.resolve("../server/ai");
   const saved = require.cache[path];

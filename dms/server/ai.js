@@ -95,34 +95,55 @@ const EXPENSE_SCHEMA = {
 // The AI normally answers in 5-20 seconds. Never leave the owner waiting forever.
 const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS) || 45000;
 
-async function callGemini({ prompt, schema, base64, mimeType, timeoutMs }) {
+// Phones sometimes send a PDF or photo with no type, or a generic one.
+const EXT_TYPES = { pdf: "application/pdf", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", heic: "image/heic", heif: "image/heif" };
+function fileType(mimeType, filename) {
+  const m = String(mimeType || "").toLowerCase();
+  if (m && m !== "application/octet-stream" && m !== "binary/octet-stream") return m === "image/jpg" ? "image/jpeg" : m;
+  const ext = String(filename || "").toLowerCase().split(".").pop();
+  return EXT_TYPES[ext] || m || "application/octet-stream";
+}
+// Used when the set model name is not (or no longer) available.
+const FALLBACK_MODEL = "gemini-flash-latest";
+
+async function callGemini({ prompt, schema, base64, mimeType, filename, timeoutMs }) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) {
     const err = new Error("The AI reader is not set up yet (GEMINI_API_KEY missing). Fill in the form by hand.");
     err.status = 503;
     throw err;
   }
-  let res;
-  try {
-    res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${key}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [...(base64 ? [{ inline_data: { mime_type: mimeType, data: base64 } }] : []), { text: prompt }] }],
-        generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature: 0 },
-      }),
-      signal: AbortSignal.timeout(timeoutMs || AI_TIMEOUT_MS),
-    });
-  } catch (e) {
-    const slow = e?.name === "TimeoutError" || e?.name === "AbortError";
-    const err = new Error(slow ? "The AI took too long to read this file. Fill in the form by hand." : "Could not reach the AI reader. Fill in the form by hand.");
-    err.status = slow ? 504 : 502;
-    throw err;
+  const type = fileType(mimeType, filename);
+  const ask = async (model) => {
+    try {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [...(base64 ? [{ inline_data: { mime_type: type, data: base64 } }] : []), { text: prompt }] }],
+          generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature: 0 },
+        }),
+        signal: AbortSignal.timeout(timeoutMs || AI_TIMEOUT_MS),
+      });
+      return { res, body: await res.json().catch(() => ({})) };
+    } catch (e) {
+      const slow = e?.name === "TimeoutError" || e?.name === "AbortError";
+      const err = new Error(slow ? "The AI took too long to read this file. Fill in the form by hand." : "Could not reach the AI reader. Fill in the form by hand.");
+      err.status = slow ? 504 : 502;
+      throw err;
+    }
+  };
+  let { res, body } = await ask(MODEL);
+  const why = (b) => String(b?.error?.message || "").slice(0, 300);
+  if (!res.ok && MODEL !== FALLBACK_MODEL && (res.status === 404 || /model|not found|not supported/i.test(why(body)))) {
+    console.warn(`AI model ${MODEL} refused (${res.status}: ${why(body)}); trying ${FALLBACK_MODEL}`);
+    ({ res, body } = await ask(FALLBACK_MODEL));
   }
-  const body = await res.json().catch(() => ({}));
   const text = body?.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!res.ok || !text) {
-    const err = new Error("The AI could not read this file. Try a clearer photo, or fill in the form by hand.");
+    const reason = why(body) || (body?.candidates?.[0]?.finishReason ? `stopped: ${body.candidates[0].finishReason}` : "") || (body?.promptFeedback?.blockReason ? `blocked: ${body.promptFeedback.blockReason}` : "");
+    console.error(`AI read failed (HTTP ${res.status}, ${type})${reason ? ": " + reason : ""}`);
+    const err = new Error(res.status === 429 ? "The AI is busy (too many requests). Try again in a minute, or fill in the form by hand." : `The AI could not read this file${reason ? ` (${reason.slice(0, 120)})` : ""}. Try a clearer photo, or fill in the form by hand.`);
     err.status = 502;
     throw err;
   }
@@ -274,4 +295,4 @@ async function readHub({ file, text, source }) {
   return cleanHub(await module.exports.callGemini({ prompt: hubPrompt(source) + pasted, schema: HUB_SCHEMA, ...(file || {}), timeoutMs: Number(process.env.AI_HUB_TIMEOUT_MS) || 100000 }));
 }
 
-module.exports = { MODEL, callGemini, readPurchase, readPayment, readExpense, readHub, cleanPurchase, cleanPayment, cleanExpense, cleanHub, cleanDate, METHODS, EXPENSE_CATS, HUB_KINDS, PURCHASE_SCHEMA, PAYMENT_SCHEMA, EXPENSE_SCHEMA, HUB_SCHEMA };
+module.exports = { MODEL, FALLBACK_MODEL, fileType, callGemini, readPurchase, readPayment, readExpense, readHub, cleanPurchase, cleanPayment, cleanExpense, cleanHub, cleanDate, METHODS, EXPENSE_CATS, HUB_KINDS, PURCHASE_SCHEMA, PAYMENT_SCHEMA, EXPENSE_SCHEMA, HUB_SCHEMA };
