@@ -2480,21 +2480,32 @@
   }
 
   // Printable job card for the mechanic: no prices.
+  // Shown inside the app (not a new window), so the phone app always has a
+  // way back: a new window in the home-screen app has no back button.
   function printJobCard(j) {
-    const w = window.open("", "_blank");
-    if (!w) return toast("Allow pop-ups to print the job card.");
     const v = vehicleByKey(plateKey(j.plate));
     const ci = j.checkin || {};
     const K = CarDiagram.KINDS;
     const marks = (v?.marks || []).filter((m) => !m.fixed);
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Job card ${esc(docNo(j))}</title><style>
-      body{font:13px/1.45 Arial,sans-serif;color:#111;margin:0}.p{max-width:190mm;margin:0 auto;padding:10mm 6mm}
-      h1{font-size:22px;margin:0}.top{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #111;padding-bottom:6px}
-      table{width:100%;border-collapse:collapse;margin-top:10px}td,th{border:1px solid #888;padding:5px 7px;text-align:left;vertical-align:top}th{background:#e8e8e8;font-size:12px}
-      .g{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.b{border:1px solid #888;padding:6px 8px}.b b{display:block;font-size:11px;text-transform:uppercase;color:#444}
-      .chk{width:15px;height:15px;border:1.5px solid #111;display:inline-block;vertical-align:-3px}.ln{height:24px;border-bottom:1px solid #aaa}
-      @page{size:A4;margin:10mm}@media print{.p{padding:0}}
-    </style></head><body><div class="p">
+    document.getElementById("jcSheet")?.remove();
+    const el = document.createElement("div");
+    el.id = "jcSheet";
+    el.setAttribute("role", "dialog");
+    el.setAttribute("aria-modal", "true");
+    el.setAttribute("aria-label", `Job card ${docNo(j)}`);
+    el.innerHTML = `<style>
+      #jcSheet{position:fixed;inset:0;z-index:200;overflow:auto;background:#fff;color:#111;-webkit-overflow-scrolling:touch}
+      #jcSheet .jc-bar{position:sticky;top:0;z-index:1;display:flex;gap:8px;align-items:center;padding:calc(10px + env(safe-area-inset-top)) 16px 10px;background:#fff;border-bottom:1px solid #ddd}
+      #jcSheet .jc-bar b{flex:1;min-width:0;font:600 15px/1.2 Arial,sans-serif;text-align:center;white-space:nowrap}
+      #jcSheet .jc-bar button{flex:none;width:auto;display:inline-flex;align-items:center;justify-content:center;margin:0;min-height:44px;min-width:84px;padding:0 14px;border:1px solid #bbb;border-radius:10px;background:#fff;color:#111;font:600 15px Arial,sans-serif;cursor:pointer}
+      #jcSheet .jc-bar button.jc-pr{background:#111;color:#fff;border-color:#111}
+      #jcSheet .p{font:13px/1.45 Arial,sans-serif;max-width:190mm;margin:0 auto;padding:10mm 6mm calc(10mm + env(safe-area-inset-bottom))}
+      #jcSheet h1{font-size:22px;margin:0}#jcSheet .top{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #111;padding-bottom:6px}
+      #jcSheet table{width:100%;border-collapse:collapse;margin-top:10px}#jcSheet td,#jcSheet th{border:1px solid #888;padding:5px 7px;text-align:left;vertical-align:top}#jcSheet th{background:#e8e8e8;font-size:12px}
+      #jcSheet .g{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}#jcSheet .b{border:1px solid #888;padding:6px 8px}#jcSheet .b b{display:block;font-size:11px;text-transform:uppercase;color:#444}
+      #jcSheet .chk{width:15px;height:15px;border:1.5px solid #111;display:inline-block;vertical-align:-3px}#jcSheet .ln{height:24px;border-bottom:1px solid #aaa}
+      @media print{@page{size:A4;margin:10mm}body.jc-on>*:not(#jcSheet){display:none!important}#jcSheet{position:static;overflow:visible}#jcSheet .jc-bar{display:none}#jcSheet .p{padding:0}}
+    </style><div class="jc-bar"><button type="button" class="jc-bk">‹ Back</button><b>Job card</b><button type="button" class="jc-pr">Print</button></div><div class="p">
       <div class="top"><div><h1>JOB CARD</h1><div>${esc(brandName())}</div></div><div style="text-align:right"><b style="font-size:16px">${esc(docNo(j))}</b><br>${dmy(jobDate(j))}</div></div>
       <div class="g"><div class="b"><b>Car</b>${esc(j.car)} · ${esc(j.plate)}<br>${km(j.mileageKm)}${v?.chassisNo ? " · VIN " + esc(v.chassisNo) : ""}</div>
         <div class="b"><b>Customer</b>${esc(j.customerName)} · ${esc(j.phone)}</div>
@@ -2506,8 +2517,23 @@
       </tbody></table>
       <div class="b" style="margin-top:10px"><b>Extra findings / parts needed</b><div class="ln"></div><div class="ln"></div><div class="ln"></div></div>
       <div class="g" style="margin-top:14px"><div class="b"><b>Mechanic</b><br>Name / sign: ______________________</div><div class="b"><b>Final check</b><br><span class="chk"></span> Road test &nbsp; <span class="chk"></span> Fluids &nbsp; <span class="chk"></span> Clean</div></div>
-    </div><script>window.onload=function(){setTimeout(function(){window.print()},250)}<\/script></body></html>`);
-    w.document.close();
+    </div>`;
+    const prev = document.activeElement;
+    const close = () => {
+      el.remove();
+      document.body.classList.remove("jc-on");
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("hashchange", close);
+      if (prev && prev.focus) prev.focus();
+    };
+    const onKey = (e) => e.key === "Escape" && close();
+    el.querySelector(".jc-bk").onclick = close;
+    el.querySelector(".jc-pr").onclick = () => window.print();
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("hashchange", close);
+    document.body.classList.add("jc-on");
+    document.body.appendChild(el);
+    el.querySelector(".jc-bk").focus();
   }
 
   // ================= CRM =================
