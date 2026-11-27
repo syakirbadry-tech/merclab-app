@@ -225,11 +225,6 @@ function table(rows, isLast) {
 </table>`;
 }
 
-function warranty(c, o) {
-  if (has(c.partsWarrantyMonths)) return ` Customer-pay parts carry a ${esc(c.partsWarrantyMonths)}-month parts warranty, excluding service and wear-and-tear items.`;
-  return o.draft ? `<span class="miss"> Customer-pay parts carry a ${chip("warranty months")} parts warranty, excluding service and wear-and-tear items.</span>` : "";
-}
-
 function bankLine(c, o) {
   const b = c.bank || {};
   if (has(b.name) && has(b.accountNo)) {
@@ -247,17 +242,15 @@ function notes(doc, c, o) {
     const valid = doc.validUntil || addDays(doc.date, c.estimateValidityDays);
     cap = "TERMS";
     items = `<li>This estimate is valid for ${esc(c.estimateValidityDays || 7)} days${valid ? `, until ${esc(dmy(valid))}` : ""}. Prices are subject to change without prior notice.</li>
-<li>Parts are genuine Mercedes-Benz or OEM-equivalent, as listed.${warranty(c, o)}</li>${METHODS}${bankLine(c, o)}`;
+${METHODS}${bankLine(c, o)}`;
   } else {
-    // Invoice and receipt mention the parts warranty only when it is set.
-    const w = warranty(c, o);
-    const wLine = w ? `<li${has(c.partsWarrantyMonths) ? "" : ' class="miss"'}>Parts are genuine Mercedes-Benz or OEM-equivalent, as listed.${w}</li>` : "";
+    // No parts / warranty sentence on any document (owner's choice, 27 Nov 2026).
     if (t === "invoice") {
       cap = "PAYMENT";
-      items = `${METHODS}${bankLine(c, o)}<li>Please quote the invoice number as your payment reference.</li>${wLine}`;
+      items = `${METHODS}${bankLine(c, o)}<li>Please quote the invoice number as your payment reference.</li>`;
     } else {
       cap = "NOTES";
-      items = `<li>Received with thanks.</li><li>This receipt is valid only after the payment has cleared.</li>${wLine}`;
+      items = `<li>Received with thanks.</li><li>This receipt is valid only after the payment has cleared.</li>`;
     }
   }
   const qrOk = t !== "receipt" && /^(https:\/\/|file:\/\/|data:image\/(png|jpeg|webp);base64,)/.test(String(c.duitNowQrImage || ""));
