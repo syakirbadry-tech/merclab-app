@@ -463,6 +463,18 @@ test("receipt → parts → estimate → deposit → invoice → final payment �
   assert.equal((await call("POST", `/api/jobs/${job.id}/status`, { body: { status: "Cancelled" } })).status, 400);
 });
 
+test("edit part: part no, brand and supplier can be corrected", async () => {
+  reset();
+  await login();
+  store.parts.push({ id: "recPART0000000009", fields: { Part: "Battery", "Part no": "A0019828108", Brand: "BOSCH", "Qty left": 1, "Selling price": 1200 } });
+  const r = await call("PATCH", "/api/parts/recPART0000000009", { body: { partNo: "A0019828108B", supplier: "Suan Huat (demo)" } });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.partNo, "A0019828108B");
+  assert.equal(r.body.brand, "BOSCH", "fields not sent stay as they were");
+  assert.equal(r.body.supplier, "Suan Huat (demo)");
+  assert.equal(r.body.sellingPrice, 1200);
+});
+
 test("walk-in: straight to invoice takes stock and needs no estimate", async () => {
   reset();
   await login();

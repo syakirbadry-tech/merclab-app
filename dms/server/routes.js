@@ -304,6 +304,9 @@ router.patch("/parts/:id", wrap(async (req, res) => {
     if (!name) throw bad("Part name cannot be empty.");
     fields.Part = name;
   }
+  for (const [k, f] of Object.entries({ partNo: "Part no", brand: "Brand", supplier: "Supplier" })) {
+    if (k in req.body) fields[f] = text(req.body[k], 120);
+  }
   // Changing cost or markup recalculates the price unless a price was given.
   if (("unitCost" in req.body || "markupPercent" in req.body) && !("sellingPrice" in req.body)) {
     const cur = partOut(await db.get("parts", req.params.id));
