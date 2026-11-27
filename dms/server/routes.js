@@ -30,7 +30,7 @@ function oneFile(req, res, next) {
   });
 }
 
-const fileOf = (req) => (req.file ? { base64: req.file.buffer.toString("base64"), mimeType: req.file.mimetype === "image/jpg" ? "image/jpeg" : req.file.mimetype, filename: req.file.originalname || "file" } : null);
+const fileOf = (req) => (req.file ? { base64: req.file.buffer.toString("base64"), mimeType: ai.fileType(req.file.mimetype, req.file.originalname), filename: req.file.originalname || "file" } : null);
 
 // The form data comes as a JSON string next to the file.
 function bodyData(req) {
