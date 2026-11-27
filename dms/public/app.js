@@ -2975,7 +2975,7 @@
       const fd = new FormData();
       fd.append("file", file);
       try {
-        const { suggestion } = await api("/expenses/extract", { method: "POST", form: fd, timeout: 60000, signal: stop.signal });
+        const { suggestion } = await api("/expenses/extract", { method: "POST", form: fd, timeout: 120000, signal: stop.signal });
         if (closed()) return;
         wait.close();
         expenseDialog(suggestion, file, true);
@@ -4141,14 +4141,21 @@
     if (!file) return;
     $("#buyCard").hidden = false;
     const box = $("#buyForm");
-    box.innerHTML = `<div class="notice"><span class="spin"></span><div>Reading the receipt… (about 10–20 seconds)</div></div>`;
+    box.innerHTML = `<div class="notice"><span class="spin"></span><div id="buyWait">Reading the receipt… (about 10–20 seconds)</div></div>`;
     $("#buyCard").scrollIntoView({ behavior: "smooth", block: "start" });
     const fd = new FormData();
     fd.append("file", file);
+    const t0 = Date.now();
+    const tick = setInterval(() => {
+      const s = Math.round((Date.now() - t0) / 1000), el = $("#buyWait");
+      if (el && s >= 20) el.textContent = `Still reading… ${s}s. Big PDFs can take up to a minute. Keep this screen open.`;
+    }, 1000);
     try {
-      const { suggestion } = await api("/purchases/extract", { method: "POST", form: fd, timeout: 60000 });
+      const { suggestion } = await api("/purchases/extract", { method: "POST", form: fd, timeout: 120000 });
+      clearInterval(tick);
       purchaseForm(suggestion, file, true);
     } catch (err) {
+      clearInterval(tick);
       purchaseForm({ supplier: "", date: "", receiptNo: "", total: null, items: [{ name: "", qty: 1, unitCost: null }] }, file);
       box.insertAdjacentHTML("afterbegin", `<div class="notice bad">${icon("alert")}<div>${esc(err.message)} You can type the parts below.</div></div>`);
     }
@@ -4356,7 +4363,7 @@
     const fd = new FormData();
     fd.append("file", file);
     try {
-      const { suggestion, matches } = await api("/payments/extract", { method: "POST", form: fd, timeout: 60000 });
+      const { suggestion, matches } = await api("/payments/extract", { method: "POST", form: fd, timeout: 120000 });
       paymentForm(suggestion, file, matches, true);
     } catch (err) {
       paymentForm({ method: "Bank transfer" }, file, null);

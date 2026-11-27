@@ -92,8 +92,9 @@ const EXPENSE_SCHEMA = {
   },
 };
 
-// The AI normally answers in 5-20 seconds. Never leave the owner waiting forever.
-const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS) || 45000;
+// The AI normally answers in 5-20 seconds. Never leave the owner waiting forever:
+// each try stops after this, and a slow first try gets one more go (the phone waits 2 minutes).
+const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS) || 50000;
 
 // Phones sometimes send a PDF or photo with no type, or a generic one.
 const EXT_TYPES = { pdf: "application/pdf", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", heic: "image/heic", heif: "image/heif" };
@@ -133,7 +134,15 @@ async function callGemini({ prompt, schema, base64, mimeType, filename, timeoutM
       throw err;
     }
   };
-  let { res, body } = await ask(MODEL);
+  let res, body;
+  try {
+    ({ res, body } = await ask(MODEL));
+  } catch (e) {
+    // A slow answer is often just a busy moment: try once more on the quick model.
+    if (e.status !== 504 || MODEL === FALLBACK_MODEL) throw e;
+    console.warn(`AI model ${MODEL} was slow; trying ${FALLBACK_MODEL}`);
+    ({ res, body } = await ask(FALLBACK_MODEL));
+  }
   const why = (b) => String(b?.error?.message || "").slice(0, 300);
   if (!res.ok && MODEL !== FALLBACK_MODEL && (res.status === 404 || /model|not found|not supported/i.test(why(body)))) {
     console.warn(`AI model ${MODEL} refused (${res.status}: ${why(body)}); trying ${FALLBACK_MODEL}`);

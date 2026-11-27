@@ -1269,6 +1269,16 @@ test("AI reader gives up after the time limit instead of hanging", async () => {
     const t0 = Date.now();
     await assert.rejects(fresh.callGemini({ prompt: "x", schema: {}, base64: "", mimeType: "image/jpeg" }), (e) => e.status === 504 && /too long/.test(e.message));
     assert.ok(Date.now() - t0 < 2000);
+    // A slow first try gets one more go on the quick model.
+    const models = [];
+    global.fetch = (url, opts) => {
+      models.push(url.split("/models/")[1].split(":")[0]);
+      if (models.length === 1) return new Promise((_, reject) => opts.signal.addEventListener("abort", () => reject(opts.signal.reason)));
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ candidates: [{ content: { parts: [{ text: '{"ok":2}' }] } }] }) });
+    };
+    const realWarn = console.warn; console.warn = () => {};
+    try { assert.deepEqual(await fresh.callGemini({ prompt: "x", schema: {}, base64: "", mimeType: "image/jpeg" }), { ok: 2 }); } finally { console.warn = realWarn; }
+    assert.deepEqual(models, [fresh.MODEL, fresh.FALLBACK_MODEL]);
   } finally {
     global.fetch = realFetch;
     delete process.env.AI_TIMEOUT_MS;
