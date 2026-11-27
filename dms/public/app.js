@@ -4105,11 +4105,15 @@
     const s = state.settings;
     const m = modal("Edit part", `<form id="pf" novalidate>
       <label for="p_name">Part name</label><input id="p_name" name="name" value="${esc(p.name)}">
+      <div class="fgrid"><div><label for="p_no">Part no</label><input id="p_no" name="partNo" autocapitalize="characters" value="${esc(p.partNo)}"></div>
+        <div><label for="p_br">Brand</label><input id="p_br" name="brand" value="${esc(p.brand)}"></div>
+        <div><label for="p_sup">Supplier</label><input id="p_sup" name="supplier" list="supList" value="${esc(p.supplier)}"></div></div>
+      <datalist id="supList">${[...new Set([...state.suppliers.map((x) => x.name), ...state.parts.map((x) => x.supplier)].filter(Boolean))].map((n) => `<option value="${esc(n)}">`).join("")}</datalist>
       <div class="fgrid"><div><label for="p_cost">Cost each (RM)</label><input id="p_cost" name="unitCost" type="number" step="0.01" min="0" inputmode="decimal" value="${esc(p.unitCost)}"></div>
         <div><label for="p_mk">Markup %</label><input id="p_mk" name="markupPercent" type="number" step="any" min="0" inputmode="decimal" value="${esc(p.markupPercent ?? s.markupPercent)}"></div>
         <div><label for="p_sell">Selling price (RM)</label><input id="p_sell" name="sellingPrice" type="number" step="0.01" min="0" inputmode="decimal" value="${esc(p.sellingPrice)}"></div>
         <div><label for="p_left">In stock</label><input id="p_left" name="qtyLeft" type="number" step="any" inputmode="decimal" value="${esc(p.qtyLeft)}"></div></div>
-      <p class="hint">${esc([p.brand, p.partNo, p.supplier].filter(Boolean).join(" · "))}${p.boughtOn ? ` · bought ${dmy(p.boughtOn)}` : ""}</p>
+      ${p.boughtOn ? `<p class="hint">Bought ${dmy(p.boughtOn)}</p>` : ""}
       ${(() => {
         const hist = state.parts.filter((x) => x.id !== p.id && ((p.partNo && x.partNo === p.partNo) || x.name.toLowerCase() === p.name.toLowerCase())).sort((a, b) => (b.boughtOn || "").localeCompare(a.boughtOn || ""));
         return hist.length ? `<label>Price history</label><div class="rows">${hist.slice(0, 8).map((x) => `<div><div class="grow"><b>${rm(x.unitCost)}</b><span class="muted">${esc(x.supplier || "—")}</span></div><span class="r muted">${dmy(x.boughtOn)}</span></div>`).join("")}</div>` : "";
@@ -4123,7 +4127,7 @@
       e.preventDefault();
       busy(e.submitter, true, "Saving…");
       try {
-        const upd = await api(`/parts/${id}`, { method: "PATCH", body: { name: f.name.value, unitCost: Number(f.unitCost.value), markupPercent: Number(f.markupPercent.value), sellingPrice: Number(f.sellingPrice.value), qtyLeft: Number(f.qtyLeft.value) } });
+        const upd = await api(`/parts/${id}`, { method: "PATCH", body: { name: f.name.value, partNo: f.partNo.value.trim().toUpperCase(), brand: f.brand.value, supplier: f.supplier.value, unitCost: Number(f.unitCost.value), markupPercent: Number(f.markupPercent.value), sellingPrice: Number(f.sellingPrice.value), qtyLeft: Number(f.qtyLeft.value) } });
         Object.assign(p, upd);
         m.close();
         drawParts();
