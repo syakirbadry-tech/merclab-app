@@ -801,42 +801,56 @@
   const fitsText = (codes) => codes.map((c) => (c.length === 7 ? `${c.slice(0, 3)} · ${c.slice(3)}` : c)).join(", ");
   const pkgFits = (pkg, ch) => !(pkg.fits || []).length || (!!ch && pkg.fits.some((c) => (c.length === 3 ? c === ch.model : c === ch.model + ch.variant)));
 
+  // One line of work. Desktop: a single row under the group's column heads
+  // (Type · Part no · Description · Qty · Unit RM · Total). Phone: tag, then the
+  // description, then the numbers, each with its own small label.
+  const lineMoney = (el) => {
+    const t = el.dataset.type;
+    return t === "part" ? (Number($("[name=qty]", el)?.value) || 0) * (Number($("[name=unitPrice]", el)?.value) || 0) : Number($("[name=amount]", el)?.value) || 0;
+  };
   function lineHtml(l) {
     const t = l.type;
-    const amountField = t === "part"
-      ? `<div class="item-grid"><div><label>Qty</label><input name="qty" type="number" inputmode="decimal" step="any" min="0" value="${esc(l.qty ?? 1)}"></div>
-         <div><label>Unit price (RM)</label><input name="unitPrice" type="number" inputmode="decimal" step="0.01" min="0" value="${esc(l.unitPrice ?? "")}"></div></div>`
-      : t === "labour"
-        ? `<div class="item-grid"><div><label>Hours</label><input name="hours" type="number" inputmode="decimal" step="0.25" min="0" value="${esc(l.hours ?? "")}" placeholder="e.g. 1.5"></div>
-           <div><label>Amount (RM)</label><input name="amount" type="number" inputmode="decimal" step="0.01" min="0" value="${esc(l.amount ?? "")}"></div></div><p class="hint" style="margin-top:4px">Hours × RM ${labourRate()}/hour fills the amount. You can still change it.</p>`
-        : `<label>Amount (RM)</label><input name="amount" type="number" inputmode="decimal" step="0.01" min="0" value="${esc(l.amount ?? "")}" style="max-width:220px">`;
-    return `<div class="item" data-type="${t}" data-part="${esc(l.partId || "")}" data-cat="${esc(l.category || "")}" data-tax="${l.taxable ? 1 : 0}">
-      <div class="row"><span class="pill info" style="flex:none">${LINE_LABEL[t]}</span>
-        ${t === "labour" ? `<input name="opCode" placeholder="Op code" aria-label="Op code" value="${esc(l.opCode || "")}" style="max-width:130px">` : ""}
-        ${t === "part" ? `<input name="partNo" placeholder="Part no" aria-label="Part no" value="${esc(l.partNo || "")}" style="max-width:160px">` : ""}
-        <span style="flex:1"></span><button type="button" class="x" title="Remove line" aria-label="Remove line">${icon("trash")}</button></div>
-      <label>Description</label><input name="description" placeholder="${t === "labour" ? "e.g. Perform Service B" : "Description"}" value="${esc(l.description || "")}">
-      ${amountField}
+    const f = (cls, label, input) => `<label class="jl-f ${cls}"><span class="jl-k">${label}</span>${input}</label>`;
+    const num = (name, val, step, ph = "") => `<input name="${name}" class="num" type="number" inputmode="decimal" step="${step}" min="0" value="${esc(val ?? "")}"${ph ? ` placeholder="${ph}"` : ""}>`;
+    const no = t === "part" ? f("jl-no", "Part no", `<input name="partNo" value="${esc(l.partNo || "")}" autocapitalize="characters">`)
+      : t === "labour" ? f("jl-no", "Op code", `<input name="opCode" value="${esc(l.opCode || "")}">`) : `<span class="jl-no"></span>`;
+    const qty = t === "part" ? f("jl-q", "Qty", num("qty", l.qty ?? 1, "any")) : t === "labour" ? f("jl-q", "Hours", num("hours", l.hours, "0.25", "hrs")) : `<span class="jl-q"></span>`;
+    const unit = t === "part" ? f("jl-u", "Unit RM", num("unitPrice", l.unitPrice, "0.01")) : t === "labour" ? `<span class="jl-u jl-rate">× RM ${labourRate()}/h</span>` : `<span class="jl-u"></span>`;
+    const tot = t === "part" ? `<span class="jl-t tot" aria-live="polite">${rm((Number(l.qty) || 0) * (Number(l.unitPrice) || 0))}</span>` : f("jl-t", "Amount RM", num("amount", l.amount, "0.01"));
+    return `<div class="item jl" data-type="${t}" data-part="${esc(l.partId || "")}" data-cat="${esc(l.category || "")}" data-tax="${l.taxable ? 1 : 0}">
+      <span class="lt${t === "labour" ? " lab" : t === "sublet" ? " sub" : ""} jl-lt">${LINE_LABEL[t]}</span>
+      ${no}
+      ${f("jl-d", "Description", `<input name="description" placeholder="${t === "labour" ? "e.g. Perform Service B" : "Description"}" value="${esc(l.description || "")}">`)}
+      ${qty}${unit}${tot}
+      <button type="button" class="x jl-x" title="Remove line" aria-label="Remove line">${icon("trash")}</button>
     </div>`;
   }
 
   function groupHtml(g, i) {
-    return `<div class="group">
-      <div class="gh"><b>C${i + 1}</b><input name="request" placeholder="Customer request" aria-label="Customer request" value="${esc(g.request || "")}" style="text-transform:uppercase"><button type="button" class="x gx" title="Remove this request" aria-label="Remove this request">${icon("x")}</button></div>
-      <div class="lines">${(g.lines || []).map(lineHtml).join("")}</div>
-      <label>Add a part from stock</label>
-      <input class="pick" list="partOptions" placeholder="Type part name…" autocomplete="off">
-      <div class="addrow">
-        <button type="button" class="btn alt sm" data-add="part">${icon("plus")}Part</button>
-        <button type="button" class="btn alt sm" data-add="labour">${icon("plus")}Labour</button>
-        <button type="button" class="btn alt sm" data-add="sundry">${icon("plus")}Sundry</button>
-        <button type="button" class="btn alt sm" data-add="sublet">${icon("plus")}Sublet</button>
+    return `<div class="group jg">
+      <div class="gh"><b class="cn">C${i + 1}</b><input name="request" placeholder="Customer request" aria-label="Customer request" value="${esc(g.request || "")}" style="text-transform:uppercase"><button type="button" class="x gx" title="Remove this request" aria-label="Remove this request">${icon("x")}</button></div>
+      <div class="gb">
+        <div class="jl jl-head" aria-hidden="true"><span>Type</span><span>Part no / op</span><span>Description</span><span class="r">Qty</span><span class="r">Unit RM</span><span class="r">Total</span><span></span></div>
+        <div class="lines">${(g.lines || []).map(lineHtml).join("")}</div>
+        <div class="jg-add">
+          <div class="input-w">${icon("search")}<input class="pick input" list="partOptions" placeholder="Add a part from stock: name or part no" aria-label="Add a part from stock" autocomplete="off"></div>
+          <div class="addrow">
+            <button type="button" class="btn alt sm" data-add="part">${icon("plus")}Part</button>
+            <button type="button" class="btn alt sm" data-add="labour">${icon("plus")}Labour</button>
+            <button type="button" class="btn alt sm" data-add="sundry">${icon("plus")}Sundry</button>
+            <button type="button" class="btn alt sm" data-add="sublet">${icon("plus")}Sublet</button>
+          </div>
+        </div>
       </div>
     </div>`;
   }
 
   // Lines editor events, shared by the job form and the package editor.
-  function bindGroups(box, onChange) {
+  function bindGroups(box, onChange0) {
+    const onChange = () => {
+      $$(".item.jl", box).forEach((el) => { const t = $(".tot", el); if (t) t.textContent = rm(lineMoney(el)); });
+      onChange0();
+    };
     const renumber = () => $$(".group", box).forEach((g, i) => ($("b", g).textContent = `C${i + 1}`));
     box.addEventListener("click", (e) => {
       const add = e.target.closest("[data-add]");
@@ -938,33 +952,39 @@
           <div class="rows find-res" id="findRes" aria-live="polite"></div>
           <div class="btns"><button type="button" class="btn alt" id="findNew">${icon("plus")}New customer</button></div></div>
         <div class="card picked" id="picked" hidden></div>` : ""}
+        <div class="split jf"><div class="stack jf-main">
         <div class="grid g2" id="jMain"${mode === "new" && !pre ? " hidden" : ""}>
-          <div class="card" style="margin:0"><h2>Customer</h2>
-            <label for="cName" class="req">Name</label><input id="cName" name="cName" list="custList" required value="${v(pre?.customerName)}">
-            <datalist id="custList">${state.customers.map((c) => `<option value="${esc(c.name)}">${esc(c.phone)}</option>`).join("")}</datalist>
-            <label for="cPhone">Phone (WhatsApp)</label><input id="cPhone" name="cPhone" type="tel" inputmode="tel" placeholder="012-345 6789" value="${v(pre?.phone)}">
-            <label for="cAddress">Address (up to 2 lines)</label><textarea id="cAddress" name="cAddress" rows="2">${v((d.customerAddress || []).join("\n"))}</textarea>
-          </div>
-          <div class="card" style="margin:0"><h2>Car</h2>
+          <div class="card" style="margin:0"><div class="card-h"><h2 class="h3">${icon("user")}Customer</h2></div>
             <div class="fgrid">
-              <div><label for="regNo">Plate</label><input id="regNo" name="regNo" list="plateList" style="text-transform:uppercase" value="${v(pre?.plate)}"></div>
-              <div><label for="mileageKm" class="req">Mileage (km)</label><input id="mileageKm" name="mileageKm" type="number" inputmode="numeric" min="1" required value="${v(pre?.mileageKm)}"></div>
-              <div class="full"><label for="makeModel">Make &amp; model</label><input id="makeModel" name="makeModel" placeholder="e.g. Mercedes-Benz C200 (W205)" value="${v(pre?.car)}"></div>
-              <div><label for="chassisNo">Chassis no</label><input id="chassisNo" name="chassisNo" style="text-transform:uppercase" autocapitalize="characters" maxlength="17" value="${v(d.vehicle?.chassisNo)}"></div>
-              <div><label for="engineNo">Engine no</label><input id="engineNo" name="engineNo" style="text-transform:uppercase" value="${v(d.vehicle?.engineNo)}"></div>
-              <div><label for="regDate">Reg date</label><input id="regDate" name="regDate" type="date" value="${v(d.vehicle?.regDate)}"></div>
+              <div><label for="cName" class="req">Name</label><input id="cName" name="cName" list="custList" required value="${v(pre?.customerName)}"></div>
+              <div><label for="cPhone">Phone (WhatsApp)</label><input id="cPhone" name="cPhone" type="tel" inputmode="tel" placeholder="012-345 6789" value="${v(pre?.phone)}"></div>
+              <div class="full"><label for="cAddress">Address (up to 2 lines)</label><textarea id="cAddress" name="cAddress" rows="2">${v((d.customerAddress || []).join("\n"))}</textarea></div>
+            </div>
+            <datalist id="custList">${state.customers.map((c) => `<option value="${esc(c.name)}">${esc(c.phone)}</option>`).join("")}</datalist>
+          </div>
+          <div class="card" style="margin:0"><div class="card-h"><h2 class="h3">${icon("car")}Car</h2></div>
+            <div class="fgrid">
+              <div><label for="regNo">Plate</label><input id="regNo" name="regNo" class="jf-plate" list="plateList" style="text-transform:uppercase" value="${v(pre?.plate)}"></div>
+              <div><label for="mileageKm" class="req">Mileage</label><div class="input-w"><input id="mileageKm" name="mileageKm" class="num jf-km" type="number" inputmode="numeric" min="1" required value="${v(pre?.mileageKm)}"><span class="unit">km</span></div></div>
+              <div class="full"><label for="makeModel">Make and model</label><input id="makeModel" name="makeModel" placeholder="e.g. Mercedes-Benz C200 (W205)" value="${v(pre?.car)}"></div>
+              <details class="full jf-more"><summary>More car details: chassis no, engine no, reg date</summary>
+                <div class="fgrid" style="margin-top:8px">
+                  <div class="full"><label for="chassisNo">Chassis no</label><input id="chassisNo" name="chassisNo" style="text-transform:uppercase" autocapitalize="characters" maxlength="17" value="${v(d.vehicle?.chassisNo)}"></div>
+                  <div><label for="engineNo">Engine no</label><input id="engineNo" name="engineNo" style="text-transform:uppercase" value="${v(d.vehicle?.engineNo)}"></div>
+                  <div><label for="regDate">Reg date</label><input id="regDate" name="regDate" type="date" value="${v(d.vehicle?.regDate)}"></div>
+                </div></details>
             </div>
             <datalist id="plateList">${state.vehicles.map((x) => `<option value="${esc(x.plate)}">${esc(x.makeModel)} · ${esc(x.ownerName)}</option>`).join("")}</datalist>
           </div>
         </div>
         <datalist id="partOptions">${parts.map((p) => `<option value="${esc(p.name)}${p.partNo ? " · " + esc(p.partNo) : ""}">${rm(p.sellingPrice)} · ${p.qtyLeft} left</option>`).join("")}</datalist>
-        ${svcKey ? `<div class="card svcq" id="svcBox" style="margin-top:16px" aria-live="polite"><p class="muted" style="margin:0">Checking this car's past invoices…</p></div>` : ""}
-        <div class="card" style="margin-top:16px"><div class="card-h"><h2>Work</h2><div class="r">
+        ${svcKey ? `<div class="card svcq" id="svcBox" style="margin:0" aria-live="polite"><p class="muted" style="margin:0">Checking this car's past invoices…</p></div>` : ""}
+        <div class="card" style="margin:0"><div class="card-h"><h2 class="h3">${icon("jobs")}Work</h2><div class="r">
             ${state.packages.some((x) => x.active) ? `<select id="pkgPick" aria-label="Add a package" style="min-height:34px;padding:5px 10px;font-size:14px;width:auto"><option value="">+ Add package…</option>${state.packages.filter((x) => x.active).map((x) => `<option value="${x.id}">${esc(x.name)} · ${rm(lineTotal(packageLines(x)))}</option>`).join("")}</select>` : ""}
             <button type="button" class="btn alt sm" id="addGroup">${icon("plus")}Customer request</button></div></div>
           <div id="groups">${groups.map(groupHtml).join("")}</div>
-          <div class="fgrid" style="margin-top:4px"><div><label for="discount">Discount (RM)</label><input id="discount" name="discount" type="number" step="0.01" min="0" inputmode="decimal" value="${v(d.discount || "")}"></div></div>
-          <details style="margin-top:6px"><summary class="muted">More details (invoice to, served by, reference numbers, dates)</summary>
+          <div class="fgrid" style="margin-top:16px"><div><label for="discount">Discount</label><div class="input-w jf-rm"><span class="unit">RM</span><input id="discount" name="discount" class="num" type="number" step="0.01" min="0" inputmode="decimal" placeholder="0.00" value="${v(d.discount || "")}"></div></div></div>
+          <details class="jf-more" style="margin-top:12px"><summary>More details: invoice to, served by, reference numbers, dates</summary>
             <div class="fgrid" style="margin-top:8px">
               ${mode === "invoice"
                 ? `<div><label for="repairDate">Repair date</label><input id="repairDate" name="repairDate" type="date" value="${todayKL()}"></div><div><label for="dueDate">Payment due</label><input id="dueDate" name="dueDate" type="date" value="${todayKL()}"></div>`
@@ -978,15 +998,30 @@
               <div><label for="surcharge">Surcharge (RM)</label><input id="surcharge" name="surcharge" type="number" step="0.01" min="0" value="${v(d.surcharge || "")}"></div><div><label for="menus">Menus (RM)</label><input id="menus" name="menus" type="number" step="0.01" min="0" value="${v(d.menus || "")}"></div>
             </div>
           </details>
-          <div class="totbar">
-            <div class="t">Parts<b id="tParts">RM 0.00</b></div><div class="t">Labour &amp; sundries<b id="tLabour">RM 0.00</b></div><div class="t" id="tDiscW" hidden>Discount<b id="tDisc">RM 0.00</b></div><div class="t grand">Grand total<b id="tGrand">RM 0.00</b></div>
-            <label class="muted" style="display:flex;gap:8px;align-items:center;margin:0;font-weight:500" title="Sets the car's next service date and km from the intervals in Settings"><input type="checkbox" id="nextSvc" ${groups.some((g) => /SERVICE/i.test(g.request || "")) ? "checked" : ""} style="width:18px;min-height:18px">Set next service reminder${mode === "new" ? " (if saved as invoice)" : ""}</label>
-            <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
-            ${mode === "invoice"
-              ? `<button class="btn" type="submit" data-as="invoice">${icon("check")}Make invoice</button>`
-              : `<button class="btn alt" type="submit" data-as="invoice" title="Walk-in: the work is already done">Save as invoice</button><button class="btn" type="submit" data-as="estimate">${icon("check")}Save estimate</button>`}
+        </div>
+        </div>
+        <aside class="stack jf-rail">
+          <div class="card" style="margin:0"><div class="card-h"><h2 class="h3">Totals</h2></div>
+            <div class="sum">
+              <div><span class="lbl">Parts</span><span id="tParts">RM 0.00</span></div>
+              <div><span class="lbl">Labour and sundries</span><span id="tLabour">RM 0.00</span></div>
+              <div id="tDiscW"><span class="lbl">Discount</span><span id="tDisc">RM 0.00</span></div>
+              <div class="big"><span class="lbl">Grand total</span><span id="tGrand">RM 0.00</span></div>
             </div>
+            <div class="jf-btns">
+            ${mode === "invoice"
+              ? `<button class="btn lg block jf-main-btn" type="submit" data-as="invoice">${icon("check")}Make invoice</button>`
+              : `<button class="btn lg block jf-main-btn" type="submit" data-as="estimate">${icon("check")}Save estimate</button><button class="btn alt block" type="submit" data-as="invoice" title="Walk-in: the work is already done">Save as invoice</button>`}
+            </div>
+            <label class="jf-chk"><input type="checkbox" id="nextSvc" ${groups.some((g) => /SERVICE/i.test(g.request || "")) ? "checked" : ""}><span>Set next service reminder${mode === "new" ? " (if saved as invoice)" : ""}</span></label>
           </div>
+        </aside>
+        </div>
+        <div class="jf-bar" role="group" aria-label="Total and save">
+          <div class="jf-bar-t"><span>Grand total</span><b id="tGrandBar">RM 0.00</b></div>
+          ${mode === "invoice"
+            ? `<button class="btn" type="submit" data-as="invoice">${icon("check")}Make invoice</button>`
+            : `<button class="btn" type="submit" data-as="estimate">${icon("check")}Save estimate</button>`}
         </div>
       </form>`;
     const form = $("#jForm");
@@ -1002,9 +1037,9 @@
       const disc = Math.min(Number(form.discount.value) || 0, p + l + extra);
       $("#tParts").textContent = rm(p);
       $("#tLabour").textContent = rm(l);
-      $("#tDiscW").hidden = !disc;
-      $("#tDisc").textContent = "-" + rm(disc);
+      $("#tDisc").textContent = (disc ? "-" : "") + rm(disc);
       $("#tGrand").textContent = rm(r2(p + l + extra - disc));
+      $("#tGrandBar").textContent = $("#tGrand").textContent;
     };
 
     // ---- find the customer or car first ----
