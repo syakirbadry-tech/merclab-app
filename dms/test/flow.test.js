@@ -418,7 +418,10 @@ test("receipt → parts → estimate → deposit → invoice → final payment �
   // 4. Work done → invoice. Final lines differ: one more litre of oil.
   const tooSmall = await call("POST", `/api/jobs/${job.id}/invoice`, { body: jobBody([filter, oil], { groups: [{ request: "X", lines: [{ type: "labour", description: "Check", amount: 50 }] }] }) });
   assert.equal(tooSmall.status, 400, "invoice cannot be below what was already paid");
-  const finalBody = jobBody([filter, oil], { repairDate: "2026-11-20", dueDate: "2026-11-27" });
+  // Due date a week after today (Malaysia time), so the credit sale's DUE DATE always prints.
+  const dueISO = new Date(Date.now() + 8 * 3600e3 + 7 * 864e5).toISOString().slice(0, 10);
+  const dueDMY = dueISO.split("-").reverse().join("/");
+  const finalBody = jobBody([filter, oil], { repairDate: "2026-11-20", dueDate: dueISO });
   finalBody.groups[0].lines[2].qty = 5;
   const inv = await call("POST", `/api/jobs/${job.id}/invoice`, { body: finalBody });
   assert.equal(inv.status, 200);
@@ -438,7 +441,7 @@ test("receipt → parts → estimate → deposit → invoice → final payment �
   assert.match(invPage.text, /<h1>INVOICE<\/h1>/);
   assert.match(invPage.text, /406\.00/);
   assert.match(invPage.text, /BALANCE DUE \(RM\)<\/span><span class="num">306\.00/, "amount due");
-  assert.match(invPage.text, /27\/11\/2026/);
+  assert.ok(invPage.text.includes(dueDMY), "due date printed");
   // Estimate link still shows the estimate as it was.
   const estAgain = await call("GET", `/d/${job.token}`, { noAuth: true });
   assert.match(estAgain.text, /376\.00/);
