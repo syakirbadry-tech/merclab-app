@@ -369,11 +369,12 @@ table.items tr.cont td{border-bottom:0;padding-top:6px;text-align:right;font-siz
 
 // Screen-only extras (page shadow, fit-to-phone, print button). None of it prints.
 const SCREEN_CSS = `
-@media screen{body{background:#e9ebef;padding:12px 0 80px}.sheet{display:flex;flex-direction:column;align-items:center;gap:16px}.page{box-shadow:0 1px 6px rgba(0,0,0,.18)}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+@media screen{body{background:#e9ebef;padding:12px 0 80px;overflow-x:hidden}.sheet{display:flex;flex-direction:column;align-items:center;gap:16px;transform-origin:top center}.page{box-shadow:0 1px 6px rgba(0,0,0,.18)}
 .bar{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:center;padding:12px;background:rgba(233,235,239,.95)}
 .bar button{font:700 16px Arial,sans-serif;padding:14px 28px;border:0;border-radius:10px;background:#111;color:#fff;max-width:420px;width:100%;cursor:pointer}
 .staff{max-width:760px;margin:0 auto 14px;background:#fff3cd;border:1px dashed #a86b00;color:#6b4400;border-radius:10px;padding:10px 14px;font:14px/1.4 Arial,sans-serif;box-sizing:border-box}}
-@media print{.bar,.staff{display:none}.sheet{zoom:1!important}}
+@media print{.bar,.staff{display:none}.sheet{zoom:1!important;transform:none!important;margin-bottom:0!important}}
 `;
 
 // The customer copy must never carry template placeholders like "[PHONE NO.]".
@@ -427,7 +428,7 @@ ${footer(doc, company, i + 1, pages.length)}
 ${screen && o.draft ? `<div class="staff no-print">Staff view: the amber boxes show details that are still missing. The customer does not see them, and they never print.</div>` : ""}
 <div class="sheet" id="sheet">${pagesHtml}</div>
 ${screen ? `<div class="bar no-print"><button type="button" onclick="window.print()">Save as PDF / Print</button></div>
-<script>(function(){function fit(){var s=document.getElementById("sheet");var z=Math.min(1,(window.innerWidth-16)/794);s.style.zoom=z}fit();window.addEventListener("resize",fit)})()</script>` : ""}
+<script>(function(){function fit(){var s=document.getElementById("sheet");var w=document.documentElement.clientWidth||window.innerWidth;var z=Math.min(1,(w-16)/794);s.style.transform=z<1?"scale("+z+")":"";s.style.marginBottom=z<1?(-s.offsetHeight*(1-z))+"px":"";}fit();window.addEventListener("resize",fit);window.addEventListener("load",fit)})()</script>` : ""}
 </body></html>`;
 }
 
