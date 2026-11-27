@@ -271,11 +271,12 @@ test("missing details: hidden on the customer copy, chips on the staff view, pla
   assert.ok(!/DuitNow/.test(html), "no QR box without an image");
   const draft = T.render(doc("estimate"), bare, { screen: true, draft: true });
   assert.match(draft, /Fill in: SSM no\./);
-  assert.match(draft, /Fill in: workshop address/);
+  assert.ok(!/workshop address/.test(draft), "the workshop address is not printed or asked for");
+  assert.ok(!/1 Jalan Bengkel/.test(T.render(doc("estimate"), { ...FULL, address: "1 Jalan Bengkel (demo)" }, { screen: false })), "address set in Settings stays off the document");
   assert.match(draft, /Fill in: warranty months/);
   assert.match(draft, /Fill in: bank name and account no\./);
   assert.match(draft, /@media print\{\.miss,\.fill,\.no-print\{display:none!important\}\}/);
-  assert.throws(() => T.render(doc("estimate"), { ...FULL, address: "[WORKSHOP ADDRESS]" }), /placeholder text \[WORKSHOP ADDRESS\]/);
+  assert.throws(() => T.render(doc("estimate"), { ...FULL, email: "[EMAIL]" }), /placeholder text \[EMAIL\]/);
   const withQr = T.render(doc("estimate"), { ...FULL, partsWarrantyMonths: 6, duitNowQrImage: "https://example.com/qr.png" }, { screen: false });
   assert.match(withQr, /6-month parts warranty/);
   assert.match(withQr, /<img src="https:\/\/example\.com\/qr\.png" alt="DuitNow QR"/);

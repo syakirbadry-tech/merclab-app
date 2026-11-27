@@ -4458,7 +4458,7 @@
         <div class="card"><h2>On estimates, invoices &amp; receipts</h2><div class="fgrid">
           <div class="full">${f("legalName", "Registered name (exactly as on SSM certificate)").replace(/^<div>|<\/div>$/g, "")}</div>
           ${f("registrationNo", "SSM registration no")}${f("hotline", "Hotline", "tel")}
-          <div class="full"><label for="s_address">Workshop address</label><textarea id="s_address" name="address" rows="2">${esc(s.address || "")}</textarea></div>
+          <div class="full"><label for="s_address">Workshop address (not printed on documents)</label><textarea id="s_address" name="address" rows="2">${esc(s.address || "")}</textarea></div>
           ${f("tel", "Tel", "tel")}${f("email", "Email", "email")}
           ${f("whatsapp", "WhatsApp for payment proof", "tel")}<div></div>
           ${f("bankName", "Bank")}${f("bankAccountName", "Account name")}
