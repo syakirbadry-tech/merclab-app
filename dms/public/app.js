@@ -4204,6 +4204,23 @@
     return { ...sug, supplier: sup || sug.supplier, items };
   }
 
+  // A scanned receipt saves by itself only when nothing needs a human look:
+  // a supplier we already have, a date and receipt no, every line matched to a
+  // part no we know, qty and cost on every line, the lines add up to the
+  // receipt total, and this receipt was not saved before.
+  function autoSaveReceipt(sug) {
+    const sp = state.suppliers.find((x) => x.name.toLowerCase() === String(sug.supplier || "").trim().toLowerCase());
+    const knownSup = sp || state.parts.some((p) => p.supplier && p.supplier.toLowerCase() === String(sug.supplier || "").trim().toLowerCase());
+    if (!knownSup || !sug.date || !String(sug.receiptNo || "").trim()) return null;
+    const items = sug.items || [];
+    if (!items.length || !items.every((it) => it.receiptName && Number(it.qty) > 0 && Number(it.unitCost) > 0)) return null;
+    const sum = r2(items.reduce((t, it) => t + Number(it.qty) * Number(it.unitCost), 0));
+    if (sug.total == null || sug.total === "" || Math.abs(sum - Number(sug.total)) > 0.05) return null;
+    const rno = partKey(sug.receiptNo);
+    if ((state.purchases || []).some((p) => partKey(p.receiptNo) === rno && String(p.supplier || "").toLowerCase() === String(sug.supplier).trim().toLowerCase())) return null;
+    return sp && Number(sp.termsDays) > 0 ? { later: true, terms: Number(sp.termsDays) } : { later: false };
+  }
+
   function itemRow(it, ai) {
     const s = state.settings;
     const markup = it.markupPercent ?? s.markupPercent;
@@ -4270,8 +4287,38 @@
       if (form.payst.value === "later" && !form.dueDate.value) form.dueDate.value = addDaysISO(form.date.value || todayKL(), sp?.termsDays || 30);
     };
     check();
+    // Auto-save (owner's choice, 27 Nov 2026): when the AI read matches
+    // everything we already know, save after a short countdown. Any tap or
+    // edit stops it and leaves the normal form.
+    const auto = ai && autoSaveReceipt(sug);
+    let autoTimer = null;
+    const stopAuto = () => {
+      if (!autoTimer) return;
+      clearInterval(autoTimer);
+      autoTimer = null;
+      $("#autoSave")?.remove();
+    };
+    if (auto) {
+      if (auto.later) {
+        form.payst.value = "later";
+        form.payst.onchange();
+      }
+      let left = 5;
+      box.insertAdjacentHTML("afterbegin", `<div class="notice ok" id="autoSave" role="status">${icon("check")}<div><b>Everything matches.</b> Known supplier, every part no, and the total ${rm(Number(sug.total))}. ${auto.later ? `It will be saved as <b>pay later</b> (${esc(auto.terms)} days).` : "It will be saved as <b>paid now</b>."} Saving in <b id="autoLeft">${left}</b>s… <button type="button" class="btn alt sm" id="autoStop">Stop, let me check</button></div></div>`);
+      $("#autoStop").onclick = stopAuto;
+      form.addEventListener("input", stopAuto);
+      form.addEventListener("focusin", stopAuto);
+      autoTimer = setInterval(() => {
+        left -= 1;
+        if (!document.body.contains(form)) return stopAuto();
+        if (left > 0) return ($("#autoLeft").textContent = left);
+        stopAuto();
+        form.requestSubmit();
+      }, 1000);
+    }
     form.onsubmit = async (e) => {
       e.preventDefault();
+      stopAuto();
       const data = {
         supplier: form.supplier.value, date: form.date.value, receiptNo: form.receiptNo.value, total: form.total.value,
         paid: form.payst.value !== "later", dueDate: form.dueDate.value, inboxId: inboxItem ? inboxItem.id : "",
