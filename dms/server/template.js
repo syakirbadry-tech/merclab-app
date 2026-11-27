@@ -137,7 +137,8 @@ const chip = (label) => `<span class="fill">Fill in: ${esc(label)}</span>`;
 function header(c, o) {
   const reg = has(c.registrationNo) ? ` &#160;<span class="reg">(${esc(c.registrationNo)})</span>` : o.draft ? ` &#160;${chip("SSM no.")}` : "";
   const phone = has(c.tel) ? c.tel : c.hotline;
-  const items = [[phone, "phone"], [c.email, "email"], [c.address && String(c.address).replace(/\s*\n\s*/g, ", "), "workshop address"]];
+  // The workshop address is not printed (owner's choice, 27 Nov 2026).
+  const items = [[phone, "phone"], [c.email, "email"]];
   const contact = items.filter(([v]) => has(v)).map(([v]) => esc(v)).join(" &#160;·&#160; ");
   // Staff view: what is missing goes on its own line, so nothing is left behind when it is hidden in print.
   const missing = o.draft ? items.filter(([v]) => !has(v)).map(([, l]) => chip(l)).join(" ") : "";
@@ -403,8 +404,8 @@ function render(doc, company, { screen = true, draft = false, fontBase = "/fonts
   // Page fit: build the top blocks once to learn their height, then the
   // notes/totals block, and give the table what is left.
   const probe = { ...o, h: [] };
-  const headerExtra = linesFor(textWidth([company.tel || company.hotline, company.email, company.address].filter(has).join(" · "), true) * 0.9, 706) * 16 - 16
-    + (o.draft && [company.tel || company.hotline, company.email, company.address].some((v) => !has(v)) ? 18 : 0);
+  const headerExtra = linesFor(textWidth([company.tel || company.hotline, company.email].filter(has).join(" · "), true) * 0.9, 706) * 16 - 16
+    + (o.draft && [company.tel || company.hotline, company.email].some((v) => !has(v)) ? 18 : 0);
   parties(doc, company, probe);
   const tbodyTop = 188 + headerExtra + probe.partiesH + 48;
   const bottomH = Math.max(notesHeight(doc, company, o), totalsHeight(doc, company));
