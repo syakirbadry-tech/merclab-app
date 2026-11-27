@@ -4463,7 +4463,7 @@
           ${f("whatsapp", "WhatsApp for payment proof", "tel")}<div></div>
           ${f("bankName", "Bank")}${f("bankAccountName", "Account name")}
           ${f("bankAccountNo", "Account no", "text", 'inputmode="numeric"')}<div></div>
-          ${f("partsWarrantyMonths", "Parts warranty (months)", "number", 'inputmode="numeric" min="0"')}${f("estimateValidityDays", "Estimate valid (days)", "number", 'inputmode="numeric" min="1"')}
+          ${f("partsWarrantyMonths", "Parts warranty (months, not printed)", "number", 'inputmode="numeric" min="0"')}${f("estimateValidityDays", "Estimate valid (days)", "number", 'inputmode="numeric" min="1"')}
         </div><p class="hint">Empty boxes print as [PLACEHOLDER] on documents, so you can see what is missing.</p></div>
       </div><div>
         <div class="card"><h2>Parts pricing</h2>

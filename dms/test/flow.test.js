@@ -273,12 +273,12 @@ test("missing details: hidden on the customer copy, chips on the staff view, pla
   assert.match(draft, /Fill in: SSM no\./);
   assert.ok(!/workshop address/.test(draft), "the workshop address is not printed or asked for");
   assert.ok(!/1 Jalan Bengkel/.test(T.render(doc("estimate"), { ...FULL, address: "1 Jalan Bengkel (demo)" }, { screen: false })), "address set in Settings stays off the document");
-  assert.match(draft, /Fill in: warranty months/);
+  assert.ok(!/warranty|genuine/i.test(draft), "no parts warranty sentence, even on the staff view");
   assert.match(draft, /Fill in: bank name and account no\./);
   assert.match(draft, /@media print\{\.miss,\.fill,\.no-print\{display:none!important\}\}/);
   assert.throws(() => T.render(doc("estimate"), { ...FULL, email: "[EMAIL]" }), /placeholder text \[EMAIL\]/);
   const withQr = T.render(doc("estimate"), { ...FULL, partsWarrantyMonths: 6, duitNowQrImage: "https://example.com/qr.png" }, { screen: false });
-  assert.match(withQr, /6-month parts warranty/);
+  assert.ok(!/warranty|genuine/i.test(withQr), "no parts warranty sentence even when months are set");
   assert.match(withQr, /<img src="https:\/\/example\.com\/qr\.png" alt="DuitNow QR"/);
 });
 
@@ -530,7 +530,7 @@ test("settings update; owner details print on documents", async () => {
   const j = await call("POST", "/api/jobs", { body: jobBody(["", ""]) });
   const page = await call("GET", `/d/${j.body.job.token}`, { noAuth: true });
   assert.match(page.text, /call 012-000 0000\./);
-  assert.match(page.text, /6-month parts warranty/);
+  assert.ok(!/parts warranty/.test(page.text));
   assert.match(page.text, /\(202603123456\)/);
 });
 
